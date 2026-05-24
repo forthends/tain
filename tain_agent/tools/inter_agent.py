@@ -21,6 +21,7 @@ Design:
 """
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,6 +34,27 @@ def _now_iso() -> str:
 
 def _make_msg_id() -> str:
     return f"msg_{uuid.uuid4().hex[:12]}"
+
+
+# ─── Conversation log rotation ────────────────────────────────────────
+
+MAX_CONVERSATION_MESSAGES = 1000
+KEEP_CONVERSATION_MESSAGES = 500
+
+
+def _rotate_conversation_log(filepath: Path,
+                              max_lines: int = MAX_CONVERSATION_MESSAGES,
+                              keep: int = KEEP_CONVERSATION_MESSAGES) -> None:
+    """Trim conversation log to the most recent messages to prevent unbounded growth."""
+    if not filepath.exists():
+        return
+    try:
+        text = filepath.read_text(encoding="utf-8")
+    except IOError:
+        return
+    lines = [l for l in text.strip().split("\n") if l.strip()]
+    if len(lines) > max_lines:
+        filepath.write_text("\n".join(lines[-keep:]) + "\n", encoding="utf-8")
 
 
 # ─── Tool: discover_agents ────────────────────────────────────────────
@@ -86,6 +108,7 @@ def discover_agents(workspace_root: str = "agent_workspace",
 def send_message(to_agent: str, content: str,
                  from_agent: str = "",
                  reply_to: str = "",
+                 message_type: str = "chat",
                  workspace_root: str = "agent_workspace") -> dict:
     """Send a message to another agent.
 
@@ -97,6 +120,7 @@ def send_message(to_agent: str, content: str,
         content: Message content (text).
         from_agent: Sender's agent name.
         reply_to: Optional message ID this is replying to.
+        message_type: Type of message (default "chat").
         workspace_root: Path to the agent workspace root directory.
 
     Returns:
@@ -104,6 +128,9 @@ def send_message(to_agent: str, content: str,
     """
     if not to_agent or not content:
         return {"success": False, "error": "to_agent and content are required."}
+
+    if not from_agent:
+        return {"success": False, "error": "from_agent is required."}
 
     root = Path(workspace_root)
 
@@ -127,7 +154,7 @@ def send_message(to_agent: str, content: str,
         "timestamp": now_ts,
         "content": content,
         "reply_to": reply_to,
-        "message_type": "chat",
+        "message_type": message_type,
     }
 
     # Write to shared message bus
@@ -140,12 +167,12 @@ def send_message(to_agent: str, content: str,
     )
 
     # Append to sender's conversation log
-    if from_agent:
-        conv_dir = root / from_agent / "logs" / "conversations"
-        conv_dir.mkdir(parents=True, exist_ok=True)
-        conv_file = conv_dir / f"{to_agent}.jsonl"
-        with open(conv_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(message, ensure_ascii=False) + "\n")
+    conv_dir = root / from_agent / "logs" / "conversations"
+    conv_dir.mkdir(parents=True, exist_ok=True)
+    conv_file = conv_dir / f"{to_agent}.jsonl"
+    with open(conv_file, "a", encoding="utf-8") as f:
+        f.write(json.dumps(message, ensure_ascii=False) + "\n")
+    _rotate_conversation_log(conv_file)
 
     return {
         "success": True,
@@ -163,8 +190,9 @@ def check_messages(agent_name: str = "",
     """Check for new messages addressed to this agent.
 
     Reads message files from _messages/ that are addressed to agent_name.
-    Processed messages are moved to the conversation log and deleted from
-    the bus.
+    Uses atomic rename to claim each message, preventing duplicate processing
+    by concurrent agent instances. Processed messages are archived to the
+    conversation log and removed from the bus.
 
     Args:
         agent_name: Name of the agent checking messages.
@@ -183,34 +211,52 @@ def check_messages(agent_name: str = "",
     if not messages_dir.exists():
         return {"messages": [], "count": 0, "message": "No messages directory."}
 
-    new_messages = []
-
-    for msg_file in sorted(messages_dir.glob("*.json")):
+    # First pass: read all candidate messages, then sort by timestamp
+    candidates = []
+    for msg_file in messages_dir.glob("*.json"):
         try:
             msg = json.loads(msg_file.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, IOError):
+            # Corrupt file — try to clean up
+            msg_file.unlink(missing_ok=True)
             continue
 
-        # Only process messages addressed to this agent
         if msg.get("to_agent") != agent_name:
             continue
 
-        # Optional sender filter
         if from_agent and msg.get("from_agent") != from_agent:
             continue
 
-        new_messages.append(msg)
+        candidates.append((msg.get("timestamp", ""), msg_file, msg))
 
-        # Archive to conversation log
-        sender = msg.get("from_agent", "unknown")
-        conv_dir = root / agent_name / "logs" / "conversations"
-        conv_dir.mkdir(parents=True, exist_ok=True)
-        conv_file = conv_dir / f"{sender}.jsonl"
-        with open(conv_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(msg, ensure_ascii=False) + "\n")
+    # Sort by timestamp so messages are processed in chronological order
+    candidates.sort(key=lambda x: x[0])
 
-        # Remove from message bus (processed)
-        msg_file.unlink()
+    new_messages = []
+
+    for _ts, msg_file, msg in candidates:
+        # Atomic claim: rename the file before processing.
+        # If another instance already claimed it, the rename fails
+        # and we skip — no duplicate delivery.
+        claimed = msg_file.with_name(msg_file.name + ".claimed")
+        try:
+            os.rename(msg_file, claimed)
+        except FileNotFoundError:
+            continue  # another instance claimed it first
+
+        try:
+            new_messages.append(msg)
+
+            # Archive to conversation log
+            sender = msg.get("from_agent", "unknown")
+            conv_dir = root / agent_name / "logs" / "conversations"
+            conv_dir.mkdir(parents=True, exist_ok=True)
+            conv_file = conv_dir / f"{sender}.jsonl"
+            with open(conv_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(msg, ensure_ascii=False) + "\n")
+            _rotate_conversation_log(conv_file)
+        finally:
+            claimed.unlink(missing_ok=True)
 
     return {
         "messages": new_messages,
@@ -223,6 +269,7 @@ def check_messages(agent_name: str = "",
 
 def get_conversation_history(with_agent: str, agent_name: str = "",
                              limit: int = 50,
+                             threaded: bool = False,
                              workspace_root: str = "agent_workspace") -> dict:
     """Load conversation history with a specific peer agent.
 
@@ -232,10 +279,11 @@ def get_conversation_history(with_agent: str, agent_name: str = "",
         with_agent: Peer agent name to load conversation with.
         agent_name: This agent's name.
         limit: Max number of messages to return (most recent first).
+        threaded: If True, nest replies under their parent messages.
         workspace_root: Path to the agent workspace root directory.
 
     Returns:
-        dict with 'messages' list and 'count'.
+        dict with 'messages' list, 'count', and 'total_stored'.
     """
     if not agent_name or not with_agent:
         return {"success": False, "error": "agent_name and with_agent are required.", "messages": [], "count": 0}
@@ -244,29 +292,52 @@ def get_conversation_history(with_agent: str, agent_name: str = "",
     conv_file = root / agent_name / "logs" / "conversations" / f"{with_agent}.jsonl"
 
     if not conv_file.exists():
-        return {"messages": [], "count": 0, "message": f"No conversation history with '{with_agent}'."}
+        return {"messages": [], "count": 0, "total_stored": 0,
+                "message": f"No conversation history with '{with_agent}'."}
 
-    messages = []
+    all_messages = []
     try:
         with open(conv_file, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line:
                     try:
-                        messages.append(json.loads(line))
+                        msg = json.loads(line)
+                        if isinstance(msg, dict) and "message_id" in msg:
+                            all_messages.append(msg)
                     except json.JSONDecodeError:
                         continue
     except IOError:
         return {"success": False, "error": "Failed to read conversation file.", "messages": [], "count": 0}
 
-    # Return most recent first
-    messages = messages[-limit:][::-1]
+    total = len(all_messages)
+
+    # Most recent first (default) or build threaded view
+    if threaded:
+        # Build index: message_id → message
+        by_id = {m["message_id"]: m for m in all_messages}
+        roots = []
+        for m in all_messages:
+            m["replies"] = []
+        for m in all_messages:
+            parent_id = m.get("reply_to", "")
+            if parent_id and parent_id in by_id:
+                by_id[parent_id].setdefault("replies", []).append(m)
+            else:
+                roots.append(m)
+        # Sort roots by timestamp, most recent first
+        roots.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        # Return limited set of thread roots
+        result = roots[-limit:] if limit else roots
+        result = result[::-1] if limit else result
+    else:
+        result = all_messages[-limit:][::-1]
 
     return {
-        "messages": messages,
-        "count": len(messages),
+        "messages": result,
+        "count": len(result),
         "with_agent": with_agent,
-        "total_stored": len(messages),
+        "total_stored": total,
     }
 
 
@@ -292,20 +363,23 @@ def register_inter_agent_tools(tool_registry, workspace_root: str = "agent_works
     def _discover_agents() -> dict:
         return discover_agents(workspace_root=_ws, self_name=_name)
 
-    def _send_message(to_agent: str, content: str, reply_to: str = "") -> dict:
+    def _send_message(to_agent: str, content: str, reply_to: str = "",
+                      message_type: str = "chat") -> dict:
         return send_message(
             to_agent=to_agent, content=content,
             from_agent=_name, reply_to=reply_to,
+            message_type=message_type,
             workspace_root=_ws,
         )
 
     def _check_messages(from_agent: str = "") -> dict:
         return check_messages(agent_name=_name, from_agent=from_agent, workspace_root=_ws)
 
-    def _get_conversation_history(with_agent: str, limit: int = 50) -> dict:
+    def _get_conversation_history(with_agent: str, limit: int = 50,
+                                  threaded: bool = False) -> dict:
         return get_conversation_history(
             with_agent=with_agent, agent_name=_name,
-            limit=limit, workspace_root=_ws,
+            limit=limit, threaded=threaded, workspace_root=_ws,
         )
 
     tool_registry.register(
@@ -320,7 +394,10 @@ def register_inter_agent_tools(tool_registry, workspace_root: str = "agent_works
         "send_message",
         _send_message,
         "Send a message to another agent. The message is persisted in both "
-        "the shared message bus and your conversation log with that agent.",
+        "the shared message bus and your conversation log with that agent. "
+        "Use message_type to indicate the purpose: 'chat' (conversation), "
+        "'request' (asking for something), 'response' (reply to a request), "
+        "'broadcast' (announcement to all).",
         {
             "to_agent": {"type": "string", "required": True,
                          "description": "Name of the agent to send the message to."},
@@ -328,6 +405,8 @@ def register_inter_agent_tools(tool_registry, workspace_root: str = "agent_works
                         "description": "The message content."},
             "reply_to": {"type": "string", "required": False,
                          "description": "Optional message ID this is replying to."},
+            "message_type": {"type": "string", "required": False,
+                             "description": "Type of message: 'chat', 'request', 'response', or 'broadcast'. Default 'chat'."},
         },
     )
 
@@ -346,11 +425,14 @@ def register_inter_agent_tools(tool_registry, workspace_root: str = "agent_works
         "get_conversation_history",
         _get_conversation_history,
         "Load your conversation history with a specific agent. "
-        "Useful when resuming a dialogue after restart.",
+        "Useful when resuming a dialogue after restart. "
+        "Set threaded=True to see replies nested under their parent messages.",
         {
             "with_agent": {"type": "string", "required": True,
                            "description": "Name of the agent whose conversation to load."},
             "limit": {"type": "integer", "required": False,
                       "description": "Max messages to return (default 50, most recent first)."},
+            "threaded": {"type": "boolean", "required": False,
+                         "description": "If True, nest replies under parent messages as a thread tree."},
         },
     )

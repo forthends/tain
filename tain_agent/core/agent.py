@@ -85,6 +85,10 @@ class TaoAgent:
         self._bootstrap_action_categories: set[str] = set()
         self._contemplation_insights: list[str] = []
 
+    @property
+    def version(self) -> str:
+        return self.framework_version
+
     # ── Phase persistence ────────────────────────────────────────────
 
     def _load_phase_from_memory(self) -> str:
@@ -152,6 +156,7 @@ class TaoAgent:
         self.evolution_mode = "chaos"
         self.role = ""
         self.role_description = ""
+        self._workspace_version_path = self._workspace_path / "version.json"
         self._load_agent_identity()
 
     def _load_agent_identity(self) -> None:
@@ -171,6 +176,7 @@ class TaoAgent:
         """Initialize all subsystems — the agent's body and mind."""
         # ── Create isolated workspace ────────────────────────────────
         self._workspace_path.mkdir(parents=True, exist_ok=True)
+        os.environ["WORKSPACE_PATH"] = str(self._workspace_path.resolve())
         for sub in ["logs", "logs/conversations",
                      "forged_tools", "reports", "files", "state", "knowledge"]:
             (self._workspace_path / sub).mkdir(parents=True, exist_ok=True)

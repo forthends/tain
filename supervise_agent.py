@@ -24,8 +24,12 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent
 LOG_DIR = PROJECT_ROOT / "tain_agent" / "logs"
 LOG_FILE = LOG_DIR / "agent_output.log"
-PID_FILE = PROJECT_ROOT / "agent_workspace" / ".agent_daemon.pid"
+PID_DIR = PROJECT_ROOT / "agent_workspace"
 MAX_LOG_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
+def _pid_path(agent_name: str) -> Path:
+    return PID_DIR / f".agent_daemon_{agent_name}.pid"
 
 RESTART_DELAY = 3  # seconds between clean restarts
 MAX_CONSECUTIVE_FAILURES = 3
@@ -47,42 +51,57 @@ def log(msg: str) -> None:
         _log_fh.flush()
 
 
-def write_pid() -> None:
-    PID_FILE.parent.mkdir(parents=True, exist_ok=True)
-    PID_FILE.write_text(str(os.getpid()))
+def write_pid(agent_name: str) -> None:
+    _pid_path(agent_name).parent.mkdir(parents=True, exist_ok=True)
+    _pid_path(agent_name).write_text(str(os.getpid()))
 
 
-def remove_pid() -> None:
-    if PID_FILE.exists():
-        PID_FILE.unlink(missing_ok=True)
+def remove_pid(agent_name: str) -> None:
+    p = _pid_path(agent_name)
+    if p.exists():
+        p.unlink(missing_ok=True)
 
 
-def read_pid() -> int | None:
-    if not PID_FILE.exists():
+def read_pid(agent_name: str) -> int | None:
+    p = _pid_path(agent_name)
+    if not p.exists():
         return None
     try:
-        return int(PID_FILE.read_text().strip())
+        return int(p.read_text().strip())
     except (ValueError, OSError):
         return None
 
 
-def is_daemon_running() -> bool:
-    pid = read_pid()
+def is_daemon_running(agent_name: str) -> bool:
+    pid = read_pid(agent_name)
     if pid is None:
         return False
     try:
         os.kill(pid, 0)
         return True
     except OSError:
-        remove_pid()
+        remove_pid(agent_name)
         return False
+
+
+def _find_pid_files() -> list[Path]:
+    """Return all .agent_daemon_*.pid files."""
+    if not PID_DIR.exists():
+        return []
+    return sorted(PID_DIR.glob(".agent_daemon_*.pid"))
+
+
+def _pid_file_to_name(pid_path: Path) -> str:
+    """Extract agent name from .agent_daemon_<name>.pid."""
+    stem = pid_path.stem  # .agent_daemon_poet
+    return stem[len(".agent_daemon_"):]
 
 
 def daemonize() -> None:
     """Double-fork to detach from the controlling terminal."""
     # First fork
     if os.fork() > 0:
-        return  # parent exits
+        os._exit(0)      # original parent exits
 
     os.setsid()          # new session
     os.umask(0o022)
@@ -166,62 +185,125 @@ def main():
     parser = argparse.ArgumentParser(
         description="Tao Agent Guardian — 双生火焰 (Twin Flame)",
     )
+    parser.add_argument("--agent-name", type=str, default=None,
+                        help="Agent name to manage")
     parser.add_argument("--daemon", action="store_true",
                         help="Detach and run as background daemon")
     parser.add_argument("--stop", action="store_true",
-                        help="Stop a running daemon")
+                        help="Stop a running daemon (requires --agent-name)")
+    parser.add_argument("--stop-all", action="store_true",
+                        help="Stop all running daemons")
     parser.add_argument("--status", action="store_true",
-                        help="Check daemon status")
+                        help="Check daemon status (requires --agent-name)")
+    parser.add_argument("--status-all", action="store_true",
+                        help="Check status of all daemons")
     parser.add_argument("agent_args", nargs=argparse.REMAINDER,
                         help="Arguments to pass to main.py")
     args = parser.parse_args()
 
+    # ── Stop-all command ──
+    if args.stop_all:
+        pid_files = _find_pid_files()
+        if not pid_files:
+            print("No daemons running.")
+            return
+        for pf in pid_files:
+            name = _pid_file_to_name(pf)
+            pid = read_pid(name)
+            if pid is None:
+                pf.unlink(missing_ok=True)
+                continue
+            if not is_daemon_running(name):
+                pf.unlink(missing_ok=True)
+                continue
+            print(f"Stopping daemon for '{name}' (pid {pid})...")
+            os.kill(pid, signal.SIGTERM)
+            for _ in range(50):
+                time.sleep(0.1)
+                if not is_daemon_running(name):
+                    print(f"  '{name}' stopped.")
+                    break
+            else:
+                print(f"  '{name}' did not stop. Sending SIGKILL...")
+                os.kill(pid, signal.SIGKILL)
+                remove_pid(name)
+        return
+
     # ── Stop command ──
     if args.stop:
-        pid = read_pid()
-        if pid is None:
-            print("No daemon running (no PID file).")
+        if not args.agent_name:
+            print("Error: --stop requires --agent-name, or use --stop-all")
             return
-        if not is_daemon_running():
+        pid = read_pid(args.agent_name)
+        if pid is None:
+            print(f"No daemon running for '{args.agent_name}'.")
+            return
+        if not is_daemon_running(args.agent_name):
             print(f"Stale PID file removed (pid {pid} not alive).")
             return
-        print(f"Stopping daemon (pid {pid})...")
+        print(f"Stopping daemon for '{args.agent_name}' (pid {pid})...")
         os.kill(pid, signal.SIGTERM)
         for _ in range(50):
             time.sleep(0.1)
-            if not is_daemon_running():
-                print("Daemon stopped.")
+            if not is_daemon_running(args.agent_name):
+                print(f"'{args.agent_name}' stopped.")
                 return
-        print("Daemon did not stop. Sending SIGKILL...")
+        print(f"'{args.agent_name}' did not stop. Sending SIGKILL...")
         os.kill(pid, signal.SIGKILL)
-        remove_pid()
-        print("Daemon killed.")
+        remove_pid(args.agent_name)
+        return
+
+    # ── Status-all command ──
+    if args.status_all:
+        pid_files = _find_pid_files()
+        if not pid_files:
+            print("No daemons running.")
+            return
+        for pf in pid_files:
+            name = _pid_file_to_name(pf)
+            pid = read_pid(name)
+            if pid and is_daemon_running(name):
+                print(f"  {name:<20s} running (pid {pid})")
+            else:
+                pf.unlink(missing_ok=True)
         return
 
     # ── Status command ──
     if args.status:
-        if is_daemon_running():
-            pid = read_pid()
-            print(f"Daemon running (pid {pid}).")
+        if not args.agent_name:
+            print("Error: --status requires --agent-name, or use --status-all")
+            return
+        if is_daemon_running(args.agent_name):
+            pid = read_pid(args.agent_name)
+            print(f"Daemon '{args.agent_name}' running (pid {pid}).")
         else:
-            print("Daemon not running.")
+            print(f"Daemon '{args.agent_name}' not running.")
         return
+
+    # ── Run mode: require --agent-name ──
+    if not args.agent_name:
+        print("Error: --agent-name is required to start a daemon")
+        return
+
+    agent_name = args.agent_name
 
     # ── Daemonize if requested ──
     if args.daemon:
-        if is_daemon_running():
-            print(f"Daemon already running (pid {read_pid()}).")
+        if is_daemon_running(agent_name):
+            print(f"Daemon for '{agent_name}' already running (pid {read_pid(agent_name)}).")
             return
-        print("Starting daemon...")
+        print(f"Starting daemon for '{agent_name}'...")
         daemonize()
-        write_pid()
+        write_pid(agent_name)
 
     # ── Clean agent args ──
     # argparse.REMAINDER captures everything after '--' or the first positional.
     # Strip leading '--' if present.
-    agent_args = list(args.agent_args)
-    if agent_args and agent_args[0] == "--":
-        agent_args = agent_args[1:]
+    passthrough = list(args.agent_args)
+    if passthrough and passthrough[0] == "--":
+        passthrough = passthrough[1:]
+    # Always pass --agent <name> to the child process
+    agent_args = ["--agent", agent_name] + passthrough
 
     # ── Setup logging ──
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -244,7 +326,8 @@ def main():
         log(f"Health warnings: {health['issues']}")
 
     log("═══════════════════════════════════════════")
-    log("   Tao Agent Guardian — Twin Flame v0.4   ")
+    log(f"   Tao Agent Guardian — Twin Flame v0.4   ")
+    log(f"   Agent: {agent_name}")
     log("   道生一，一生二，二生三，三生万物       ")
     log("═══════════════════════════════════════════")
     log(f"Agent command: main.py {' '.join(agent_args)}")
@@ -346,7 +429,7 @@ def main():
     log(f"Guardian exited. Total agent runs: {restart_count}")
     if _log_fh:
         _log_fh.close()
-    remove_pid()
+    remove_pid(agent_name)
 
 
 if __name__ == "__main__":

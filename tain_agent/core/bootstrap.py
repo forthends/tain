@@ -231,6 +231,12 @@ class ToolBootstrap:
                 options_list = json.loads(options) if isinstance(options, str) else options
             except json.JSONDecodeError:
                 options_list = [{"option": o.strip()} for o in options.split(",")]
+            # Normalize bare strings into {option: ...} dicts
+            if isinstance(options_list, list):
+                options_list = [
+                    {"option": o} if isinstance(o, str) else o
+                    for o in options_list
+                ]
             decision_id = self.a.decision_log.record(
                 context={"summary": context},
                 decision_type=decision_type,

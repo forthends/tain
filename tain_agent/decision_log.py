@@ -114,7 +114,9 @@ class DecisionLog:
                 if not line:
                     continue
                 try:
-                    entries.append(json.loads(line))
+                    entry = json.loads(line)
+                    if isinstance(entry, dict) and "id" in entry:
+                        entries.append(entry)
                 except json.JSONDecodeError:
                     continue  # skip corrupted lines
         return entries
@@ -130,8 +132,13 @@ class DecisionLog:
             return "No decisions recorded yet."
         lines = [f"=== Decision Log Summary ({len(entries)} entries) ==="]
         for e in entries:
+            eid = e.get("id", "????")
+            ephase = e.get("phase", "?")
+            etype = e.get("decision_type", "?")
+            echoice = e.get("chosen_option", e.get("chosen", "?"))
+            ereason = (e.get("reasoning", "") or "")[:100]
             lines.append(
-                f"[{e['id']}] {e['phase']}/{e['decision_type']}: "
-                f"chose '{e['chosen_option']}' — {e['reasoning'][:100]}"
+                f"[{eid}] {ephase}/{etype}: "
+                f"chose '{echoice}' — {ereason}"
             )
         return "\n".join(lines)

@@ -250,7 +250,7 @@ class ToolForge:
     def _forge_compile_exec(self, name: str, code: str) -> dict:
         try: compiled = compile(code, f"<forged:{name}>", "exec")
         except SyntaxError as e: return {"success": False, "error": f"Syntax error: {e}"}
-        ns = {}
+        ns = {"__file__": str(self._forge_dir / f"{name}.py")}
         try: exec(compiled, ns)
         except Exception as e: return {"success": False, "error": f"Exec error: {e}"}
         return ns

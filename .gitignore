@@ -46,6 +46,9 @@ tain_agent/state/metrics_snapshots/
 # Agent workspace — isolated sandbox, never committed to repo
 agent_workspace/
 
+# Agent workspace leaks (should never be at project root)
+rag_index/
+
 # Claude Code
 .claude/
 

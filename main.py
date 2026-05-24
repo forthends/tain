@@ -168,8 +168,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     # Agent selection
-    parser.add_argument("--agent", "-a", type=str, default=None,
-                        help=f"Agent name to start (creates if new). {AGENT_NAME_HELP}")
+    parser.add_argument("--agent", "-a", type=str, action="append", default=None,
+                        help=f"Agent name(s) to start (creates if new). Repeat for multiple agents. {AGENT_NAME_HELP}")
     parser.add_argument("--list-agents", action="store_true",
                         help="List all agents")
     parser.add_argument("--create-agent", action="store_true",
@@ -222,42 +222,54 @@ def main():
 
     # ── Create agent wizard ─────────────────────────────────────────
     if args.create_agent:
-        run_creation_wizard(factory, suggested_name=args.agent or "")
+        suggested = (args.agent[0] if args.agent else "")
+        run_creation_wizard(factory, suggested_name=suggested)
         return
 
-    # ── Determine agent name ────────────────────────────────────────
-    agent_name = args.agent
+    # ── Determine agent name(s) ──────────────────────────────────────
+    agent_names = args.agent  # list of str or None
 
     # ── Daemon commands ─────────────────────────────────────────────
     if args.daemon:
         supervisor_script = Path(__file__).resolve().parent / "supervise_agent.py"
-        supervisor_args = [sys.executable, str(supervisor_script)]
 
         try:
             if args.daemon == "stop":
-                subprocess.run(supervisor_args + ["--stop"])
+                if agent_names:
+                    for name in agent_names:
+                        subprocess.run([sys.executable, str(supervisor_script),
+                                        "--agent-name", name, "--stop"])
+                else:
+                    subprocess.run([sys.executable, str(supervisor_script), "--stop-all"])
+
             elif args.daemon == "status":
-                subprocess.run(supervisor_args + ["--status"])
-            else:
+                if agent_names:
+                    for name in agent_names:
+                        subprocess.run([sys.executable, str(supervisor_script),
+                                        "--agent-name", name, "--status"])
+                else:
+                    subprocess.run([sys.executable, str(supervisor_script), "--status-all"])
+
+            else:  # start
+                if not agent_names:
+                    print("Error: --daemon start requires at least one --agent <name>")
+                    sys.exit(1)
                 passthrough = []
-                if agent_name:
-                    passthrough.extend(["--agent", agent_name])
                 if args.dialogue:
                     passthrough.append("--dialogue")
                 if args.no_pral:
                     passthrough.append("--no-pral")
                 if args.cycles:
                     passthrough.extend(["--cycles", str(args.cycles)])
-                subprocess.run(
-                    supervisor_args + ["--daemon", "--"] + passthrough
-                )
+                for name in agent_names:
+                    subprocess.run([sys.executable, str(supervisor_script),
+                                    "--agent-name", name, "--daemon", "--"] + passthrough)
         except KeyboardInterrupt:
             print()
         return
 
-    # ── No agent specified: default or create ───────────────────────
-    if not agent_name:
-        # Check if config has a default_agent
+    # ── Non-daemon modes: require exactly one agent ──────────────────
+    if not agent_names:
         import yaml
         config_path = args.config
         cfg = {}
@@ -265,6 +277,11 @@ def main():
             with open(config_path, "r", encoding="utf-8") as f:
                 cfg = yaml.safe_load(f) or {}
         agent_name = cfg.get("agent", {}).get("default_agent", "default")
+    elif len(agent_names) > 1:
+        print("Error: multiple --agent only supported with --daemon start")
+        sys.exit(1)
+    else:
+        agent_name = agent_names[0]
 
     # ── Agent doesn't exist → creation flow ─────────────────────────
     if not factory.exists(agent_name):
@@ -300,10 +317,10 @@ def main():
         if not entries:
             print("(empty — no decisions recorded yet)")
         for e in entries:
-            print(f"[{e['id']}] {e['timestamp']}")
-            print(f"  阶段: {e['phase']} | 类型: {e['decision_type']}")
-            print(f"  选择: {e['chosen_option']}")
-            print(f"  原因: {e['reasoning'][:200]}")
+            print(f"[{e.get('id', '????')}] {e.get('timestamp', '?')}")
+            print(f"  阶段: {e.get('phase', '?')} | 类型: {e.get('decision_type', '?')}")
+            print(f"  选择: {e.get('chosen_option', e.get('chosen', '?'))}")
+            print(f"  原因: {(e.get('reasoning', '') or '')[:200]}")
             print()
         print(f"--- {len(entries)} entries ---")
         return
