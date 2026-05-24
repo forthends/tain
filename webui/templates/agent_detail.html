@@ -32,9 +32,9 @@
         {% for tab_id, tab_label in tabs %}
         <a href="/agent/{{ agent.name }}?tab={{ tab_id }}"
            class="text-sm pb-2 border-b-2 transition-colors {{ 'tab-active' if tab == tab_id else 'tab-inactive border-transparent' }}"
-           hx-get="/agent/{{ agent.name }}?tab={{ tab_id }}"
+           hx-get="/agent/{{ agent.name }}/tab/{{ tab_id }}"
            hx-target="#tab-content" hx-swap="innerHTML"
-           hx-push-url="true">
+           hx-push-url="/agent/{{ agent.name }}?tab={{ tab_id }}">
             {{ tab_label }}
         </a>
         {% endfor %}
