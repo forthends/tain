@@ -44,4 +44,27 @@
 <!-- Tab content -->
 <div id="tab-content" class="p-6" hx-get="/agent/{{ agent.name }}/tab/{{ tab }}" hx-trigger="load">
 </div>
+
+<script>
+(function() {
+    function syncActiveTab() {
+        const params = new URLSearchParams(window.location.search);
+        const currentTab = params.get('tab') || 'overview';
+        document.querySelectorAll('#tab-nav a').forEach(link => {
+            const href = new URL(link.href, window.location.origin);
+            const tabId = href.searchParams.get('tab');
+            if (tabId === currentTab) {
+                link.classList.add('tab-active');
+                link.classList.remove('tab-inactive', 'border-transparent');
+            } else {
+                link.classList.remove('tab-active');
+                link.classList.add('tab-inactive', 'border-transparent');
+            }
+        });
+    }
+    document.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target.id === 'tab-content') syncActiveTab();
+    });
+})();
+</script>
 {% endblock %}
