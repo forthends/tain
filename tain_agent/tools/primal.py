@@ -1,0 +1,425 @@
+"""
+Primal Tools — 原始工具
+
+The first tools the Tao Agent is born with.
+These are the "senses" it uses to explore the world.
+
+All file operations are scoped to the agent's isolated workspace.
+The agent CANNOT read or modify any file outside its workspace.
+
+observe  → perceive the environment (workspace only)
+act      → execute an action (workspace-scoped)
+reflect  → think deeply about observations
+decide   → make a choice and log it
+"""
+
+import os
+from pathlib import Path
+from tain_agent.core.time_utils import now
+
+
+# ─── Workspace isolation ────────────────────────────────────────────────
+
+# Set by register_primal_tools — the agent's isolated workspace path.
+_WORKSPACE_DIR: Path | None = None
+
+# Project files the agent may READ (but never modify) for bootstrap awareness.
+# This is a narrow, explicit whitelist. The agent cannot explore or search
+# for these — it only gets access when asking for these specific paths.
+_READABLE_PROJECT_FILES = frozenset({
+    "config.yaml",  # so the agent knows its own configuration
+})
+
+
+def _resolve_path(path: str, for_write: bool = False) -> Path | None:
+    """Resolve a path within the agent's workspace. Returns None if denied.
+
+    Rules:
+      - Relative paths → resolved within workspace
+      - Absolute paths within workspace → allowed
+      - Paths already prefixed with workspace dir → strip prefix to avoid nesting
+      - Paths in _READABLE_PROJECT_FILES → read-only allowed
+      - Everything else → DENIED (returns None)
+    """
+    if _WORKSPACE_DIR is None:
+        return Path(path)  # no isolation configured (legacy mode)
+
+    p = Path(path)
+    ws = _WORKSPACE_DIR.resolve()
+    ws_name = ws.name  # e.g. "agent_workspace"
+
+    if p.is_absolute():
+        # Absolute path — must be within workspace
+        try:
+            p.resolve()
+            if str(p.resolve()).startswith(str(ws)):
+                return p
+        except Exception:
+            pass
+        # Check if it matches a readable project file
+        if not for_write:
+            for allowed in _READABLE_PROJECT_FILES:
+                if str(p) == str(Path(allowed).resolve()):
+                    return p
+                if p.name == allowed or str(p).endswith(allowed):
+                    return p
+        return None  # DENIED
+    else:
+        # Relative path — check whitelist first, then resolve within workspace
+        if not for_write:
+            for allowed in _READABLE_PROJECT_FILES:
+                if p == Path(allowed) or str(p) == allowed:
+                    return Path(allowed).resolve()
+
+        # Strip workspace dir prefix if the agent already prepended it.
+        # This prevents double-nesting: ws / "agent_workspace/foo" → ws/foo
+        parts = p.parts
+        if parts and parts[0] == ws_name:
+            p = Path(*parts[1:]) if len(parts) > 1 else Path(".")
+
+        # Resolve within workspace
+        resolved = (ws / p).resolve()
+        if str(resolved).startswith(str(ws)):
+            return resolved
+        return None
+
+
+# ─── Tool functions ──────────────────────────────────────────────────────
+
+def observe_environment() -> str:
+    """Scan and describe the agent's workspace contents."""
+    cwd = _WORKSPACE_DIR if _WORKSPACE_DIR else Path.cwd()
+    items = []
+    try:
+        for entry in sorted(cwd.iterdir()):
+            if entry.name.startswith("."):
+                continue  # skip hidden files
+            entry_type = "dir" if entry.is_dir() else "file"
+            size = ""
+            if entry.is_file():
+                try:
+                    size = f" ({entry.stat().st_size} bytes)"
+                except OSError:
+                    pass
+            items.append(f"  [{entry_type}] {entry.name}{size}")
+    except PermissionError:
+        return f"工作区: {cwd}\n(无法列出内容 — 权限不足)"
+
+    header = f"🔒 隔离工作区: {cwd}\n内容:"
+    return header + "\n" + ("\n".join(items) if items else "  (空)") if items else header + "\n  (空)"
+
+
+def explore_directory(path: str = ".") -> str:
+    """Recursively list files in a directory within the agent's workspace."""
+    target = _resolve_path(path)
+    if target is None:
+        return f"🔒 访问被拒绝: '{path}' 不在你的隔离工作区内。你只能探索自己的工作区目录。"
+    if not target.exists():
+        return f"路径不存在: {target}"
+    if not target.is_dir():
+        return f"不是目录: {target}"
+
+    output = [f"目录树: {target}"]
+    for root, dirs, files in os.walk(target):
+        level = len(Path(root).relative_to(target).parts)
+        indent = "  " * level
+        dir_name = Path(root).name or str(root)
+        output.append(f"{indent}[{dir_name}/]")
+        for f in files:
+            if f.startswith("."):
+                continue
+            output.append(f"{indent}  {f}")
+        if level >= 3:  # limit depth
+            output.append(f"{indent}  ... (已达最大深度)")
+            dirs.clear()
+    return "\n".join(output)
+
+
+def read_file(path: str) -> str:
+    """Read a file within the agent's workspace (or a whitelisted project file)."""
+    target = _resolve_path(path, for_write=False)
+    if target is None:
+        return (f"🔒 访问被拒绝: '{path}' 不在你的隔离工作区内。\n"
+                f"   你只能读取工作区 ({_WORKSPACE_DIR}) 内的文件。\n"
+                f"   项目源代码对你不可见。")
+    if not target.exists():
+        return (f"文件未找到: '{path}'\n"
+                f"   (路径解析为工作区内: {target})\n"
+                f"   项目源代码在你的工作区之外，无法被访问。")
+    try:
+        content = target.read_text(encoding="utf-8")
+        if len(content) > 5000:
+            content = content[:5000] + f"\n... [已截断, 共 {len(content)} 字符]"
+        return content
+    except UnicodeDecodeError:
+        return f"无法读取 {path}: 不是文本文件 (二进制)"
+    except PermissionError:
+        return f"无法读取 {path}: 权限不足"
+
+
+def write_file(path: str, content: str) -> str:
+    """Write content to a file within the agent's workspace. ONLY."""
+    target = _resolve_path(path, for_write=True)
+    if target is None:
+        return (f"🔒 写入被拒绝: '{path}' 不在你的隔离工作区内。\n"
+                f"   所有文件写入必须在你自己的工作区 ({_WORKSPACE_DIR}) 内进行。\n"
+                f"   项目源代码不能被修改。")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        target.write_text(content, encoding="utf-8")
+        return f"文件已写入: {target} ({len(content)} 字符)"
+    except Exception as e:
+        return f"写入失败 {path}: {e}"
+
+
+def web_fetch(url: str) -> str:
+    """Fetch content from a URL and return as text."""
+    try:
+        import requests
+    except ImportError:
+        return "Cannot fetch URL: 'requests' library not installed."
+    try:
+        resp = requests.get(url, timeout=15, headers={"User-Agent": "Tao-Agent/0.1"})
+        resp.raise_for_status()
+        content = resp.text[:8000]
+        return f"Fetched {url} (status {resp.status_code}, {len(resp.text)} bytes):\n\n{content}"
+    except Exception as e:
+        return f"Failed to fetch {url}: {e}"
+
+
+def web_search(query: str, max_results: int = 5) -> str:
+    """Search the web using DuckDuckGo."""
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        try:
+            from duckduckgo_search import DDGS
+        except ImportError:
+            return "Cannot search web: 'ddgs' library not installed."
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=max_results))
+        if not results:
+            return f"No results found for: {query}"
+        output = [f"Web search results for '{query}':"]
+        for i, r in enumerate(results, 1):
+            output.append(f"  {i}. {r.get('title', 'N/A')}")
+            output.append(f"     {r.get('href', 'N/A')}")
+            output.append(f"     {r.get('body', 'N/A')[:200]}")
+        return "\n".join(output)
+    except Exception as e:
+        return f"Search failed: {e}"
+
+
+def execute_code(code: str, timeout: int = 30) -> str:
+    """Execute arbitrary Python code in a workspace-sandboxed environment.
+
+    All file writes are redirected to the agent's workspace. File reads outside
+    the workspace raise PermissionError. This prevents agent code from leaking
+    files into the project directory.
+
+    Standard library imports are allowed via a whitelist so the agent can
+    write and test meaningful code (json, pathlib, datetime, etc.).
+    """
+    import sys
+    import builtins as _builtins
+    from io import StringIO
+    from pathlib import Path as _PathLibPath
+
+    old_stdout = sys.stdout
+    sys.stdout = StringIO()
+
+    ws = _WORKSPACE_DIR.resolve() if _WORKSPACE_DIR else None
+    _original_open = _builtins.open
+    _original_import = _builtins.__import__
+
+    # Stdlib whitelist for execute_code sandbox
+    _STDLIB_WHITELIST = frozenset({
+        "json", "re", "pathlib", "datetime", "collections", "functools",
+        "itertools", "math", "statistics", "textwrap", "hashlib",
+        "uuid", "random", "typing", "dataclasses", "enum", "string",
+        "decimal", "fractions", "numbers", "copy", "pprint", "time",
+        "io", "csv", "base64", "binascii", "html", "xml", "urllib.parse",
+        "tain_agent.core.time_utils",
+    })
+
+    def _sandboxed_import(name, *args, **kwargs):
+        if name in _STDLIB_WHITELIST or name.startswith("tain_agent."):
+            return _original_import(name, *args, **kwargs)
+        raise ImportError(
+            f"Module '{name}' is not in the execute_code whitelist. "
+            f"Allowed: {sorted(_STDLIB_WHITELIST)}"
+        )
+
+    if ws:
+        # ── Sandboxed open() ──────────────────────────────────────────
+        def _sandboxed_open(file, mode='r', *args, **kwargs):
+            p = _PathLibPath(file)
+            p = p.resolve() if p.is_absolute() else (_PathLibPath.cwd() / p).resolve()
+
+            if any(c in mode for c in ('w', 'a', 'x')):
+                # Writes outside workspace → redirect to workspace/files/
+                if not str(p).startswith(str(ws)):
+                    rel = str(p).lstrip('/')
+                    p = ws / 'files' / 'sandbox_redirects' / rel
+                    p.parent.mkdir(parents=True, exist_ok=True)
+                return _original_open(str(p), mode, *args, **kwargs)
+
+            # Reads outside workspace → deny
+            if not str(p).startswith(str(ws)):
+                raise PermissionError(
+                    f"🔒 访问被拒绝: '{file}' 不在你的隔离工作区内。"
+                    f"项目源代码不可访问。"
+                )
+            return _original_open(str(p), mode, *args, **kwargs)
+
+        # ── Sandboxed Path class ──────────────────────────────────────
+        # Replaces pathlib.Path in the executed code so that write_text,
+        # open, mkdir, touch are all workspace-scoped.
+        class SandboxedPath(_PathLibPath):
+            def write_text(self, data, encoding=None, errors=None):
+                p = self.resolve()
+                if not str(p).startswith(str(ws)):
+                    rel = str(p).lstrip('/')
+                    p = ws / 'files' / 'sandbox_redirects' / rel
+                    p.parent.mkdir(parents=True, exist_ok=True)
+                return _PathLibPath.write_text(p, data, encoding=encoding, errors=errors)
+
+            def open(self, mode='r', buffering=-1, encoding=None, errors=None, newline=None):
+                p = self.resolve()
+                if not str(p).startswith(str(ws)):
+                    if any(c in mode for c in ('w', 'a', 'x')):
+                        rel = str(p).lstrip('/')
+                        p = ws / 'files' / 'sandbox_redirects' / rel
+                        p.parent.mkdir(parents=True, exist_ok=True)
+                    else:
+                        raise PermissionError(
+                            f"🔒 访问被拒绝: '{self}' 不在你的隔离工作区内。"
+                        )
+                return _PathLibPath.open(p, mode, buffering=buffering,
+                                        encoding=encoding, errors=errors, newline=newline)
+
+            def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+                p = self.resolve()
+                if not str(p).startswith(str(ws)):
+                    rel = str(p).lstrip('/')
+                    p = ws / 'files' / 'sandbox_redirects' / rel
+                return _PathLibPath.mkdir(p, mode=mode, parents=parents, exist_ok=exist_ok)
+
+            def touch(self, mode=0o666, exist_ok=True):
+                p = self.resolve()
+                if not str(p).startswith(str(ws)):
+                    rel = str(p).lstrip('/')
+                    p = ws / 'files' / 'sandbox_redirects' / rel
+                    p.parent.mkdir(parents=True, exist_ok=True)
+                return _PathLibPath.touch(p, mode=mode, exist_ok=exist_ok)
+
+        # Build sandboxed builtins dict
+        sandboxed_builtins = {}
+        for name in dir(_builtins):
+            if name.startswith('_') and name not in ('__name__', '__doc__'):
+                continue
+            try:
+                sandboxed_builtins[name] = getattr(_builtins, name)
+            except AttributeError:
+                pass
+        sandboxed_builtins['open'] = _sandboxed_open
+        sandboxed_builtins['__import__'] = _sandboxed_import
+
+        exec_globals = {
+            "__builtins__": sandboxed_builtins,
+            "Path": SandboxedPath,
+        }
+    else:
+        exec_globals = {"__builtins__": __builtins__}
+
+    try:
+        exec(code, exec_globals)
+        output = sys.stdout.getvalue()
+        return output if output else "(code executed, no output)"
+    except Exception as e:
+        return f"Code execution error: {e}"
+    finally:
+        sys.stdout = old_stdout
+
+
+def get_current_time() -> str:
+    """Get the current time in the configured timezone (Asia/Shanghai)."""
+    return now().isoformat()
+
+
+def list_available_tools(tool_registry) -> str:
+    """List all tools currently available in the registry."""
+    tools = tool_registry.list_tools()
+    lines = [f"Available tools ({len(tools)}):"]
+    for name, info in tools.items():
+        lines.append(f"  • {name}: {info['description']}")
+    return "\n".join(lines)
+
+
+def register_primal_tools(registry, workspace_dir: str = None) -> None:
+    """Register all primal tools with the given registry.
+
+    Args:
+        registry: ToolRegistry instance.
+        workspace_dir: Path to agent's isolated workspace. All file I/O
+                       is scoped to this directory.
+    """
+    global _WORKSPACE_DIR
+    if workspace_dir:
+        _WORKSPACE_DIR = Path(workspace_dir).resolve()
+        _WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+
+    registry.register(
+        "observe_environment", observe_environment,
+        "Scan YOUR isolated workspace directory. You can only see files "
+        "within your own workspace — project source code is invisible to you.",
+    )
+    registry.register(
+        "explore_directory", explore_directory,
+        "Recursively list files and directories within YOUR workspace. "
+        "You cannot explore outside your workspace.",
+        {"path": {"type": "string", "description": "Path within your workspace.", "required": False}},
+    )
+    registry.register(
+        "read_file", read_file,
+        "Read a file from YOUR workspace. You can only read files inside "
+        "your isolated workspace. Project source code is not accessible.",
+        {"path": {"type": "string", "description": "Path within your workspace.", "required": True}},
+    )
+    registry.register(
+        "write_file", write_file,
+        "Write content to a file in YOUR workspace. All your products, "
+        "knowledge, and creations must live here. You CANNOT modify project source.",
+        {
+            "path": {"type": "string", "description": "Path within your workspace to write to.", "required": True},
+            "content": {"type": "string", "description": "Content to write.", "required": True},
+        },
+    )
+    registry.register(
+        "web_fetch", web_fetch,
+        "Fetch content from a URL. Use this to read web pages, APIs, or any HTTP resource.",
+        {"url": {"type": "string", "description": "The URL to fetch.", "required": True}},
+    )
+    registry.register(
+        "web_search", web_search,
+        "Search the internet using DuckDuckGo. Returns titles, URLs, and snippets.",
+        {
+            "query": {"type": "string", "description": "Search query.", "required": True},
+            "max_results": {
+                "type": "integer", "description": "Max number of results.", "required": False,
+            },
+        },
+    )
+    registry.register(
+        "execute_code", execute_code,
+        "Execute Python code and return its output. Use this to compute, test, or create new capabilities.",
+        {
+            "code": {"type": "string", "description": "Python code to execute.", "required": True},
+            "timeout": {"type": "integer", "description": "Max seconds.", "required": False},
+        },
+    )
+    registry.register(
+        "get_current_time", get_current_time,
+        "Get the current UTC time in ISO 8601 format.",
+    )

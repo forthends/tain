@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+
+# Virtual environment
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Tain Agent Framework — runtime state (not source)
+tain_agent/logs/
+tain_agent/tools/forged/*.bak.*
+tain_agent/tools/forged/*.meta.json
+
+# Agent session artifacts (generated at runtime)
+*.bak.*
+dashboards/
+session_close_*.md
+
+# Agent runtime logs at project root (leaked from workspace before fix)
+logs/
+
+# Agent runtime state (generated)
+epochs/
+fingerprints/
+goals_registry.json
+knowledge/.vector_index.json
+knowledge/.versions/
+
+# Agent version files (runtime artifacts, leaked from workspace)
+version.json
+tain_agent/version.json
+
+# Agent metrics snapshots (runtime artifacts)
+tain_agent/state/metrics_snapshots/
+
+# Agent workspace — isolated sandbox, never committed to repo
+agent_workspace/
+
+# Claude Code
+.claude/
+
+# Environment secrets (contains API keys)
+.env
+.env.*

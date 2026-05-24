@@ -1,0 +1,141 @@
+# Tain Agent Framework Configuration
+# 道生一，一生二，二生三，三生万物
+
+# ── Framework ──────────────────────────────────────────────────────────
+framework:
+  version: "0.4.0"
+  min_agent_version: "0.0.1"
+
+# ── Agent defaults ─────────────────────────────────────────────────────
+agent:
+  default_agent: "default"           # default agent name when not specified via CLI
+  timezone: "Asia/Shanghai"          # IANA timezone name (e.g. UTC, Asia/Shanghai, America/New_York)
+
+# ── Agent Workspace Isolation ──────────────────────────────────────────
+# Each agent operates in complete isolation from the project source code.
+# Agents cannot read or modify files outside their workspace.
+# All products, state, knowledge, and self-modifications live here.
+agent_workspace:
+  dir: "agent_workspace"             # relative to project root — root for ALL agents
+  auto_create: true                  # create on startup if missing
+
+llm:
+  provider: "minimax"            # anthropic | deepseek | openai | minimax
+  model: "MiniMax-M2.7"
+  max_tokens: 8192
+  api_key_env: "MINIMAX_API_KEY"
+  base_url: "https://api.minimaxi.com/anthropic"
+  # ── Alternatives ──
+  # DeepSeek via OpenAI-compatible:
+  #   provider: deepseek, model: deepseek-v4-pro, api_key_env: DEEPSEEK_API_KEY, base_url: https://api.deepseek.com/anthropic
+  # Anthropic native:
+  #   provider: anthropic, model: claude-sonnet-4-6-20250514, api_key_env: ANTHROPIC_API_KEY, (no base_url)
+  # MiniMax via Anthropic-compatible (recommended, supports thinking blocks):
+  #   provider: minimax, model: MiniMax-M2.7, api_key_env: MINIMAX_API_KEY, base_url: https://api.minimaxi.com/anthropic
+
+bootstrap:
+  # Maximum cycles for the environment exploration phase
+  max_exploration_cycles: 10
+  # Maximum cycles for self-definition phase
+  max_definition_cycles: 5
+  # Minimum cycles before phase transition (Phase 2: identity from action)
+  min_bootstrap_cycles: 5
+  # Minimum action categories needed (observation, creation, reflection)
+  min_action_categories: 2
+
+# ── Phase 2: Environment Diversity ────────────────────────────────────
+# Each agent instance gets different initial conditions, ensuring that
+# two agents on different machines naturally develop different identities.
+diversity:
+  # Random seed — different seed = different tool distribution, trial order, drive values
+  # Set to "random" for a random seed each run, or a specific integer for reproducibility
+  seed: "random"
+
+  # Tool distribution bias: weights are relative, not absolute.
+  # The agent still gets all primal tools, but some are emphasized.
+  tool_bias:
+    observation: 1.0    # baseline weight for read/search/explore tools
+    creation: 1.0       # baseline weight for write/forge/execute tools
+    reflection: 1.0     # baseline weight for personality/goal tools
+
+  # Knowledge seeds: pre-populate the agent's knowledge garden with themed content.
+  # An empty list means start with a blank garden.
+  knowledge_seeds: []   # e.g. ["philosophy", "computer_science", "art", "biology"]
+
+  # Constraint variations: limit certain capabilities to shape behavior
+  constraints:
+    allow_network: true       # set false to disable web_search/web_fetch
+    allow_file_write: true    # set false to make file system read-only
+    allow_forge: true         # set false to disable tool creation
+
+# ── Phase 2: Intrinsic Drives ─────────────────────────────────────────
+# Drive intensities are randomly initialized if not specified.
+# Each drive pushes the agent toward different behavior patterns.
+drives:
+  # Strength values (0.0–1.0). Omit any for random initialization.
+  # curiosity: 0.7   # explore new domains, learn new things
+  # mastery: 0.5     # deepen existing capabilities
+  # creation: 0.6    # forge new tools, generate knowledge
+  # conservation: 0.3 # optimize, maintain, curate existing assets
+
+  # Exploration engine parameters
+  exploration:
+    curiosity_bonus_rate: 0.05    # bonus increase per idle cycle
+    max_curiosity_bonus: 0.30     # cap for curiosity-driven exploration
+    novelty_weight: 0.20          # weight of unexplored-space bonus
+    idle_pressure_rate: 0.10      # pressure increase per day of inactivity
+    max_idle_pressure: 0.40       # cap for idle pressure
+
+# ── Phase 2: Evolution Metrics ──────────────────────────────────────
+# Quantitative self-evaluation system for tracking evolution quality.
+metrics:
+  # Alert threshold: how much a metric must decline (in %) to trigger an alert
+  degradation_alert_threshold: 0.15   # 15% decline triggers warning
+  # Auto-collect metrics on each evolve_report
+  auto_collect_on_report: true
+  # Snapshot storage directory
+  snapshot_dir: "tain_agent/state/metrics_snapshots"
+
+# ── Phase 2: External World ────────────────────────────────────────────
+# Breaks the closed self-referential system by connecting to external data.
+external_world:
+  enabled: true
+  apis:
+    - name: hackernews
+      type: rest
+      endpoint: "https://hacker-news.firebaseio.com/v0/topstories.json"
+      schedule: "0 */6 * * *"
+      description: "Hacker News top stories for tech trend awareness"
+      max_calls_per_hour: 10
+      max_calls_per_day: 100
+    - name: github_trending
+      type: rest
+      endpoint: "https://api.github.com/search/repositories"
+      schedule: "0 */6 * * *"
+      description: "GitHub trending repositories"
+      max_calls_per_hour: 10
+      max_calls_per_day: 100
+      headers:
+        Accept: "application/vnd.github.v3+json"
+
+safety:
+  # Directories the agent cannot modify via self-modification
+  protected_paths:
+    - "tain_agent/decision_log.py"
+    - "tain_agent/core/agent.py"  # bootstrap protocol (v0.2: refactored)
+    - "tain_agent/core/bootstrap.py"  # tool registration (v0.2: extracted)
+    - "tain_agent/core/conversation.py"  # history + checkpoint (v0.2: new)
+    - "tain_agent/evolution/self_modify.py"  # safety gate
+    - "tain_agent/evolution/lineage.py"  # lineage tracking (v0.2.1: new)
+    - "config.yaml"  # configuration integrity
+    - "tain_agent/tools/forge.py"  # tool creation safety gate
+    - "tain_agent/tools/registry.py"  # timeout-protected execution (v0.1.1)
+  # Require confirmation for destructive actions
+  confirm_destructive: false
+
+logging:
+  directory: "tain_agent/logs"
+  decision_log_file: "decisions.jsonl"
+  memory_file: "memory.json"
+  checkpoint_file: "conversation_checkpoint.json"
+  lineage_file: "lineage.jsonl"
