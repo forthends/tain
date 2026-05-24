@@ -1,0 +1,49 @@
+<!-- Tools Tab -->
+<div>
+    <p class="text-sm text-gray-500 mb-4">{{ tools|length }} forged tools</p>
+
+    {% if tools %}
+    <div class="space-y-2">
+        {% for tool in tools %}
+        <div x-data="{open: false}" class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <div @click="open = !open" class="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50 transition-colors">
+                <div>
+                    <span class="font-mono text-sm font-medium text-gray-900">{{ tool.name }}</span>
+                    <span class="text-xs text-gray-400 ml-3">{{ tool.description[:80] }}{% if tool.description|length > 80 %}...{% endif %}</span>
+                </div>
+                <svg :class="{'rotate-180': open}" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </div>
+            <div x-show="open" class="border-t border-gray-100 p-3 bg-gray-50">
+                <p class="text-sm text-gray-600 mb-2">{{ tool.description }}</p>
+                {% if tool.parameters and tool.parameters.get('properties') %}
+                <div class="mb-2">
+                    <span class="text-xs font-semibold text-gray-500">Parameters:</span>
+                    <div class="mt-1 space-y-1">
+                        {% for pname, pinfo in tool.parameters.properties.items() %}
+                        <span class="inline-block text-xs bg-white border border-gray-200 rounded px-2 py-0.5 mr-1 mb-1">
+                            {{ pname }}
+                            <span class="text-gray-400">({{ pinfo.get('type', 'any') }})</span>
+                            {% if pname in tool.parameters.get('required', []) %}
+                            <span class="text-red-400">*</span>
+                            {% endif %}
+                        </span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                {% if tool.source %}
+                <details class="mt-2">
+                    <summary class="text-xs text-blue-500 cursor-pointer hover:text-blue-600">View Source</summary>
+                    <pre class="code-block mt-2 text-xs"><code>{{ tool.source }}</code></pre>
+                </details>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-gray-400 text-sm">No forged tools yet.</p>
+    {% endif %}
+</div>

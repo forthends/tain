@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ agent.name }} — Tain Agent Framework{% endblock %}
+
+{% block content %}
+<div class="bg-white border-b border-gray-200 px-6 py-4">
+    <div class="flex items-center justify-between">
+        <div>
+            <a href="/" class="text-sm text-gray-400 hover:text-blue-500 transition-colors">← Dashboard</a>
+            <div class="flex items-center gap-3 mt-1">
+                <span class="status-dot {{ 'status-running' if agent.status == 'running' else 'status-stopped' }}"></span>
+                <h1 class="text-xl font-bold text-gray-900">{{ agent.name }}</h1>
+                {% if agent.role %}<span class="text-gray-500">{{ agent.role }}</span>{% endif %}
+            </div>
+            <div class="text-xs text-gray-400 mt-1">
+                v{{ agent.version }} · {{ agent.tool_count }} tools · {{ agent.cycle_count }} cycles · {{ agent.evolution_mode }}
+            </div>
+        </div>
+        <div class="flex gap-2" id="agent-controls">
+            {% if agent.status == 'running' %}
+            <button hx-post="/api/agent/{{ agent.name }}/stop"
+                    hx-target="#agent-controls" hx-swap="outerHTML"
+                    class="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition-colors">
+                Stop
+            </button>
+            <button hx-post="/api/agent/{{ agent.name }}/restart"
+                    hx-target="#agent-controls" hx-swap="outerHTML"
+                    class="px-4 py-2 bg-yellow-500 text-white text-sm rounded-lg hover:bg-yellow-600 transition-colors">
+                Restart
+            </button>
+            {% else %}
+            <button hx-post="/api/agent/{{ agent.name }}/start"
+                    hx-target="#agent-controls" hx-swap="outerHTML"
+                    class="px-4 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 transition-colors">
+                Start
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <nav class="flex gap-6 mt-4" id="tab-nav">
+        {% set tabs = [
+            ('overview', 'Overview'),
+            ('chat', 'Chat'),
+            ('tools', 'Tools'),
+            ('evolution', 'Evolution'),
+            ('decisions', 'Decisions'),
+            ('personality', 'Personality'),
+            ('knowledge', 'Knowledge'),
+        ] %}
+        {% for tab_id, tab_label in tabs %}
+        <a href="/agent/{{ agent.name }}?tab={{ tab_id }}"
+           class="text-sm pb-2 border-b-2 transition-colors {{ 'tab-active' if tab == tab_id else 'tab-inactive border-transparent' }}"
+           hx-get="/agent/{{ agent.name }}?tab={{ tab_id }}"
+           hx-target="#tab-content" hx-swap="innerHTML"
+           hx-push-url="true">
+            {{ tab_label }}
+        </a>
+        {% endfor %}
+    </nav>
+</div>
+
+<!-- Tab content -->
+<div id="tab-content" class="p-6" hx-get="/agent/{{ agent.name }}/tab/{{ tab }}" hx-trigger="load">
+</div>
+{% endblock %}

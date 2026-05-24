@@ -1,0 +1,32 @@
+<!-- Knowledge Tab -->
+<div class="flex gap-4">
+    <!-- File tree -->
+    <div class="w-64 flex-shrink-0">
+        <div class="bg-white rounded-lg border border-gray-200 p-3">
+            <h3 class="text-xs font-semibold text-gray-500 uppercase mb-2">Files</h3>
+            {% if files %}
+            <div class="space-y-0.5">
+                {% for f in files %}
+                <button hx-get="/api/agent/{{ agent.name }}/knowledge/content?path={{ f.path|urlencode }}"
+                        hx-target="#knowledge-content"
+                        class="block w-full text-left text-sm px-2 py-1 rounded hover:bg-gray-100 transition-colors truncate"
+                        title="{{ f.path }}">
+                    <span class="text-xs text-gray-400 mr-1">{{ f.directory }}/</span>
+                    {{ f.name }}
+                    <span class="text-xs text-gray-400 ml-1">{{ "%.1f"|format(f.size / 1024) }}KB</span>
+                </button>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-xs text-gray-400">No knowledge files.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Content preview -->
+    <div class="flex-1">
+        <div id="knowledge-content" class="bg-white rounded-lg border border-gray-200 p-4 min-h-[400px]">
+            <p class="text-gray-400 text-sm">Select a file to view its content.</p>
+        </div>
+    </div>
+</div>
