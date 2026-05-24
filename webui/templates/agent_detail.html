@@ -15,26 +15,7 @@
                 v{{ agent.version }} · {{ agent.tool_count }} tools · {{ agent.cycle_count }} cycles · {{ agent.evolution_mode }}
             </div>
         </div>
-        <div class="flex gap-2" id="agent-controls">
-            {% if agent.status == 'running' %}
-            <button hx-post="/api/agent/{{ agent.name }}/stop"
-                    hx-target="#agent-controls" hx-swap="outerHTML"
-                    class="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition-colors">
-                Stop
-            </button>
-            <button hx-post="/api/agent/{{ agent.name }}/restart"
-                    hx-target="#agent-controls" hx-swap="outerHTML"
-                    class="px-4 py-2 bg-yellow-500 text-white text-sm rounded-lg hover:bg-yellow-600 transition-colors">
-                Restart
-            </button>
-            {% else %}
-            <button hx-post="/api/agent/{{ agent.name }}/start"
-                    hx-target="#agent-controls" hx-swap="outerHTML"
-                    class="px-4 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 transition-colors">
-                Start
-            </button>
-            {% endif %}
-        </div>
+        {% include "components/agent_controls.html" %}
     </div>
 
     <!-- Tabs -->

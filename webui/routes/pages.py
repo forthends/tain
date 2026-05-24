@@ -128,3 +128,56 @@ async def agent_tab(request: Request, name: str, tab: str):
         })
     else:
         return HTMLResponse("<p class='p-6 text-gray-400'>Unknown tab.</p>", status_code=404)
+
+
+@router.post("/agent/{name}/controls/start", response_class=HTMLResponse)
+async def agent_control_start(request: Request, name: str):
+    import subprocess, sys
+    supervisor = str(Path(__file__).resolve().parent.parent.parent / "supervise_agent.py")
+    subprocess.run(
+        [sys.executable, supervisor, "--agent-name", name, "--daemon", "--"],
+        capture_output=True, text=True,
+    )
+    import time
+    time.sleep(0.5)
+    agent = get_agent(name)
+    return _render("components/agent_controls.html", {
+        "request": request, "agent": agent or {"name": name, "status": "unknown"},
+    })
+
+
+@router.post("/agent/{name}/controls/stop", response_class=HTMLResponse)
+async def agent_control_stop(request: Request, name: str):
+    import subprocess, sys
+    supervisor = str(Path(__file__).resolve().parent.parent.parent / "supervise_agent.py")
+    subprocess.run(
+        [sys.executable, supervisor, "--agent-name", name, "--stop"],
+        capture_output=True, text=True,
+    )
+    import time
+    time.sleep(0.5)
+    agent = get_agent(name)
+    return _render("components/agent_controls.html", {
+        "request": request, "agent": agent or {"name": name, "status": "unknown"},
+    })
+
+
+@router.post("/agent/{name}/controls/restart", response_class=HTMLResponse)
+async def agent_control_restart(request: Request, name: str):
+    import subprocess, sys
+    supervisor = str(Path(__file__).resolve().parent.parent.parent / "supervise_agent.py")
+    subprocess.run(
+        [sys.executable, supervisor, "--agent-name", name, "--stop"],
+        capture_output=True, text=True,
+    )
+    import time
+    time.sleep(1)
+    subprocess.run(
+        [sys.executable, supervisor, "--agent-name", name, "--daemon", "--"],
+        capture_output=True, text=True,
+    )
+    time.sleep(0.5)
+    agent = get_agent(name)
+    return _render("components/agent_controls.html", {
+        "request": request, "agent": agent or {"name": name, "status": "unknown"},
+    })
