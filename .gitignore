@@ -40,8 +40,8 @@ knowledge/.versions/
 version.json
 tain_agent/version.json
 
-# Agent metrics snapshots (runtime artifacts)
-tain_agent/state/metrics_snapshots/
+# Agent state (runtime artifacts)
+tain_agent/state/
 
 # Agent workspace — isolated sandbox, never committed to repo
 agent_workspace/
