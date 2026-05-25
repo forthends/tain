@@ -197,7 +197,7 @@ def get_agent_personality(name: str) -> dict | None:
 
 def get_agent_knowledge(name: str) -> list[dict]:
     entries = []
-    for subdir in ("knowledge", "files"):
+    for subdir in ("knowledge", "files", "poetry", "journal", "commitments"):
         d = WORKSPACE_ROOT / name / subdir
         if not d.exists():
             continue

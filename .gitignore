@@ -48,6 +48,7 @@ agent_workspace/
 
 # Agent workspace leaks (should never be at project root)
 rag_index/
+rag_storage/
 
 # Claude Code
 .claude/

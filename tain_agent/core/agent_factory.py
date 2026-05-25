@@ -27,10 +27,7 @@ AGENT_NAME_PATTERN = r"^[a-z][a-z0-9_-]{0,31}$"
 RESERVED_NAMES = frozenset({"_registry", "_messages", "_system"})
 
 # Subdirectories created inside each agent workspace
-AGENT_WORKSPACE_SUBDIRS = [
-    "logs", "logs/conversations",
-    "forged_tools", "reports", "files", "state", "knowledge",
-]
+from tain_agent.storage_registry import WORKSPACE_DIRS as AGENT_WORKSPACE_SUBDIRS
 
 
 class AgentFactory:

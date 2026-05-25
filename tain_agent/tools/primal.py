@@ -343,6 +343,32 @@ def execute_code(code: str, timeout: int = 30) -> str:
         sys.stdout = old_stdout
 
 
+def resolve_storage_path(content_type: str, filename: str) -> str:
+    """Resolve a semantic content type + filename to a workspace path.
+
+    Instead of inventing your own directory structure, use this tool to get
+    the canonical path for any artifact you create.
+
+    Content types: poem, knowledge, concept, journal, reflection, report,
+    milestone, commitment, goal, tool, test, note, creative, capture, letter, general.
+
+    Examples:
+      resolve_storage_path("poem", "spring.md")   → poetry/spring.md
+      resolve_storage_path("knowledge", "zen.md") → knowledge/zen.md
+      resolve_storage_path("journal", "2026-05.md") → journal/2026-05.md
+      resolve_storage_path("report", "v0.5.0.md") → reports/v0.5.0.md
+    """
+    from tain_agent.storage_registry import resolve_content_path, get_schema_description
+    ws = _WORKSPACE_DIR
+    if ws is None:
+        ws = Path(os.environ.get("WORKSPACE_PATH", "."))
+    target = resolve_content_path(ws, content_type, filename)
+    return (
+        f"Resolved path: {target.relative_to(ws)}\n\n"
+        f"{get_schema_description()}"
+    )
+
+
 def get_current_time() -> str:
     """Get the current time in the configured timezone (Asia/Shanghai)."""
     return now().isoformat()
@@ -422,4 +448,24 @@ def register_primal_tools(registry, workspace_dir: str = None) -> None:
     registry.register(
         "get_current_time", get_current_time,
         "Get the current UTC time in ISO 8601 format.",
+    )
+    registry.register(
+        "resolve_storage_path", resolve_storage_path,
+        "Get the canonical workspace path for a content type. "
+        "Use this whenever you write files — instead of inventing your own "
+        "directory structure. Content types: poem, knowledge, concept, "
+        "journal, reflection, report, milestone, commitment, goal, tool, "
+        "test, note, creative, capture, letter, general.",
+        {
+            "content_type": {
+                "type": "string",
+                "description": "Semantic content type (e.g. poem, knowledge, journal, report).",
+                "required": True,
+            },
+            "filename": {
+                "type": "string",
+                "description": "The filename to write (e.g. spring.md).",
+                "required": True,
+            },
+        },
     )
