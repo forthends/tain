@@ -2,16 +2,18 @@
 <div>
     <div class="flex items-center gap-3 mb-4">
         <span class="text-sm text-gray-500">Filter:</span>
-        <select name="phase" hx-get="/api/agent/{{ agent.name }}/decisions?limit=20"
-                hx-target="#decisions-list" hx-trigger="change"
+        <select name="phase" hx-get="/agent/{{ agent.name }}/decisions-list?limit=20"
+                hx-target="#decisions-content" hx-trigger="change"
+                hx-include="[name='phase'],[name='type']"
                 class="text-sm border border-gray-300 rounded px-2 py-1">
             <option value="">All phases</option>
             <option value="bootstrap">bootstrap</option>
             <option value="self_define">self_define</option>
             <option value="evolve">evolve</option>
         </select>
-        <select name="type" hx-get="/api/agent/{{ agent.name }}/decisions?limit=20"
-                hx-target="#decisions-list" hx-trigger="change"
+        <select name="type" hx-get="/agent/{{ agent.name }}/decisions-list?limit=20"
+                hx-target="#decisions-content" hx-trigger="change"
+                hx-include="[name='phase'],[name='type']"
                 class="text-sm border border-gray-300 rounded px-2 py-1">
             <option value="">All types</option>
             <option value="tool_call">tool_call</option>
@@ -22,17 +24,7 @@
         </select>
     </div>
 
-    <p class="text-xs text-gray-400 mb-3">Showing {{ decisions|length }} of {{ total }} decisions</p>
-
-    <div id="decisions-list" class="space-y-3">
-        {% include "components/decision_entry.html" %}
+    <div id="decisions-content">
+        {% include "components/decisions_list.html" %}
     </div>
-
-    {% if decisions|length >= limit %}
-    <button hx-get="/api/agent/{{ agent.name }}/decisions?limit=20&offset={{ offset + limit }}"
-            hx-target="#decisions-list" hx-swap="beforeend"
-            class="mt-3 text-sm text-blue-500 hover:text-blue-600">
-        Load More...
-    </button>
-    {% endif %}
 </div>

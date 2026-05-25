@@ -1,56 +1,133 @@
-<!-- Chat Tab -->
-<div x-data="chatApp('{{ agent.name }}')" class="max-w-3xl">
-    <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
-        <!-- Messages area -->
-        <div id="chat-messages" class="p-4 h-96 overflow-y-auto space-y-3" x-ref="messages">
+<!-- Chat Tab — unbounded, full-height design -->
+<div x-data="chatApp('{{ agent.name }}')" class="flex flex-col h-full -m-6">
+    <!-- Messages area -->
+    <div id="chat-messages" class="flex-1 overflow-y-auto" x-ref="messages">
+        <div class="max-w-3xl mx-auto px-6 py-6 space-y-6">
             <template x-for="msg in messages" :key="msg.message_id">
-                <div :class="msg.from_agent === 'web_user' ? 'flex justify-end' : 'flex justify-start'">
-                    <div :class="msg.from_agent === 'web_user' ? 'message-human' : 'message-agent'"
-                         class="max-w-[80%] px-4 py-2 text-sm">
-                        <p x-text="msg.from_agent === 'web_user' ? 'You' : '{{ agent.name }}'"
-                           class="text-xs text-gray-400 mb-1"></p>
-                        <div class="whitespace-pre-wrap" x-text="msg.content"></div>
-                        <p class="text-xs text-gray-400 mt-1" x-text="msg.timestamp?.slice(11, 16) || ''"></p>
+                <div :class="msg.from_agent === 'web_user' ? 'flex justify-end' : 'flex gap-3'">
+                    <!-- Avatar for agent -->
+                    <div x-show="msg.from_agent !== 'web_user'" class="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xs font-bold mt-0.5">
+                        {{ agent.name[:1].upper() }}
+                    </div>
+                    <div :class="msg.from_agent === 'web_user' ? 'max-w-[75%]' : 'flex-1 max-w-[85%]'">
+                        <div class="flex items-baseline gap-2 mb-0.5">
+                            <span x-show="msg.from_agent !== 'web_user'" class="text-sm font-semibold text-gray-800">{{ agent.name }}</span>
+                            <span class="text-xs text-gray-400 font-mono" x-text="msg.timestamp?.slice(11, 16) || ''"></span>
+                        </div>
+                        <div :class="msg.from_agent === 'web_user'
+                            ? 'bg-blue-50 text-gray-900 rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed'
+                            : 'text-gray-800 text-sm leading-relaxed'">
+                            <div :class="msg.from_agent === 'web_user' ? 'whitespace-pre-wrap' : 'markdown-body'"
+                                 x-html="msg.from_agent === 'web_user' ? escapeHtml(msg.content) : renderMd(msg.content)"></div>
+                        </div>
+                    </div>
+                    <!-- Avatar placeholder for user (right-aligned) -->
+                    <div x-show="msg.from_agent === 'web_user'" class="flex-shrink-0 w-7 h-7 rounded-full bg-gray-300 flex items-center justify-center text-white text-xs font-bold mt-0.5">
+                        Y
                     </div>
                 </div>
             </template>
-            <!-- Streaming message -->
-            <div x-show="streaming" class="flex justify-start">
-                <div class="message-agent max-w-[80%] px-4 py-2 text-sm">
-                    <p class="text-xs text-gray-400 mb-1">{{ agent.name }}</p>
-                    <div class="whitespace-pre-wrap" x-text="streamText"></div>
-                    <span class="inline-block w-2 h-4 bg-blue-500 animate-pulse ml-0.5 align-text-bottom"></span>
-                </div>
-            </div>
-            <!-- Tool indicator -->
-            <div x-show="toolName" class="flex justify-start">
-                <div class="bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 text-xs text-amber-700">
-                    <span x-text="'🔧 ' + toolName + (toolInput ? ' (' + toolInput + ')' : '')"></span>
-                </div>
-            </div>
-        </div>
 
-        <!-- Input area -->
-        <div class="border-t border-gray-200 p-3">
-            <form @submit.prevent="sendMessage" class="flex gap-2">
-                <input type="text" x-model="input" placeholder="Type your message..."
-                       class="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                       :disabled="streaming">
-                <button type="submit"
-                        class="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50"
-                        :disabled="streaming || !input.trim()">
-                    Send
-                </button>
-            </form>
+            <!-- ── Thinking / status indicator ── -->
+            <div x-show="status === 'thinking'" class="flex gap-3" x-cloak>
+                <div class="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xs font-bold mt-0.5">
+                    {{ agent.name[:1].upper() }}
+                </div>
+                <div class="flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-lg">
+                    <span class="flex gap-1">
+                        <span class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></span>
+                        <span class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style="animation-delay: 0.15s"></span>
+                        <span class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style="animation-delay: 0.30s"></span>
+                    </span>
+                    <span class="text-xs text-indigo-600 font-medium">思考中...</span>
+                </div>
+            </div>
+
+            <!-- ── Collapsible tool-call cards ── -->
+            <template x-for="(tool, idx) in activeTools" :key="idx">
+                <div class="flex gap-3">
+                    <div class="flex-shrink-0 w-7"></div>
+                    <div class="flex-1 max-w-[85%]">
+                        <div x-data="{ open: false }"
+                             class="border border-amber-200 rounded-lg overflow-hidden"
+                             :class="tool.done ? 'bg-amber-50/50' : 'bg-amber-50'">
+                            <button @click="open = !open"
+                                    class="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-amber-100/50 transition-colors">
+                                <span class="text-xs" x-text="tool.done ? '&#
+    x2713;' : '&#
+    x23F3;'">🔧</span>
+                                <span class="text-xs font-medium text-amber-800" x-text="tool.name"></span>
+                                <span class="text-xs text-amber-500 truncate flex-1" x-text="tool.input_preview"></span>
+                                <span x-show="tool.done" class="text-[10px] text-amber-400 font-medium">完成</span>
+                                <span x-show="!tool.done" class="text-[10px] text-amber-500 animate-pulse font-medium">执行中...</span>
+                                <svg :class="open ? 'rotate-180' : ''" class="w-3 h-3 text-amber-400 transition-transform flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                            <div x-show="open" x-collapse class="px-3 pb-2">
+                                <pre class="text-[11px] text-gray-500 bg-amber-50/50 rounded p-2 overflow-x-auto font-mono leading-relaxed" x-text="tool.input_preview"></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- ── Currently typing / streaming message ── -->
+            <div x-show="streaming && (streamText || (status === 'text'))" class="flex gap-3">
+                <div class="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xs font-bold mt-0.5">
+                    {{ agent.name[:1].upper() }}
+                </div>
+                <div class="flex-1 max-w-[85%]">
+                    <div class="flex items-baseline gap-2 mb-0.5">
+                        <span class="text-sm font-semibold text-gray-800">{{ agent.name }}</span>
+                    </div>
+                    <div class="text-gray-800 text-sm leading-relaxed">
+                        <div class="markdown-body" x-html="renderMd(streamText)"></div>
+                        <span class="inline-block w-1.5 h-4 bg-blue-500 animate-pulse ml-0.5 align-middle"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Empty state ── -->
+            <div x-show="messages.length === 0 && !streaming" class="flex flex-col items-center justify-center text-center py-16">
+                <div class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-2xl font-bold mb-4">
+                    {{ agent.name[:1].upper() }}
+                </div>
+                <h2 class="text-lg font-semibold text-gray-800 mb-1">{{ agent.name }}</h2>
+                {% if agent.role %}<p class="text-sm text-gray-500 mb-4">{{ agent.role }}</p>{% endif %}
+                <p class="text-sm text-gray-400 max-w-md">
+                    {% if agent.status == 'running' %}
+                    Agent is running and ready to chat.
+                    {% else %}
+                    Agent is currently stopped. Start the daemon for autonomous evolution, or chat using stored personality.
+                    {% endif %}
+                </p>
+            </div>
         </div>
     </div>
 
-    <p class="text-xs text-gray-400 mt-2">
-        {% if agent.status == 'running' %}
-        Agent is running — messages are processed in real time.
-        {% else %}
-        Agent is stopped — messages use stored personality and tools. Start the agent daemon for autonomous evolution.
-        {% endif %}
-    </p>
+    <!-- Input area — fixed at bottom -->
+    <div class="flex-shrink-0 border-t border-gray-200 bg-white">
+        <div class="max-w-3xl mx-auto px-6 py-4">
+            <form @submit.prevent="sendMessage" class="flex gap-3">
+                <input type="text" x-model="input" placeholder="Send a message..."
+                       class="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-shadow placeholder:text-gray-400"
+                       :disabled="streaming"
+                       @keydown.enter="sendMessage">
+                <button type="submit"
+                        class="px-5 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-40"
+                        :disabled="streaming || !input.trim()">
+                    <span x-show="!streaming">Send</span>
+                    <span x-show="streaming" class="flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 bg-white rounded-full animate-bounce"></span>
+                        <span class="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style="animation-delay:0.1s"></span>
+                        <span class="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style="animation-delay:0.2s"></span>
+                    </span>
+                </button>
+            </form>
+            <p class="text-xs text-gray-400 mt-2 text-center">
+                {{ agent.name }} replies with markdown · Responses are generated by {{ llm_provider }}/{{ llm_model }}
+            </p>
+        </div>
+    </div>
 </div>
-

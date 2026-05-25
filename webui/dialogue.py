@@ -8,6 +8,7 @@ with an async generator suitable for SSE streaming.
 import json
 import re
 import uuid
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import AsyncGenerator
 
@@ -51,21 +52,124 @@ def _make_msg_id() -> str:
     return f"msg_{uuid.uuid4().hex[:12]}"
 
 
+def _extract_xml_tool_calls(text: str) -> tuple[str, list]:
+    """Parse MiniMax-format XML tool calls from text.
+
+    DeepSeek V4 Flash and similar models output tool calls as XML text rather
+    than using native function-calling. This extracts them from the response.
+
+    Format:
+        some text...
+        <minimap:tool_calls>
+        <invoke name="tool_name">
+        <parameter name="param1">value1</parameter>
+        <parameter name="param2">{"json": "value"}</parameter>
+        </invoke>
+        </minimap:tool_calls>
+
+    Returns (prefix_text, list_of_ToolCall).
+    """
+    from tain_agent.core.llm import ToolCall
+
+    # Match any opening tag whose name ends in "tool_calls" — the namespace
+    # prefix varies per run (minimap:, ||DSML||, none, etc.).
+    pattern = r'<[^>]*?tool_calls>\s*(.*?)\s*</[^>]*?tool_calls>'
+    match = re.search(pattern, text, re.DOTALL)
+    if not match:
+        return text, []
+
+    prefix = text[:match.start()].rstrip()
+    xml_content = match.group(0)
+
+    # Strip hallucinated namespace prefixes so the XML becomes well-formed.
+    # Known forms: "minimap:", "||DSML||", "minimax:", empty.
+    clean_xml = re.sub(r'(</?)(?:[\w]+:|[\|｜]+[\w]+[\|｜]+)', r'\1', xml_content)
+    try:
+        root = ET.fromstring(clean_xml)
+    except ET.ParseError:
+        # Fallback: regex extraction when XML is too malformed to parse
+        tool_calls = _extract_tool_calls_regex_fallback(xml_content)
+        if tool_calls:
+            return prefix, tool_calls
+        return text, []
+
+    tool_calls = []
+    for invoke in root.findall('invoke'):
+        name = invoke.get('name', '')
+        params = {}
+        for param in invoke.findall('parameter'):
+            pname = param.get('name', '')
+            pvalue = (param.text or '').strip()
+            # Try to parse JSON values
+            if pvalue.startswith('{') or pvalue.startswith('['):
+                try:
+                    pvalue = json.loads(pvalue)
+                except json.JSONDecodeError:
+                    pass
+            params[pname] = pvalue
+        if name:
+            tool_calls.append(ToolCall(
+                id=f"xml_{uuid.uuid4().hex[:8]}",
+                name=name,
+                input=params,
+            ))
+
+    return prefix, tool_calls
+
+
+def _extract_tool_calls_regex_fallback(xml_text: str) -> list:
+    """Regex-based tool call extraction when XML is too malformed to parse."""
+    from tain_agent.core.llm import ToolCall
+
+    tool_calls = []
+    for m in re.finditer(
+        r'<[^>]*?invoke\s[^>]*?name\s*=\s*"([^"]*)"[^>]*?>(.*?)</[^>]*?invoke>',
+        xml_text, re.DOTALL,
+    ):
+        name = m.group(1)
+        body = m.group(2)
+        params = {}
+        for pm in re.finditer(
+            r'<[^>]*?parameter\s[^>]*?name\s*=\s*"([^"]*)"[^>]*?>(.*?)</[^>]*?parameter>',
+            body, re.DOTALL,
+        ):
+            pname = pm.group(1)
+            pvalue = pm.group(2).strip()
+            if pvalue.startswith('{') or pvalue.startswith('['):
+                try:
+                    pvalue = json.loads(pvalue)
+                except json.JSONDecodeError:
+                    pass
+            params[pname] = pvalue
+        if name:
+            tool_calls.append(ToolCall(
+                id=f"xml_{uuid.uuid4().hex[:8]}",
+                name=name,
+                input=params,
+            ))
+    return tool_calls
+
+
 async def process_chat_message(agent_name: str, user_content: str) -> AsyncGenerator[dict, None]:
     """Process a chat message and yield SSE events.
 
+    Yields lifecycle events the frontend uses to show thinking / tool-execution
+    states as collapsible cards. Text is buffered per turn so XML-format tool
+    calls can be stripped before the user sees them.
+
     Yields:
-        {"text": "..."}       — text token
-        {"tool_name": "...", "tool_input": "..."} — tool call started
-        {"tool_done": True}   — tool call finished
-        {"done": True, "message_id": "..."} — message complete
+        {"status": "thinking"}          — model is reasoning internally
+        {"status": "text"}              — model is generating a text response
+        {"text": "..."}                 — clean text chunk (XML already stripped)
+        {"tool_start": {"name": "...", "input_preview": "..."}} — tool call began
+        {"tool_done": True}             — all tool calls in this turn finished
+        {"done": True, "message_id": "..."} — complete response ready
     """
     from tain_agent.core.agent import TaoAgent
 
     msg_id = _make_msg_id()
     now_ts = _now_iso()
 
-    # Persist user message
     user_msg = {
         "message_id": _make_msg_id(),
         "from_agent": "web_user",
@@ -77,7 +181,6 @@ async def process_chat_message(agent_name: str, user_content: str) -> AsyncGener
     }
     _append_to_conversation_log(agent_name, user_msg)
 
-    # Load agent
     agent = TaoAgent(config_path=str(PROJECT_ROOT / "config.yaml"), agent_name=agent_name)
 
     if not agent.backend:
@@ -85,92 +188,162 @@ async def process_chat_message(agent_name: str, user_content: str) -> AsyncGener
         yield {"done": True, "message_id": msg_id}
         return
 
-    # Build conversation history for context
     history = _load_conversation_history(agent_name)
     messages = []
     for m in history[-20:]:
         role = "user" if m.get("from_agent") == "web_user" else "assistant"
-        messages.append({"role": role, "content": m.get("content", "")})
+        # Sanitise any XML that leaked into stored history
+        content = m.get("content", "")
+        if isinstance(content, str):
+            content = re.sub(r'<[^>]*?tool_calls>.*?</[^>]*?tool_calls>', '', content, flags=re.DOTALL).strip()
+        messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": user_content})
 
-    # Build system prompt
     system_prompt = _build_system_prompt(agent)
 
-    # Get tool definitions
-    tool_defs = agent.tools.get_claude_tool_definitions() if hasattr(agent.tools, 'get_claude_tool_definitions') else None
+    tool_defs = None
+    if hasattr(agent.tools, 'get_claude_tool_definitions'):
+        all_tools = agent.tools.get_claude_tool_definitions()
+        safe_tools = [
+            t for t in all_tools
+            if not t["name"].startswith("test_")
+            and not t["name"].startswith("forge_")
+            and not t["name"].startswith("_")
+        ]
+        tool_defs = safe_tools[:20] if safe_tools else None
 
-    # Stream response
-    try:
-        stream = agent.backend.stream_message(
-            system_prompt=system_prompt,
-            messages=messages,
-            tools=tool_defs,
-        )
-    except Exception as e:
-        yield {"text": f"[LLM error: {e}]"}
-        yield {"done": True, "message_id": msg_id}
-        return
+    text_parts: list[str] = []
+    reasoning_text = ""
+    max_tool_turns = 5
+    total_tool_calls = 0
 
-    text_parts = []
-    tool_calls = []
+    for turn in range(max_tool_turns):
+        tools_for_turn = tool_defs if total_tool_calls < 3 else None
 
-    for event in stream:
-        ev_type = event.get("type", "")
+        try:
+            stream = agent.backend.stream_message(
+                system_prompt=system_prompt,
+                messages=messages,
+                tools=tools_for_turn,
+            )
+        except Exception as e:
+            yield {"text": f"[LLM error: {e}]"}
+            yield {"done": True, "message_id": msg_id}
+            return
 
-        if ev_type == "text_delta":
-            token = event["text"]
-            text_parts.append(token)
-            yield {"text": token}
+        turn_text_parts: list[str] = []
+        turn_tool_calls: list = []
+        turn_reasoning = ""
+        thinking_signalled = False
 
-        elif ev_type == "tool_call":
-            tc = event["tool"]
-            tool_calls.append(tc)
-            input_preview = json.dumps(tc.input, ensure_ascii=False)
-            if len(input_preview) > 80:
-                input_preview = input_preview[:77] + "..."
-            yield {"tool_name": tc.name, "tool_input": input_preview}
+        # ── Buffer the entire turn before yielding any text ──────────
+        for event in stream:
+            ev_type = event.get("type", "")
 
-        elif ev_type == "done":
+            if ev_type == "thinking_delta":
+                if not thinking_signalled:
+                    yield {"status": "thinking"}
+                    thinking_signalled = True
+                turn_reasoning += event.get("text", "")
+
+            elif ev_type == "text_delta":
+                turn_text_parts.append(event["text"])
+
+            elif ev_type == "tool_call":
+                tc = event["tool"]
+                turn_tool_calls.append(tc)
+
+            elif ev_type == "done":
+                if event.get("reasoning_content"):
+                    turn_reasoning = event["reasoning_content"]
+                break
+
+        turn_full_text = "".join(turn_text_parts)
+
+        # ── Detect and extract XML-format tool calls ──────────────────
+        if not turn_tool_calls and re.search(r'<[^>]*?tool_calls>', turn_full_text):
+            prefix_text, xml_tool_calls = _extract_xml_tool_calls(turn_full_text)
+            if xml_tool_calls:
+                turn_text_parts = [prefix_text] if prefix_text else []
+                turn_tool_calls = xml_tool_calls
+
+        # ── Yield clean text (XML already stripped) ──────────────────
+        clean_text = "".join(turn_text_parts)
+        if clean_text:
+            if turn_reasoning and not thinking_signalled:
+                yield {"status": "thinking"}
+            yield {"status": "text"}
+            for chunk in _chunk_text(clean_text):
+                yield {"text": chunk}
+
+        text_parts.extend(turn_text_parts)
+        if turn_reasoning:
+            reasoning_text = turn_reasoning
+
+        if not turn_tool_calls:
             break
 
-    # Execute tool calls if any
-    if tool_calls:
+        # ── Signal tool calls to frontend ────────────────────────────
+        for tc in turn_tool_calls:
+            input_preview = json.dumps(tc.input, ensure_ascii=False)
+            if len(input_preview) > 200:
+                input_preview = input_preview[:197] + "..."
+            yield {"tool_start": {"name": tc.name, "input_preview": input_preview}}
+
+        # ── Execute tools ────────────────────────────────────────────
+        total_tool_calls += len(turn_tool_calls)
         try:
-            tool_results = agent._execute_tool_calls(tool_calls)
+            tool_results = agent._execute_tool_calls(turn_tool_calls)
             yield {"tool_done": True}
 
-            # Continue conversation with tool results
             tool_result_msgs = [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": tr["tool_use_id"],
-                    "content": tr["content"],
-                }
+                {"type": "tool_result", "tool_use_id": tr["tool_use_id"], "content": tr["content"]}
                 for tr in tool_results
             ]
-            messages.append({"role": "assistant", "content": [
+            assistant_msg = {"role": "assistant", "content": [
                 {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.input}
-                for tc in tool_calls
-            ]})
+                for tc in turn_tool_calls
+            ]}
+            if turn_reasoning:
+                assistant_msg["reasoning_content"] = turn_reasoning
+            messages.append(assistant_msg)
             messages.append({"role": "user", "content": tool_result_msgs})
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            print(f"[Chat tool error] {tb}", flush=True)
+            yield {"text": f"\n[Tool error: {e}]"}
+            break
 
-            # Follow-up stream
-            stream2 = agent.backend.stream_message(
+    # ── Force summary turn when only tool calls were produced ────────
+    if not text_parts and messages and messages[-1]["role"] == "user":
+        yield {"status": "text"}
+        try:
+            stream = agent.backend.stream_message(
                 system_prompt=system_prompt,
                 messages=messages,
                 tools=None,
             )
-            for event in stream2:
+            summary_parts: list[str] = []
+            for event in stream:
                 if event.get("type") == "text_delta":
-                    text_parts.append(event["text"])
-                    yield {"text": event["text"]}
+                    summary_parts.append(event["text"])
                 elif event.get("type") == "done":
                     break
-        except Exception as e:
-            yield {"text": f"\n[Tool error: {e}]"}
+            clean_summary = "".join(summary_parts)
+            clean_summary = re.sub(r'<[^>]*?tool_calls>.*?</[^>]*?tool_calls>', '', clean_summary, flags=re.DOTALL).strip()
+            if clean_summary:
+                text_parts.append(clean_summary)
+                for chunk in _chunk_text(clean_summary):
+                    yield {"text": chunk}
+        except Exception:
+            pass
 
-    # Persist agent response
+    # ── Persist agent response ───────────────────────────────────────
     full_text = "".join(text_parts)
+    full_text = re.sub(r'<[^>]*?tool_calls>.*?</[^>]*?tool_calls>', '', full_text, flags=re.DOTALL).strip()
+    if not full_text:
+        full_text = "[Tool processing — no text response]"
     agent_msg = {
         "message_id": msg_id,
         "from_agent": agent_name,
@@ -183,6 +356,26 @@ async def process_chat_message(agent_name: str, user_content: str) -> AsyncGener
     _append_to_conversation_log(agent_name, agent_msg)
 
     yield {"done": True, "message_id": msg_id}
+
+
+def _chunk_text(text: str, size: int = 30) -> list[str]:
+    """Split text into display chunks for streaming feel without flashing."""
+    if len(text) <= size:
+        return [text]
+    chunks: list[str] = []
+    pos = 0
+    while pos < len(text):
+        end = min(pos + size, len(text))
+        # Try to break at a natural boundary (punctuation or newline)
+        if end < len(text):
+            for sep in ('\n', '。', '，', '、', '.', ',', ' ', ';'):
+                idx = text.rfind(sep, pos, end)
+                if idx > pos + size // 2:
+                    end = idx + 1
+                    break
+        chunks.append(text[pos:end])
+        pos = end
+    return chunks
 
 
 def _build_system_prompt(agent) -> str:

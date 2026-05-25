@@ -68,14 +68,14 @@
             <tbody>
                 {% for d in recent_decisions %}
                 <tr class="border-t border-gray-100 hover:bg-gray-50">
-                    <td class="px-4 py-2 text-gray-400 font-mono text-xs">{{ d.get('id', '?')[:12] }}</td>
+                    <td class="px-4 py-2 text-gray-400 font-mono text-xs">{{ (d.get('id') or '?')[:12] }}</td>
                     <td class="px-4 py-2">{{ d.get('phase', '?') }}</td>
                     <td class="px-4 py-2">{{ d.get('decision_type', '?') }}</td>
-                    <td class="px-4 py-2">{{ d.get('chosen_option', d.get('chosen', '?'))[:40] }}</td>
+                    <td class="px-4 py-2">{{ (d.get('chosen_option') or d.get('chosen') or '?')[:40] }}</td>
                     <td class="px-4 py-2">
                         <span class="text-xs px-2 py-0.5 rounded-full
-                            {{ 'bg-green-100 text-green-700' if d.get('actual_outcome', '').startswith('SUCCESS') else 'bg-yellow-100 text-yellow-700' }}">
-                            {{ d.get('actual_outcome', 'pending')[:20] }}
+                            {{ 'bg-green-100 text-green-700' if (d.get('actual_outcome') or '').startswith('SUCCESS') else 'bg-yellow-100 text-yellow-700' }}">
+                            {{ (d.get('actual_outcome') or 'pending')[:20] }}
                         </span>
                     </td>
                 </tr>

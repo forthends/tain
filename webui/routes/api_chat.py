@@ -36,7 +36,11 @@ async def api_chat_send(name: str, req: ChatRequest):
             async for event in process_chat_message(name, req.content):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+            import traceback
+            tb = traceback.format_exc()
+            yield f"data: {json.dumps({'error': str(e), 'traceback': tb[:500]}, ensure_ascii=False)}\n\n"
+            # Log full traceback for server-side debugging
+            print(f"[Chat error] {tb}", flush=True)
 
     return StreamingResponse(
         generate(),

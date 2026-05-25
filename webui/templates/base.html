@@ -8,6 +8,7 @@
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.2.0/lib/marked.umd.min.js"></script>
     <style>
         .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
         .status-running { background-color: #22c55e; box-shadow: 0 0 6px #22c55e; }
@@ -18,6 +19,24 @@
         pre.code-block { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; font-size: 0.875rem; }
         .message-human { background: #dbeafe; border-radius: 0.75rem 0.75rem 0.25rem 0.75rem; }
         .message-agent { background: #f3f4f6; border-radius: 0.75rem 0.75rem 0.75rem 0.25rem; }
+        .markdown-body { line-height: 1.6; }
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 { font-weight: 600; margin: 0.75em 0 0.5em; }
+        .markdown-body h1 { font-size: 1.25em; }
+        .markdown-body h2 { font-size: 1.15em; }
+        .markdown-body h3 { font-size: 1.05em; }
+        .markdown-body p { margin: 0.5em 0; }
+        .markdown-body ul, .markdown-body ol { padding-left: 1.5em; margin: 0.5em 0; }
+        .markdown-body li { margin: 0.25em 0; }
+        .markdown-body ul li { list-style-type: disc; }
+        .markdown-body ol li { list-style-type: decimal; }
+        .markdown-body code { background: rgba(0,0,0,0.08); padding: 0.15em 0.4em; border-radius: 3px; font-size: 0.9em; font-family: ui-monospace, SFMono-Regular, monospace; }
+        .markdown-body pre { background: #1e293b; color: #e2e8f0; padding: 0.75rem 1rem; border-radius: 0.5rem; overflow-x: auto; margin: 0.75em 0; font-size: 0.875rem; }
+        .markdown-body pre code { background: none; padding: 0; font-size: inherit; }
+        .markdown-body blockquote { border-left: 3px solid #3b82f6; padding-left: 0.75em; margin: 0.5em 0; color: #4b5563; }
+        .markdown-body a { color: #3b82f6; text-decoration: underline; }
+        .markdown-body strong { font-weight: 600; }
+        .markdown-body em { font-style: italic; }
+        .markdown-body hr { border: none; border-top: 1px solid #d1d5db; margin: 1em 0; }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -33,15 +52,11 @@
 
             <nav class="flex-1 overflow-y-auto p-3">
                 <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-2">Agents</div>
-                <div id="sidebar-agents">
-                    {% for a in agents %}
-                    <a href="/agent/{{ a.name }}"
-                       class="block px-3 py-2 rounded-md mb-0.5 text-sm hover:bg-gray-800 transition-colors {% if agent and agent.name == a.name %}bg-gray-800{% endif %}">
-                        <span class="status-dot {{ 'status-running' if a.status == 'running' else 'status-stopped' }} mr-2"></span>
-                        {{ a.name }}
-                        {% if a.role %}<span class="text-xs text-gray-500 ml-1">{{ a.role }}</span>{% endif %}
-                    </a>
-                    {% endfor %}
+                <div id="sidebar-agents"
+                     hx-get="/sidebar/agents?current={{ agent.name if agent else '' }}"
+                     hx-trigger="agentStatusChanged from:body"
+                     hx-swap="innerHTML">
+                    {% include "components/sidebar_agents.html" %}
                 </div>
 
                 <div class="mt-3 pt-3 border-t border-gray-700">
@@ -59,7 +74,7 @@
         </aside>
 
         <!-- Main content -->
-        <main class="flex-1 overflow-y-auto">
+        <main class="flex-1 flex flex-col overflow-hidden">
             {% block content %}{% endblock %}
         </main>
     </div>

@@ -1,0 +1,14 @@
+<p id="decisions-summary" class="text-xs text-gray-400 mb-3">Showing {{ decisions|length }} of {{ total }} decisions</p>
+
+<div id="decisions-list" class="space-y-3">
+    {% include "components/decision_entry.html" %}
+</div>
+
+{% if decisions|length >= limit %}
+<button id="load-more-btn"
+        hx-get="/agent/{{ agent.name }}/decisions-list?limit={{ limit }}&offset={{ offset + limit }}&phase={{ phase }}&type={{ type }}"
+        hx-target="#decisions-list" hx-swap="beforeend"
+        class="mt-3 text-sm text-blue-500 hover:text-blue-600">
+    Load More...
+</button>
+{% endif %}

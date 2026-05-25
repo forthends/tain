@@ -28,6 +28,7 @@
             ('decisions', 'Decisions'),
             ('personality', 'Personality'),
             ('knowledge', 'Knowledge'),
+            ('live', 'Live'),
         ] %}
         {% for tab_id, tab_label in tabs %}
         <a href="/agent/{{ agent.name }}?tab={{ tab_id }}"
@@ -42,7 +43,7 @@
 </div>
 
 <!-- Tab content -->
-<div id="tab-content" class="p-6" hx-get="/agent/{{ agent.name }}/tab/{{ tab }}" hx-trigger="load">
+<div id="tab-content" class="flex-1 min-h-0 overflow-y-auto p-6" hx-get="/agent/{{ agent.name }}/tab/{{ tab }}" hx-trigger="load">
 </div>
 
 <script>
@@ -73,8 +74,8 @@ document.addEventListener('alpine:init', () => {
     input: '',
     streaming: false,
     streamText: '',
-    toolName: '',
-    toolInput: '',
+    status: '',              // 'thinking' | 'text' | ''
+    activeTools: [],         // { name, input_preview, done: bool }
 
     async init() {
         try {
@@ -96,8 +97,8 @@ document.addEventListener('alpine:init', () => {
         this.input = '';
         this.streaming = true;
         this.streamText = '';
-        this.toolName = '';
-        this.toolInput = '';
+        this.status = '';
+        this.activeTools = [];
 
         this.messages.push({
             message_id: 'local_' + Date.now(),
@@ -120,36 +121,47 @@ document.addEventListener('alpine:init', () => {
             });
             const reader = resp.body.getReader();
             const decoder = new TextDecoder();
-            let buffer = '';
+            let buf = '';
 
             while (true) {
                 const {done, value} = await reader.read();
                 if (done) break;
-                buffer += decoder.decode(value, {stream: true});
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || '';
+                buf += decoder.decode(value, {stream: true});
+                const lines = buf.split('\n');
+                buf = lines.pop() || '';
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
                         try {
                             const data = JSON.parse(line.slice(6));
-                            if (data.text) {
+                            if (data.status === 'thinking') {
+                                this.status = 'thinking';
+                            } else if (data.status === 'text') {
+                                this.status = 'text';
+                            } else if (data.text) {
                                 this.streamText += data.text;
-                            } else if (data.tool_name) {
-                                this.toolName = data.tool_name;
-                                this.toolInput = data.tool_input || '';
-                            } else if (data.tool_done) {
-                                this.toolName = '';
-                                this.toolInput = '';
-                            } else if (data.done) {
-                                this.messages.push({
-                                    message_id: data.message_id,
-                                    from_agent: agentName,
-                                    to_agent: 'web_user',
-                                    content: this.streamText,
-                                    timestamp: new Date().toISOString(),
-                                    message_type: 'chat',
+                            } else if (data.tool_start) {
+                                this.activeTools.push({
+                                    name: data.tool_start.name,
+                                    input_preview: data.tool_start.input_preview,
+                                    done: false,
                                 });
-                                this.streamText = '';
+                            } else if (data.tool_done) {
+                                this.activeTools.forEach(t => t.done = true);
+                            } else if (data.done) {
+                                // Flush streaming text as a message
+                                if (this.streamText) {
+                                    this.messages.push({
+                                        message_id: data.message_id,
+                                        from_agent: agentName,
+                                        to_agent: 'web_user',
+                                        content: this.streamText,
+                                        timestamp: new Date().toISOString(),
+                                        message_type: 'chat',
+                                    });
+                                    this.streamText = '';
+                                }
+                                this.status = '';
+                                this.activeTools = [];
                             }
                         } catch (e) {}
                     }
@@ -165,6 +177,100 @@ document.addEventListener('alpine:init', () => {
         }
         this.streaming = false;
     },
+
+    renderMd(text) {
+        if (!text) return '';
+        try {
+            return marked.parse(text, { breaks: true, gfm: true });
+        } catch (e) {
+            return text;
+        }
+    },
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    },
+    }));
+
+    Alpine.data('liveOutput', (agentName, agentRole) => ({
+        lines: [],
+        connected: false,
+        autoScroll: true,
+        lineCount: 0,
+        lastUpdate: '',
+        eventSource: null,
+        lineId: 0,
+
+        connect() {
+            if (this.eventSource) this.eventSource.close();
+            this.connected = false;
+            this.eventSource = new EventSource('/stream/agent-output?agent=' + encodeURIComponent(agentName));
+
+            this.eventSource.onopen = () => {
+                this.connected = true;
+            };
+
+            this.eventSource.onmessage = (event) => {
+                let text = event.data;
+                if (!text.trim()) return;
+
+                // Parse JSON if SSE sends structured data
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.text !== undefined) {
+                        text = data.text;
+                        this.lastUpdate = data.timestamp || '';
+                    }
+                } catch (e) {
+                    // Fallback: plain text from older server
+                    const now = new Date();
+                    this.lastUpdate = now.toTimeString().slice(0, 8);
+                }
+
+                const type = text.includes('💥') || text.includes('EXCEPTION') || text.includes('Error') || text.includes('Traceback') ? 'error'
+                    : text.includes('🔧') ? 'tool' : '';
+
+                this.lines.push({ id: ++this.lineId, text, type });
+                this.lineCount = this.lines.length;
+
+                if (this.lines.length > 2000) {
+                    this.lines.splice(0, 500);
+                }
+
+                if (this.autoScroll) {
+                    this.$nextTick(() => {
+                        const el = this.$refs.output;
+                        if (el) el.scrollTop = el.scrollHeight;
+                    });
+                }
+            };
+
+            this.eventSource.onerror = () => {
+                this.connected = false;
+            };
+        },
+
+        reconnect() {
+            if (this.eventSource) this.eventSource.close();
+            this.connect();
+        },
+
+        clearOutput() {
+            this.lines = [];
+            this.lineCount = 0;
+        },
+
+        onScroll() {
+            const el = this.$refs.output;
+            if (!el) return;
+            const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+            if (!atBottom) this.autoScroll = false;
+            if (atBottom && !this.autoScroll && this.lines.length > 0) {
+                this.autoScroll = true;
+            }
+        },
     }));
 });
 </script>

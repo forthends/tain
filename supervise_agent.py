@@ -23,7 +23,6 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 LOG_DIR = PROJECT_ROOT / "tain_agent" / "logs"
-LOG_FILE = LOG_DIR / "agent_output.log"
 PID_DIR = PROJECT_ROOT / "agent_workspace"
 MAX_LOG_BYTES = 5 * 1024 * 1024  # 5 MB
 
@@ -307,11 +306,12 @@ def main():
 
     # ── Setup logging ──
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    if LOG_FILE.exists() and LOG_FILE.stat().st_size > MAX_LOG_BYTES:
-        rotated = LOG_FILE.with_suffix(".log.old")
+    log_file = LOG_DIR / f"agent_output_{agent_name}.log"
+    if log_file.exists() and log_file.stat().st_size > MAX_LOG_BYTES:
+        rotated = log_file.with_suffix(".log.old")
         rotated.unlink(missing_ok=True)
-        LOG_FILE.rename(rotated)
-    _log_fh = open(LOG_FILE, "a")
+        log_file.rename(rotated)
+    _log_fh = open(log_file, "a")
 
     # ── Health check ──
     health = check_agent_health()

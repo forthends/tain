@@ -1,0 +1,55 @@
+<!-- Live Tab — real-time agent output stream -->
+<div x-data="liveOutput('{{ agent.name }}', '{{ agent.role or '' }}')" x-init="connect()" class="flex flex-col" style="height: calc(100vh - 340px);">
+    <!-- Agent info header -->
+    <div class="flex-shrink-0 mb-3 pb-3 border-b border-gray-200">
+        <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold text-gray-800">{{ agent.name }}</span>
+            {% if agent.role %}<span class="text-sm text-gray-400">{{ agent.role }}</span>{% endif %}
+            <span class="text-xs text-gray-300">·</span>
+            <span class="flex items-center gap-1.5 text-xs">
+                <span :class="connected ? 'text-green-500' : 'text-gray-400'" class="status-dot"></span>
+                <span x-text="connected ? 'Connected' : 'Disconnected'" class="text-gray-500"></span>
+            </span>
+            <span class="text-xs text-gray-300" x-show="lineCount > 0">
+                <span x-text="lineCount"></span> lines
+            </span>
+            <span class="text-xs text-gray-400" x-show="lastUpdate">
+                Last: <span x-text="lastUpdate" class="text-gray-500 font-mono"></span>
+            </span>
+            <span class="flex-1"></span>
+            <button @click="autoScroll = !autoScroll"
+                    :class="autoScroll ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-white text-gray-500 border-gray-200'"
+                    class="text-xs px-2 py-1 rounded border transition-colors">
+                Auto-scroll
+            </button>
+            <button @click="clearOutput()"
+                    class="text-xs px-2 py-1 rounded border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition-colors">
+                Clear
+            </button>
+            <button @click="reconnect()"
+                    class="text-xs px-2 py-1 rounded border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition-colors">
+                Reconnect
+            </button>
+        </div>
+    </div>
+
+    <!-- Output area -->
+    <div x-ref="output"
+         class="flex-1 bg-gray-900 text-green-400 font-mono text-xs rounded-lg p-4 overflow-y-auto shadow-inner"
+         @scroll="onScroll()">
+        <div x-ref="content">
+            <div x-show="lines.length === 0" class="text-gray-500 flex flex-col items-center justify-center h-full" style="min-height: 200px;">
+                <svg class="w-8 h-8 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                <span x-show="connected">Waiting for agent output...</span>
+                <span x-show="!connected">Connecting...</span>
+            </div>
+            <template x-for="line in lines" :key="line.id">
+                <div class="leading-relaxed hover:bg-gray-800/50 px-1 rounded" style="min-height: 1.25rem;"
+                     x-text="line.text"
+                     :class="line.type === 'error' ? 'text-red-400' : line.type === 'tool' ? 'text-cyan-400' : ''"></div>
+            </template>
+        </div>
+    </div>
+</div>

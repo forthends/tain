@@ -11,8 +11,8 @@
                     <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{{ e.get('event_type', '?') }}</span>
                 </div>
                 <p class="text-sm font-medium">{{ e.get('artifact', '?') }}</p>
-                <p class="text-xs text-gray-400 mt-1">{{ e.get('reasoning', '')[:120] }}</p>
-                <p class="text-xs text-gray-400 mt-1">{{ e.get('timestamp', '')[:16] }}</p>
+                <p class="text-xs text-gray-400 mt-1">{{ (e.get('reasoning') or '')[:120] }}</p>
+                <p class="text-xs text-gray-400 mt-1">{{ (e.get('timestamp') or '')[:16] }}</p>
             </div>
         </div>
         {% endfor %}
