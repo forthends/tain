@@ -189,18 +189,48 @@ class OpenAICompatibleBackend(LLMBackend):
             kwargs["base_url"] = base_url
         self.client = openai.OpenAI(**kwargs)
 
+    _VALID_JSON_TYPES = {"string", "number", "integer", "boolean", "array", "object", "null"}
+
+    @classmethod
+    def _sanitize_schema(cls, schema: dict) -> dict:
+        """Recursively fix invalid JSON Schema types (e.g. Python 'Any' → 'string')."""
+        if not isinstance(schema, dict):
+            return schema
+        result = {}
+        for key, value in schema.items():
+            if key == "type" and isinstance(value, str) and value not in cls._VALID_JSON_TYPES:
+                # Map Python-like type hints to valid JSON Schema types
+                if value.startswith("List") or value.startswith("list"):
+                    result[key] = "array"
+                elif value.startswith("Dict") or value.startswith("dict"):
+                    result[key] = "object"
+                else:
+                    result[key] = "string"
+            elif key == "properties" and isinstance(value, dict):
+                result[key] = {k: cls._sanitize_schema(v) for k, v in value.items()}
+            elif key == "items" and isinstance(value, dict):
+                result[key] = cls._sanitize_schema(value)
+            elif key in ("anyOf", "oneOf", "allOf") and isinstance(value, list):
+                result[key] = [cls._sanitize_schema(item) for item in value]
+            else:
+                result[key] = value
+        return result
+
     def _tool_to_openai(self, tool: dict) -> dict:
         """Convert one Anthropic-format tool to OpenAI format."""
+        schema = tool.get("input_schema", {"type": "object", "properties": {}})
         return {
             "type": "function",
             "function": {
                 "name": tool["name"],
                 "description": tool.get("description", ""),
-                "parameters": tool.get("input_schema", {"type": "object", "properties": {}}),
+                "parameters": self._sanitize_schema(schema),
             },
         }
 
     def convert_tools(self, tools: list[dict]) -> list:
+        if not tools:
+            return []
         return [self._tool_to_openai(t) for t in tools]
 
     def convert_messages(self, messages: list[dict], system_prompt: str) -> list:
@@ -212,11 +242,29 @@ class OpenAICompatibleBackend(LLMBackend):
             content = msg["content"]
 
             if role == "user":
-                # User content is always a string in our internal format
-                openai_msgs.append({"role": "user", "content": str(content)})
+                # Content may be a string or a list of tool_result blocks
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "tool_result":
+                            openai_msgs.append({
+                                "role": "tool",
+                                "tool_call_id": block.get("tool_use_id", ""),
+                                "content": str(block.get("content", "")),
+                            })
+                        else:
+                            openai_msgs.append({"role": "user", "content": str(block)})
+                else:
+                    openai_msgs.append({"role": "user", "content": str(content)})
 
             elif role == "assistant":
-                # Content is a list of blocks
+                # Content may be a plain string (from chat history) or a list of blocks
+                if isinstance(content, str):
+                    assistant_msg = {"role": "assistant", "content": content}
+                    if msg.get("reasoning_content"):
+                        assistant_msg["reasoning_content"] = msg["reasoning_content"]
+                    openai_msgs.append(assistant_msg)
+                    continue
+
                 text_parts = []
                 tool_calls = []
                 tool_results = []
@@ -245,8 +293,10 @@ class OpenAICompatibleBackend(LLMBackend):
                     assistant_msg = {"role": "assistant", "content": "\n".join(text_parts) if text_parts else None}
                     if tool_calls:
                         assistant_msg["tool_calls"] = tool_calls
-                    if assistant_msg["content"] is None and not tool_calls:
+                    if assistant_msg["content"] is None:
                         assistant_msg["content"] = ""
+                    if msg.get("reasoning_content"):
+                        assistant_msg["reasoning_content"] = msg["reasoning_content"]
                     openai_msgs.append(assistant_msg)
 
                 # OpenAI: separate tool result messages
@@ -308,12 +358,19 @@ class OpenAICompatibleBackend(LLMBackend):
         response = self.client.chat.completions.create(**kwargs)
 
         tool_acc: dict[int, dict] = {}  # idx -> {id, name, arguments_str}
+        reasoning_parts: list[str] = []
         usage_info = {}
 
         for chunk in response:
             delta = chunk.choices[0].delta if chunk.choices else None
             if delta is None:
                 continue
+
+            # Reasoning / thinking content (DeepSeek thinking mode)
+            reasoning = getattr(delta, 'reasoning_content', None) or getattr(delta, 'thinking', None)
+            if reasoning:
+                reasoning_parts.append(reasoning)
+                yield {"type": "thinking_delta", "text": reasoning}
 
             # Text delta
             if delta.content:
@@ -359,7 +416,7 @@ class OpenAICompatibleBackend(LLMBackend):
                     "output_tokens": getattr(chunk.usage, "completion_tokens", 0),
                 }
 
-        yield {"type": "done", "usage": usage_info}
+        yield {"type": "done", "usage": usage_info, "reasoning_content": "".join(reasoning_parts)}
 
 
 def create_backend(config: dict) -> LLMBackend:
@@ -374,6 +431,15 @@ def create_backend(config: dict) -> LLMBackend:
     base_url = llm_cfg.get("base_url")
 
     api_key = os.environ.get(api_key_env, "")
+
+    # Anthropic-compatible endpoint (e.g. DeepSeek or MiniMax via /anthropic)
+    if base_url and "/anthropic" in base_url:
+        return AnthropicBackend(
+            model=model,
+            max_tokens=max_tokens,
+            api_key=api_key,
+            base_url=base_url,
+        )
 
     if provider in ("openai", "deepseek"):
         return OpenAICompatibleBackend(

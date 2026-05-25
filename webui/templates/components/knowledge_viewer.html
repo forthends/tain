@@ -1,0 +1,88 @@
+<div class="knowledge-viewer">
+    <div class="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
+        <div>
+            <h3 class="text-sm font-semibold text-gray-800">{{ filename }}</h3>
+            <span class="text-xs text-gray-400">{{ format }}</span>
+        </div>
+        <div class="flex gap-2">
+            {% if format == "markdown" %}
+            <span class="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">Markdown</span>
+            {% elif format == "json" %}
+            <span class="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-600">JSON</span>
+            {% else %}
+            <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Text</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="rendered-content text-sm leading-relaxed">
+        {{ html|safe }}
+    </div>
+</div>
+
+<style>
+.rendered-content .md-heading { font-weight: 600; color: #1a1a2e; margin: 1em 0 0.5em; }
+.rendered-content .md-h1 { font-size: 1.5rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.3em; }
+.rendered-content .md-h2 { font-size: 1.25rem; border-bottom: 1px solid #f3f4f6; padding-bottom: 0.2em; }
+.rendered-content .md-h3 { font-size: 1.1rem; }
+.rendered-content .md-h4 { font-size: 1rem; color: #374151; }
+.rendered-content p { margin: 0.5em 0; color: #374151; }
+.rendered-content strong { color: #1f2937; }
+.rendered-content ul, .rendered-content ol { margin: 0.5em 0; padding-left: 1.5em; }
+.rendered-content li { margin: 0.25em 0; color: #374151; }
+.rendered-content .md-blockquote {
+    border-left: 3px solid #3b82f6;
+    padding: 0.25em 0.75em;
+    margin: 0.75em 0;
+    background: #f0f7ff;
+    color: #374151;
+    border-radius: 0 4px 4px 0;
+}
+.rendered-content pre {
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    overflow-x: auto;
+    margin: 0.75em 0;
+    font-size: 0.8125rem;
+    line-height: 1.6;
+}
+.rendered-content code.inline-code {
+    background: #f1f5f9;
+    color: #e11d48;
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+    font-size: 0.875em;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+}
+.rendered-content pre code { font-family: ui-monospace, SFMono-Regular, monospace; }
+.rendered-content .md-table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.75em 0;
+    font-size: 0.875rem;
+}
+.rendered-content .md-table th {
+    background: #f8fafc;
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #e5e7eb;
+    font-weight: 600;
+    color: #374151;
+}
+.rendered-content .md-table td {
+    padding: 0.4rem 0.75rem;
+    border: 1px solid #e5e7eb;
+    color: #4b5563;
+}
+.rendered-content hr { border: none; border-top: 1px solid #e5e7eb; margin: 1em 0; }
+.rendered-content a { color: #3b82f6; }
+.rendered-content a:hover { text-decoration: underline; }
+.rendered-content img { max-width: 100%; border-radius: 4px; }
+
+/* JSON syntax highlighting */
+.json-key { color: #0550ae; }
+.json-string { color: #0a3069; }
+.json-number { color: #0550ae; }
+.json-bool { color: #cf222e; }
+</style>

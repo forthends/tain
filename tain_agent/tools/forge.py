@@ -219,17 +219,19 @@ class ToolForge:
                     if '/' in path or '\\' in path or '.' in path:
                         violations.append(
                             f"Relative path '{path}' in {desc} — may escape agent workspace. "
-                            f"Use agent_workspace/-rooted paths or compute paths from __file__."
+                            f"Use resolve_storage_path(content_type, filename) to get the canonical workspace path."
                         )
 
         for m in var_path_pattern.finditer(code):
             path = m.group(1)
             if not path.startswith(('agent_workspace/', 'agent_workspace\\',
                                    '{', '$', 'os.path', 'pathlib')):
-                violations.append(
-                    f"Hardcoded data path '{path}' — use workspace-relative path "
-                    f"(e.g. agent_workspace/knowledge/{path}) or compute from __file__."
-                )
+                    violations.append(
+                        f"Hardcoded data path '{path}' — use resolve_storage_path() "
+                        f"to get the canonical path for your content type "
+                        f"(e.g. resolve_storage_path('knowledge', '{path}')). "
+                        f"Do not invent ad-hoc directory names."
+                    )
 
         return violations
 

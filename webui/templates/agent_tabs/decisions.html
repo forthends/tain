@@ -1,0 +1,30 @@
+<!-- Decisions Tab -->
+<div>
+    <div class="flex items-center gap-3 mb-4">
+        <span class="text-sm text-gray-500">Filter:</span>
+        <select name="phase" hx-get="/agent/{{ agent.name }}/decisions-list?limit=20"
+                hx-target="#decisions-content" hx-trigger="change"
+                hx-include="[name='phase'],[name='type']"
+                class="text-sm border border-gray-300 rounded px-2 py-1">
+            <option value="">All phases</option>
+            <option value="bootstrap">bootstrap</option>
+            <option value="self_define">self_define</option>
+            <option value="evolve">evolve</option>
+        </select>
+        <select name="type" hx-get="/agent/{{ agent.name }}/decisions-list?limit=20"
+                hx-target="#decisions-content" hx-trigger="change"
+                hx-include="[name='phase'],[name='type']"
+                class="text-sm border border-gray-300 rounded px-2 py-1">
+            <option value="">All types</option>
+            <option value="tool_call">tool_call</option>
+            <option value="tool_forge">tool_forge</option>
+            <option value="phase_transition">phase_transition</option>
+            <option value="evolution">evolution</option>
+            <option value="goal_set">goal_set</option>
+        </select>
+    </div>
+
+    <div id="decisions-content">
+        {% include "components/decisions_list.html" %}
+    </div>
+</div>

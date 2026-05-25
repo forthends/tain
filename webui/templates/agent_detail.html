@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block title %}{{ agent.name }} — Tain Agent Framework{% endblock %}
+
+{% block content %}
+<div class="bg-white border-b border-gray-200 px-6 py-4">
+    <div class="flex items-center justify-between">
+        <div>
+            <a href="/" class="text-sm text-gray-400 hover:text-blue-500 transition-colors">← Dashboard</a>
+            <div class="flex items-center gap-3 mt-1">
+                <span class="status-dot {{ 'status-running' if agent.status == 'running' else 'status-stopped' }}"></span>
+                <h1 class="text-xl font-bold text-gray-900">{{ agent.name }}</h1>
+                {% if agent.role %}<span class="text-gray-500">{{ agent.role }}</span>{% endif %}
+            </div>
+            <div class="text-xs text-gray-400 mt-1">
+                v{{ agent.version }} · {{ agent.tool_count }} tools · {{ agent.cycle_count }} cycles · {{ agent.evolution_mode }}
+            </div>
+        </div>
+        {% include "components/agent_controls.html" %}
+    </div>
+
+    <!-- Tabs -->
+    <nav class="flex gap-6 mt-4" id="tab-nav">
+        {% set tabs = [
+            ('overview', 'Overview'),
+            ('chat', 'Chat'),
+            ('tools', 'Tools'),
+            ('evolution', 'Evolution'),
+            ('decisions', 'Decisions'),
+            ('personality', 'Personality'),
+            ('knowledge', 'Knowledge'),
+            ('live', 'Live'),
+        ] %}
+        {% for tab_id, tab_label in tabs %}
+        <a href="/agent/{{ agent.name }}?tab={{ tab_id }}"
+           class="text-sm pb-2 border-b-2 transition-colors {{ 'tab-active' if tab == tab_id else 'tab-inactive border-transparent' }}"
+           hx-get="/agent/{{ agent.name }}/tab/{{ tab_id }}"
+           hx-target="#tab-content" hx-swap="innerHTML"
+           hx-push-url="/agent/{{ agent.name }}?tab={{ tab_id }}">
+            {{ tab_label }}
+        </a>
+        {% endfor %}
+    </nav>
+</div>
+
+<!-- Tab content -->
+<div id="tab-content" class="flex-1 min-h-0 overflow-y-auto p-6" hx-get="/agent/{{ agent.name }}/tab/{{ tab }}" hx-trigger="load">
+</div>
+
+<script>
+(function() {
+    function syncActiveTab() {
+        const params = new URLSearchParams(window.location.search);
+        const currentTab = params.get('tab') || 'overview';
+        document.querySelectorAll('#tab-nav a').forEach(link => {
+            const href = new URL(link.href, window.location.origin);
+            const tabId = href.searchParams.get('tab');
+            if (tabId === currentTab) {
+                link.classList.add('tab-active');
+                link.classList.remove('tab-inactive', 'border-transparent');
+            } else {
+                link.classList.remove('tab-active');
+                link.classList.add('tab-inactive', 'border-transparent');
+            }
+        });
+    }
+    document.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target.id === 'tab-content') syncActiveTab();
+    });
+})();
+
+document.addEventListener('alpine:init', () => {
+    Alpine.data('chatApp', (agentName) => ({
+    messages: [],
+    input: '',
+    streaming: false,
+    streamText: '',
+    status: '',              // 'thinking' | 'text' | ''
+    activeTools: [],         // { name, input_preview, done: bool }
+
+    async init() {
+        try {
+            const resp = await fetch(`/api/agent/${agentName}/chat/history`);
+            const data = await resp.json();
+            this.messages = data.messages || [];
+            this.$nextTick(() => {
+                const el = this.$refs.messages;
+                if (el) el.scrollTop = el.scrollHeight;
+            });
+        } catch (e) {
+            console.error('Failed to load chat history:', e);
+        }
+    },
+
+    async sendMessage() {
+        if (!this.input.trim() || this.streaming) return;
+        const content = this.input.trim();
+        this.input = '';
+        this.streaming = true;
+        this.streamText = '';
+        this.status = '';
+        this.activeTools = [];
+
+        this.messages.push({
+            message_id: 'local_' + Date.now(),
+            from_agent: 'web_user',
+            to_agent: agentName,
+            content: content,
+            timestamp: new Date().toISOString(),
+            message_type: 'chat',
+        });
+        this.$nextTick(() => {
+            const el = this.$refs.messages;
+            if (el) el.scrollTop = el.scrollHeight;
+        });
+
+        try {
+            const resp = await fetch(`/api/agent/${agentName}/chat`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({content}),
+            });
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = '';
+
+            while (true) {
+                const {done, value} = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, {stream: true});
+                const lines = buf.split('\n');
+                buf = lines.pop() || '';
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            if (data.status === 'thinking') {
+                                this.status = 'thinking';
+                            } else if (data.status === 'text') {
+                                this.status = 'text';
+                            } else if (data.text) {
+                                this.streamText += data.text;
+                            } else if (data.tool_start) {
+                                this.activeTools.push({
+                                    name: data.tool_start.name,
+                                    input_preview: data.tool_start.input_preview,
+                                    done: false,
+                                });
+                            } else if (data.tool_done) {
+                                this.activeTools.forEach(t => t.done = true);
+                            } else if (data.done) {
+                                // Flush streaming text as a message
+                                if (this.streamText) {
+                                    this.messages.push({
+                                        message_id: data.message_id,
+                                        from_agent: agentName,
+                                        to_agent: 'web_user',
+                                        content: this.streamText,
+                                        timestamp: new Date().toISOString(),
+                                        message_type: 'chat',
+                                    });
+                                    this.streamText = '';
+                                }
+                                this.status = '';
+                                this.activeTools = [];
+                            }
+                        } catch (e) {}
+                    }
+                }
+                this.$nextTick(() => {
+                    const el = this.$refs.messages;
+                    if (el) el.scrollTop = el.scrollHeight;
+                });
+            }
+        } catch (e) {
+            console.error('Chat error:', e);
+            this.streamText += '\n[Connection error]';
+        }
+        this.streaming = false;
+    },
+
+    renderMd(text) {
+        if (!text) return '';
+        try {
+            return marked.parse(text, { breaks: true, gfm: true });
+        } catch (e) {
+            return text;
+        }
+    },
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    },
+    }));
+
+    Alpine.data('liveOutput', (agentName, agentRole) => ({
+        lines: [],
+        connected: false,
+        autoScroll: true,
+        lineCount: 0,
+        lastUpdate: '',
+        eventSource: null,
+        lineId: 0,
+
+        connect() {
+            if (this.eventSource) this.eventSource.close();
+            this.connected = false;
+            this.eventSource = new EventSource('/stream/agent-output?agent=' + encodeURIComponent(agentName));
+
+            this.eventSource.onopen = () => {
+                this.connected = true;
+            };
+
+            this.eventSource.onmessage = (event) => {
+                let text = event.data;
+                if (!text.trim()) return;
+
+                // Parse JSON if SSE sends structured data
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.text !== undefined) {
+                        text = data.text;
+                        this.lastUpdate = data.timestamp || '';
+                    }
+                } catch (e) {
+                    // Fallback: plain text from older server
+                    const now = new Date();
+                    this.lastUpdate = now.toTimeString().slice(0, 8);
+                }
+
+                const type = text.includes('💥') || text.includes('EXCEPTION') || text.includes('Error') || text.includes('Traceback') ? 'error'
+                    : text.includes('🔧') ? 'tool' : '';
+
+                this.lines.push({ id: ++this.lineId, text, type });
+                this.lineCount = this.lines.length;
+
+                if (this.lines.length > 2000) {
+                    this.lines.splice(0, 500);
+                }
+
+                if (this.autoScroll) {
+                    this.$nextTick(() => {
+                        const el = this.$refs.output;
+                        if (el) el.scrollTop = el.scrollHeight;
+                    });
+                }
+            };
+
+            this.eventSource.onerror = () => {
+                this.connected = false;
+            };
+        },
+
+        reconnect() {
+            if (this.eventSource) this.eventSource.close();
+            this.connect();
+        },
+
+        clearOutput() {
+            this.lines = [];
+            this.lineCount = 0;
+        },
+
+        onScroll() {
+            const el = this.$refs.output;
+            if (!el) return;
+            const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+            if (!atBottom) this.autoScroll = false;
+            if (atBottom && !this.autoScroll && this.lines.length > 0) {
+                this.autoScroll = true;
+            }
+        },
+    }));
+});
+</script>
+{% endblock %}

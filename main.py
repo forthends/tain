@@ -210,7 +210,23 @@ def main():
                         choices=["start", "stop", "status"],
                         help="Run agent as a daemon with auto-restart")
 
+    # Web UI
+    parser.add_argument("--webui", action="store_true",
+                        help="Start the Web UI management interface")
+    parser.add_argument("--port", type=int, default=8000,
+                        help="Port for Web UI (default: 8000)")
+
     args = parser.parse_args()
+
+    # ── Web UI ────────────────────────────────────────────────────────
+    if args.webui:
+        from webui.app import create_app
+        import uvicorn
+        app = create_app()
+        print(f"\n  Tain Agent Framework Web UI v0.4.1")
+        print(f"  → http://127.0.0.1:{args.port}\n")
+        uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")
+        return
 
     # ── Factory (for listing, creation) ─────────────────────────────
     factory = AgentFactory()

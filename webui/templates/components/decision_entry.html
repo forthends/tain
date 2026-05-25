@@ -1,0 +1,46 @@
+<!-- Decision Entry component -->
+{% for d in decisions %}
+<div class="bg-white rounded-lg border border-gray-200 p-3">
+    <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-2">
+            <span class="font-mono text-xs text-gray-400">#{{ d.get('id', '?')[:12] }}</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{{ d.get('phase', '?') }}</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">{{ d.get('decision_type', '?') }}</span>
+        </div>
+        <span class="text-xs text-gray-400">{{ d.get('timestamp', '?')[:16] }}</span>
+    </div>
+    <div class="text-sm">
+        <span class="text-gray-400">Context:</span>
+        <span class="text-gray-600 text-xs">{{ d.get('context', {}) }}</span>
+    </div>
+    {% if d.get('options_considered') %}
+    <div class="text-sm mt-1">
+        <span class="text-gray-400">Options:</span>
+        <span class="text-gray-600 text-xs">
+            {% for opt in d.options_considered %}
+            {{ opt.get('option', opt) }}{% if not loop.last %}, {% endif %}
+            {% endfor %}
+        </span>
+    </div>
+    {% endif %}
+    <div class="text-sm mt-1">
+        <span class="text-gray-400">Chose:</span>
+        <span class="font-medium">{{ d.get('chosen_option', d.get('chosen', '?')) }}</span>
+    </div>
+    {% if d.get('reasoning') %}
+    <p class="text-xs text-gray-500 mt-1">{{ d.get('reasoning', '')[:200] }}</p>
+    {% endif %}
+    <div class="flex items-center gap-2 mt-2">
+        <span class="text-xs text-gray-400">Expected:</span>
+        <span class="text-xs">{{ d.get('expected_outcome', '?')[:100] }}</span>
+    </div>
+    {% if d.get('actual_outcome') %}
+    <div class="mt-1">
+        <span class="text-xs px-2 py-0.5 rounded-full
+            {{ 'bg-green-100 text-green-700' if d.get('actual_outcome', '').startswith('SUCCESS') else 'bg-yellow-100 text-yellow-700' }}">
+            {{ d.get('actual_outcome', '')[:60] }}
+        </span>
+    </div>
+    {% endif %}
+</div>
+{% endfor %}

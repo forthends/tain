@@ -177,8 +177,8 @@ class TaoAgent:
         # ── Create isolated workspace ────────────────────────────────
         self._workspace_path.mkdir(parents=True, exist_ok=True)
         os.environ["WORKSPACE_PATH"] = str(self._workspace_path.resolve())
-        for sub in ["logs", "logs/conversations",
-                     "forged_tools", "reports", "files", "state", "knowledge"]:
+        from tain_agent.storage_registry import WORKSPACE_DIRS
+        for sub in WORKSPACE_DIRS:
             (self._workspace_path / sub).mkdir(parents=True, exist_ok=True)
         print(f"  📁 Agent 工作区: {self._workspace_path}")
         print(f"  🔒 隔离模式: Agent 无法读取或修改项目源代码。")
