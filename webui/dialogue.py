@@ -5,6 +5,7 @@ Reuses the DialogueBridge core logic but replaces stdin/stdout
 with an async generator suitable for SSE streaming.
 """
 
+import asyncio
 import json
 import re
 import uuid
@@ -15,10 +16,44 @@ from typing import AsyncGenerator
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE_ROOT = PROJECT_ROOT / "agent_workspace"
 
+# Active cancel events indexed by message_id
+_active_cancel_events: dict[str, asyncio.Event] = {}
+
+
+def cancel_chat_message(message_id: str) -> bool:
+    """Signal cancellation for an active chat message.
+
+    Returns True if a matching active request was found and cancelled.
+    """
+    event = _active_cancel_events.get(message_id)
+    if event and not event.is_set():
+        event.set()
+        return True
+    return False
+
 
 def _now_iso() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat()
+
+
+def _cleanup_incomplete_messages(messages: list[dict]) -> None:
+    """Remove any assistant message whose tool_calls have no matching tool_result.
+
+    Prevents API error 2013 (orphaned tool_result) on the next request.
+    """
+    if not messages:
+        return
+    last = messages[-1]
+    if last.get("role") == "assistant":
+        content = last.get("content")
+        if isinstance(content, list):
+            has_tool_use = any(
+                isinstance(b, dict) and b.get("type") == "tool_use"
+                for b in content
+            )
+            if has_tool_use:
+                messages.pop()
 
 
 def _load_conversation_history(agent_name: str) -> list[dict]:
@@ -150,12 +185,16 @@ def _extract_tool_calls_regex_fallback(xml_text: str) -> list:
     return tool_calls
 
 
-async def process_chat_message(agent_name: str, user_content: str) -> AsyncGenerator[dict, None]:
+async def process_chat_message(agent_name: str, user_content: str,
+                               cancel_event: asyncio.Event = None) -> AsyncGenerator[dict, None]:
     """Process a chat message and yield SSE events.
 
     Yields lifecycle events the frontend uses to show thinking / tool-execution
     states as collapsible cards. Text is buffered per turn so XML-format tool
     calls can be stripped before the user sees them.
+
+    When cancel_event is set, the loop exits at the next safe boundary
+    (between turns). Partial tool_use/tool_result pairs are cleaned up.
 
     Yields:
         {"status": "thinking"}          — model is reasoning internally
@@ -164,6 +203,7 @@ async def process_chat_message(agent_name: str, user_content: str) -> AsyncGener
         {"tool_start": {"name": "...", "input_preview": "..."}} — tool call began
         {"tool_done": True}             — all tool calls in this turn finished
         {"done": True, "message_id": "..."} — complete response ready
+        {"cancelled": True}             — request was cancelled by user
     """
     from tain_agent.core.agent import TaoAgent
 
@@ -218,6 +258,12 @@ async def process_chat_message(agent_name: str, user_content: str) -> AsyncGener
     total_tool_calls = 0
 
     for turn in range(max_tool_turns):
+        # Check cancellation before each turn
+        if cancel_event and cancel_event.is_set():
+            _cleanup_incomplete_messages(messages)
+            yield {"cancelled": True}
+            return
+
         tools_for_turn = tool_defs if total_tool_calls < 3 else None
 
         try:
@@ -293,7 +339,23 @@ async def process_chat_message(agent_name: str, user_content: str) -> AsyncGener
         # ── Execute tools ────────────────────────────────────────────
         total_tool_calls += len(turn_tool_calls)
         try:
+            t0 = __import__('time').monotonic()
             tool_results = agent._execute_tool_calls(turn_tool_calls)
+            tool_latency = (__import__('time').monotonic() - t0) * 1000
+
+            # Log tool results
+            llm_logger = getattr(agent, 'llm_logger', None)
+            for tc, tr in zip(turn_tool_calls, tool_results):
+                if llm_logger:
+                    llm_logger.log_tool_result(
+                        request_id="web_chat",
+                        tool_name=tc.name,
+                        arguments=tc.input,
+                        success=not tr.get("is_error", False),
+                        result_preview=str(tr.get("content", ""))[:1000],
+                        latency_ms=tool_latency / max(len(tool_results), 1),
+                    )
+
             yield {"tool_done": True}
 
             tool_result_msgs = [
@@ -316,6 +378,11 @@ async def process_chat_message(agent_name: str, user_content: str) -> AsyncGener
             break
 
     # ── Force summary turn when only tool calls were produced ────────
+    if cancel_event and cancel_event.is_set():
+        _cleanup_incomplete_messages(messages)
+        yield {"cancelled": True}
+        return
+
     if not text_parts and messages and messages[-1]["role"] == "user":
         yield {"status": "text"}
         try:
@@ -406,11 +473,19 @@ def _build_system_prompt(agent) -> str:
     # Tools
     tools = agent.tools.list_tools() if hasattr(agent.tools, 'list_tools') else {}
     if tools:
+        from tain_agent.utils.token_utils import estimate_tokens
         lines.append("\n## 可用工具\n")
+        total_tool_tokens = 0
+        max_tool_tokens = 3000
         for name, info in sorted(tools.items()):
             desc = info.get("description", "")
-            if len(desc) > 100:
-                desc = desc[:97] + "..."
+            # Truncate overly long descriptions to stay within token budget
+            desc_tokens = estimate_tokens(desc)
+            if desc_tokens > 80:
+                desc = desc[:160] + "..."
+            elif total_tool_tokens + desc_tokens > max_tool_tokens:
+                desc = desc[:100] + "..."
+            total_tool_tokens += estimate_tokens(desc)
             lines.append(f"- **{name}**: {desc}")
 
     # State

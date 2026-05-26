@@ -26,11 +26,24 @@ class ToolRegistry:
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
     def register(self, name: str, func: Callable, description: str, parameters: dict = None) -> None:
-        """Register a tool that the agent can use."""
+        """Register a tool function that the agent can use."""
         self._tools[name] = {
             "func": func,
             "description": description,
             "parameters": parameters or {},
+        }
+
+    def register_tool(self, tool) -> None:
+        """Register a Tool instance.
+
+        Args:
+            tool: A tain_agent.tools.base.Tool subclass instance.
+        """
+        self._tools[tool.name] = {
+            "func": tool.execute,
+            "description": tool.description,
+            "parameters": tool.parameters or {},
+            "_tool_instance": tool,
         }
 
     def list_tools(self) -> dict[str, dict]:

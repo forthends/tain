@@ -223,6 +223,8 @@ class TaoAgent:
         self.conversation = ConversationManager(
             checkpoint_dir=self.log_dir,
             auto_checkpoint_interval=10,
+            token_limit=self.config.get("conversation", {}).get("token_limit", 80000),
+            model_context_window=self.config.get("conversation", {}).get("model_context_window", 131072),
         )
         self.tools = ToolRegistry()
         self.forge = ToolForge(self.tools, decision_log=self.decision_log,
@@ -331,10 +333,14 @@ class TaoAgent:
         # Initialize LLM backend
         if self.api_key:
             self.backend = create_backend(self.config)
+            from tain_agent.core.llm_logger import LLMLogger
+            self.llm_logger = LLMLogger(Path(self.log_dir))
+            self.backend.set_logger(self.llm_logger)
         else:
             api_key_env = self.config.get("llm", {}).get("api_key_env", "ANTHROPIC_API_KEY")
             print(f"⚠️  未设置 {api_key_env} 环境变量。Agent 将在无 LLM 状态下启动。")
             self.backend = None
+            self.llm_logger = None
 
         # Phase 3b: Wire improvement loop code generator to LLM backend
         # This closes the loop — the improvement loop can now autonomously
@@ -648,7 +654,7 @@ Output format (JSON only, no markdown):
                 print(f"\n⚠️  LLM 调用异常: {e}")
                 if self.conversation.len() > 16:
                     print("  🔄 裁剪对话历史后重试...")
-                    self.conversation.keep_first_and_last(keep_last=8)
+                    self.conversation.trim_to_token_budget(keep_last=8)
                     try:
                         messages = self.conversation.to_claude_messages()
                         llm_response = self.backend.create_message(

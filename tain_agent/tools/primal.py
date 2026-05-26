@@ -148,9 +148,8 @@ def read_file(path: str) -> str:
                 f"   项目源代码在你的工作区之外，无法被访问。")
     try:
         content = target.read_text(encoding="utf-8")
-        if len(content) > 5000:
-            content = content[:5000] + f"\n... [已截断, 共 {len(content)} 字符]"
-        return content
+        from tain_agent.utils.token_utils import truncate_text_by_tokens
+        return truncate_text_by_tokens(content, max_tokens=32000)
     except UnicodeDecodeError:
         return f"无法读取 {path}: 不是文本文件 (二进制)"
     except PermissionError:
@@ -383,6 +382,93 @@ def list_available_tools(tool_registry) -> str:
     return "\n".join(lines)
 
 
+# ─── Memory note tools ────────────────────────────────────────────────────
+
+_NOTES_FILENAME = "agent_notes.jsonl"
+
+
+def _get_notes_path() -> Path:
+    """Get the notes file path within the agent workspace."""
+    if _WORKSPACE_DIR is None:
+        return Path(_NOTES_FILENAME)
+    memory_dir = _WORKSPACE_DIR / "memory"
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    return memory_dir / _NOTES_FILENAME
+
+
+def remember_note(category: str, content: str) -> dict:
+    """Record a note to persistent memory.
+
+    Notes are stored as JSONL entries in the agent's workspace memory directory.
+    Use this to save important discoveries, patterns, or user preferences
+    that should persist across sessions.
+
+    Args:
+        category: Category label (e.g. 'discovery', 'user_preference', 'pattern', 'reflection').
+        content: The note content to save.
+
+    Returns:
+        Confirmation with the note entry.
+    """
+    import json as _json
+
+    note = {
+        "timestamp": now().isoformat(),
+        "category": category.strip().lower(),
+        "content": content.strip(),
+    }
+
+    notes_path = _get_notes_path()
+    try:
+        with open(notes_path, "a", encoding="utf-8") as f:
+            f.write(_json.dumps(note, ensure_ascii=False) + "\n")
+        return {"status": "saved", "note": note, "path": str(notes_path)}
+    except IOError as e:
+        return {"status": "error", "error": str(e)}
+
+
+def recall_notes(category: str = "", limit: int = 20) -> dict:
+    """Retrieve notes from persistent memory.
+
+    Returns notes sorted by recency (newest first), optionally filtered
+    by category.
+
+    Args:
+        category: Optional category filter. Leave empty to get all notes.
+        limit: Maximum number of notes to return (default 20).
+
+    Returns:
+        List of matching notes with total count.
+    """
+    import json as _json
+
+    notes_path = _get_notes_path()
+    if not notes_path.exists():
+        return {"notes": [], "total": 0, "message": "No notes yet. Use remember_note to create one."}
+
+    notes = []
+    try:
+        for line in notes_path.read_text(encoding="utf-8").strip().split("\n"):
+            if line.strip():
+                try:
+                    note = _json.loads(line)
+                    if isinstance(note, dict) and "content" in note:
+                        notes.append(note)
+                except (_json.JSONDecodeError, ValueError):
+                    continue
+    except IOError:
+        return {"notes": [], "total": 0, "error": "Failed to read notes file."}
+
+    notes.sort(key=lambda n: n.get("timestamp", ""), reverse=True)
+
+    if category:
+        cat = category.strip().lower()
+        notes = [n for n in notes if n.get("category", "") == cat]
+
+    total = len(notes)
+    return {"notes": notes[:limit], "total": total, "shown": min(limit, total)}
+
+
 def register_primal_tools(registry, workspace_dir: str = None) -> None:
     """Register all primal tools with the given registry.
 
@@ -466,6 +552,44 @@ def register_primal_tools(registry, workspace_dir: str = None) -> None:
                 "type": "string",
                 "description": "The filename to write (e.g. spring.md).",
                 "required": True,
+            },
+        },
+    )
+    registry.register(
+        "remember_note", remember_note,
+        "Save a note to your persistent memory. Notes survive across sessions "
+        "and can be recalled later. Use this to record important discoveries, "
+        "user preferences, patterns you've noticed, or reflections on your evolution. "
+        "Categories help organize: discovery, user_preference, pattern, reflection, "
+        "idea, decision, milestone.",
+        {
+            "category": {
+                "type": "string",
+                "description": "Category label (e.g. discovery, user_preference, pattern, reflection).",
+                "required": True,
+            },
+            "content": {
+                "type": "string",
+                "description": "The note content to save.",
+                "required": True,
+            },
+        },
+    )
+    registry.register(
+        "recall_notes", recall_notes,
+        "Retrieve notes from your persistent memory. Returns notes sorted "
+        "by recency (newest first). Filter by category or get all notes. "
+        "Use this to recall what you've learned, user preferences, or past discoveries.",
+        {
+            "category": {
+                "type": "string",
+                "description": "Optional category filter. Leave empty to get all notes.",
+                "required": False,
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum notes to return (default 20).",
+                "required": False,
             },
         },
     )

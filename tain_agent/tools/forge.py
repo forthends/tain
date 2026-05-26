@@ -21,7 +21,77 @@ On restart, parameters schema is fully restored.
 import json
 import inspect
 import traceback
+from datetime import datetime, timezone
 from pathlib import Path
+
+
+def _build_skill_md(name: str, description: str, parameters: dict, code: str) -> str:
+    """Build a SKILL.md file for a forged tool.
+
+    Format follows the Claude Skills SKILL.md convention:
+    YAML frontmatter for metadata, markdown body for documentation.
+    """
+    params_yaml = ""
+    if parameters:
+        props = parameters.get("properties", parameters)
+        if isinstance(props, dict):
+            for pname, pmeta in props.items():
+                if isinstance(pmeta, dict):
+                    ptype = pmeta.get("type", "string")
+                    pdesc = pmeta.get("description", "")
+                    params_yaml += f"  - name: {pname}\n"
+                    params_yaml += f"    type: {ptype}\n"
+                    params_yaml += f"    description: {pdesc}\n"
+
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    return f"""---
+name: {name}
+description: {description}
+version: 1.0.0
+created: {now_iso}
+dependencies: []
+parameters:
+{params_yaml if params_yaml else '  []'}
+---
+
+# {name}
+
+## Description
+
+{description}
+
+## Usage
+
+This skill was forged by a Tao Agent. It provides the `{name}` tool.
+
+## Parameters
+
+{_format_params_md(parameters)}
+
+## Script
+
+The implementation is in `scripts/{name}.py`.
+"""
+
+
+def _format_params_md(parameters: dict) -> str:
+    """Format parameters as markdown table rows."""
+    if not parameters:
+        return "No parameters."
+    props = parameters.get("properties", parameters)
+    if not isinstance(props, dict) or not props:
+        return "No parameters."
+
+    lines = ["| Parameter | Type | Description |", "|-----------|------|-------------|"]
+    for pname, pmeta in props.items():
+        if isinstance(pmeta, dict):
+            ptype = pmeta.get("type", "string")
+            pdesc = pmeta.get("description", "")
+            lines.append(f"| `{pname}` | {ptype} | {pdesc} |")
+        else:
+            lines.append(f"| `{pname}` | string | {pmeta} |")
+    return "\n".join(lines)
 
 
 class ToolForge:
@@ -320,6 +390,64 @@ class ToolForge:
                 "tool_description": description, "tool_parameters": parameters,
                 "sandbox_passed": True, "sandbox_report": sr.get("report", "No report."),
                 "sandbox_warnings": sr.get("warnings", [])}
+
+    # ── Skill export ────────────────────────────────────────────────────
+
+    def export_as_skill(self, name: str) -> dict:
+        """Export a forged tool as a SKILL.md-compliant skill package.
+
+        Creates a self-contained directory structure:
+            forged_tools/skills/{name}/
+            ├── SKILL.md          # YAML frontmatter + markdown body
+            ├── scripts/
+            │   └── {name}.py     # tool source code
+            ├── references/        # reference materials (empty)
+            └── assets/            # output templates (empty)
+
+        Returns:
+            dict with skill_path and status.
+        """
+        source_path = self._forge_dir / f"{name}.py"
+        meta_path = self._forge_dir / f"{name}.meta.json"
+
+        if not source_path.exists():
+            return {"success": False, "error": f"Tool '{name}' not found in forge."}
+
+        code = source_path.read_text(encoding="utf-8")
+        meta = {}
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        skill_dir = self._forge_dir / "skills" / name
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        (skill_dir / "scripts").mkdir(exist_ok=True)
+        (skill_dir / "references").mkdir(exist_ok=True)
+        (skill_dir / "assets").mkdir(exist_ok=True)
+
+        # Build SKILL.md
+        description = meta.get("description", f"Tool: {name}")
+        parameters = meta.get("parameters", {})
+        created = meta.get("created", _now_iso() if '_now_iso' in dir() else '')
+
+        skill_md = _build_skill_md(
+            name=name,
+            description=description,
+            parameters=parameters,
+            code=code,
+        )
+        (skill_dir / "SKILL.md").write_text(skill_md, encoding="utf-8")
+
+        # Copy source
+        (skill_dir / "scripts" / f"{name}.py").write_text(code, encoding="utf-8")
+
+        return {
+            "success": True,
+            "skill_path": str(skill_dir),
+            "message": f"Skill '{name}' exported to {skill_dir}",
+        }
 
     # ── Persistence ───────────────────────────────────────────────────
 

@@ -199,9 +199,9 @@ class CognitiveBridge:
             # ═══════════════════════════════════════════════════════
             self._maybe_introspect()
             
-            # Periodic conversation trimming
-            if agent.conversation.len() > 150:
-                removed = agent.conversation.keep_first_and_last(keep_last=40)
+            # Periodic conversation trimming (token-aware)
+            if agent.conversation.len() > 150 or agent.conversation.needs_summarization():
+                removed = agent.conversation.trim_to_token_budget(keep_last=40)
                 if removed:
                     print(f"  📜 对话历史已裁剪: 移除 {removed} 条旧消息。")
             
@@ -542,7 +542,7 @@ class CognitiveBridge:
             print(f"\n⚠️  LLM 调用异常: {e}")
             if agent.conversation.len() > 16:
                 print("  🔄 裁剪对话历史后重试...")
-                agent.conversation.keep_first_and_last(keep_last=8)
+                agent.conversation.trim_to_token_budget(keep_last=8)
                 try:
                     messages = agent.conversation.to_claude_messages()
                     llm_response = agent.backend.create_message(
