@@ -99,7 +99,7 @@ class CognitiveBridge:
         agent = self.agent
         
         if not agent.backend:
-            api_key_env = agent.config.get("llm", {}).get("api_key_env", "ANTHROPIC_API_KEY")
+            api_key_env = agent.config.get("llm", {}).get("api_key_env", "MINIMAX_API_KEY")
             print(f"❌ 未设置 {api_key_env} 环境变量。")
             print(f"   请在 config.yaml 中配置或设置环境变量。")
             return

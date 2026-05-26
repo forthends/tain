@@ -55,7 +55,7 @@ class TestLoadConfig:
                 mock_cwd.return_value = Path(d)
                 mock_home.return_value = Path(d)
                 config = load_config()
-                assert config["framework"]["version"] == "0.5.0"
+                assert config["framework"]["version"] == "0.4.3"
                 assert config["llm"]["retry"]["max_retries"] == 3
 
     def test_project_config_overrides_defaults(self):
@@ -118,7 +118,7 @@ class TestLoadConfig:
                  patch("tain_agent.core.config.Path.home", return_value=tmp):
                 config = load_config()
                 # Should return defaults without crashing
-                assert config["framework"]["version"] == "0.5.0"
+                assert config["framework"]["version"] == "0.4.3"
 
 
 class TestLoadAgentOverrides:

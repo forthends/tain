@@ -9,7 +9,7 @@ TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Tain Agent Framework — Web UI", version="0.4.1")
+    app = FastAPI(title="Tain Agent Framework — Web UI", version="0.4.3")
 
     from webui.routes.pages import router as pages_router
     from webui.routes.api_agents import router as api_agents_router

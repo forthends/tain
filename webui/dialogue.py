@@ -88,27 +88,28 @@ def _make_msg_id() -> str:
 
 
 def _extract_xml_tool_calls(text: str) -> tuple[str, list]:
-    """Parse MiniMax-format XML tool calls from text.
+    """Parse XML-format tool calls from text.
 
-    DeepSeek V4 Flash and similar models output tool calls as XML text rather
+    MiniMax and some other models output tool calls as XML text rather
     than using native function-calling. This extracts them from the response.
 
     Format:
         some text...
-        <minimap:tool_calls>
+        <minimax:tool_call>
         <invoke name="tool_name">
         <parameter name="param1">value1</parameter>
         <parameter name="param2">{"json": "value"}</parameter>
         </invoke>
-        </minimap:tool_calls>
+        </minimax:tool_call>
 
     Returns (prefix_text, list_of_ToolCall).
     """
     from tain_agent.core.llm import ToolCall
 
-    # Match any opening tag whose name ends in "tool_calls" — the namespace
-    # prefix varies per run (minimap:, ||DSML||, none, etc.).
-    pattern = r'<[^>]*?tool_calls>\s*(.*?)\s*</[^>]*?tool_calls>'
+    # Match any opening tag whose name ends in "tool_call" or "tool_calls"
+    # — the namespace prefix varies per run (minimap:, ||DSML||, none, etc.)
+    # and models may use singular or plural form.
+    pattern = r'<[^>]*?tool_calls?>\s*(.*?)\s*</[^>]*?tool_calls?>'
     match = re.search(pattern, text, re.DOTALL)
     if not match:
         return text, []
@@ -252,7 +253,12 @@ async def process_chat_message(agent_name: str, user_content: str,
             and not t["name"].startswith("forge_")
             and not t["name"].startswith("_")
         ]
-        tool_defs = safe_tools[:20] if safe_tools else None
+        # Prioritise web_search / web_fetch so they aren't cut by the 20-tool cap
+        priority_prefixes = ("web_search", "web_fetch", "knowledge_fetch", "wikipedia")
+        priority = [t for t in safe_tools if any(t["name"].startswith(p) for p in priority_prefixes)]
+        others = [t for t in safe_tools if t not in priority]
+        MAX_TOOLS = 20
+        tool_defs = (priority + others)[:MAX_TOOLS] if safe_tools else None
 
     text_parts: list[str] = []
     reasoning_text = ""
@@ -309,7 +315,7 @@ async def process_chat_message(agent_name: str, user_content: str,
         turn_full_text = "".join(turn_text_parts)
 
         # ── Detect and extract XML-format tool calls ──────────────────
-        if not turn_tool_calls and re.search(r'<[^>]*?tool_calls>', turn_full_text):
+        if not turn_tool_calls and re.search(r'<[^>]*?tool_calls?>', turn_full_text):
             prefix_text, xml_tool_calls = _extract_xml_tool_calls(turn_full_text)
             if xml_tool_calls:
                 turn_text_parts = [prefix_text] if prefix_text else []

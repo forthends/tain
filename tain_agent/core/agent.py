@@ -128,9 +128,9 @@ class TaoAgent:
 
         self.timezone_name = agent_cfg.get("timezone", "Asia/Shanghai")
         set_timezone(self.timezone_name)
-        self.model = llm_cfg.get("model", "claude-sonnet-4-6-20250514")
+        self.model = llm_cfg.get("model", "MiniMax-M2.7")
         self.max_tokens = llm_cfg.get("max_tokens", 8192)
-        self.api_key = os.environ.get(llm_cfg.get("api_key_env", "ANTHROPIC_API_KEY"), "")
+        self.api_key = os.environ.get(llm_cfg.get("api_key_env", "MINIMAX_API_KEY"), "")
         self.protected_paths = safety_cfg.get("protected_paths", [])
         self.confirm_destructive = safety_cfg.get("confirm_destructive", True)
 
@@ -149,7 +149,7 @@ class TaoAgent:
 
         # Framework version & AgentFactory for registry access
         fw_cfg = self.config.get("framework", {})
-        self.framework_version = fw_cfg.get("version", "0.4.0")
+        self.framework_version = fw_cfg.get("version", "0.4.3")
         self._factory = AgentFactory(workspace_root=self.workspace_root)
 
         # ── Evolution mode & role ──────────────────────────────────
@@ -337,7 +337,7 @@ class TaoAgent:
             self.llm_logger = LLMLogger(Path(self.log_dir))
             self.backend.set_logger(self.llm_logger)
         else:
-            api_key_env = self.config.get("llm", {}).get("api_key_env", "ANTHROPIC_API_KEY")
+            api_key_env = self.config.get("llm", {}).get("api_key_env", "MINIMAX_API_KEY")
             print(f"⚠️  未设置 {api_key_env} 环境变量。Agent 将在无 LLM 状态下启动。")
             self.backend = None
             self.llm_logger = None
@@ -584,7 +584,7 @@ Output format (JSON only, no markdown):
     def run(self, autonomous: bool = False) -> None:
         """Start the agent. This is the moment of awakening."""
         if not self.backend:
-            api_key_env = self.config.get("llm", {}).get("api_key_env", "ANTHROPIC_API_KEY")
+            api_key_env = self.config.get("llm", {}).get("api_key_env", "MINIMAX_API_KEY")
             print(f"❌ 未设置 {api_key_env} 环境变量。")
             print(f"   请在 config.yaml 中配置或设置环境变量。")
             return

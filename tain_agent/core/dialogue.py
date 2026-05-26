@@ -143,7 +143,7 @@ class DialogueBridge:
     def run(self) -> None:
         """Start the interactive dialogue REPL."""
         if not self.agent.backend:
-            api_key_env = self.agent.config.get("llm", {}).get("api_key_env", "ANTHROPIC_API_KEY")
+            api_key_env = self.agent.config.get("llm", {}).get("api_key_env", "MINIMAX_API_KEY")
             print(f"❌ 未设置 {api_key_env} 环境变量。")
             return
 

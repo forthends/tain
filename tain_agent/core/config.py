@@ -23,7 +23,7 @@ import yaml
 
 DEFAULT_CONFIG = {
     "framework": {
-        "version": "0.5.0",
+        "version": "0.4.3",
         "min_agent_version": "0.0.1",
     },
     "agent": {

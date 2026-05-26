@@ -90,7 +90,7 @@ class AgentFactory:
 
     def create(self, name: str, mode: str = EVOLUTION_MODE_CHAOS,
                role: str = "", role_description: str = "",
-               framework_version: str = "0.4.0") -> dict:
+               framework_version: str = "0.4.3") -> dict:
         """Create a new agent workspace and register it.
 
         Args:

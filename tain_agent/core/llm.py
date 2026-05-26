@@ -74,11 +74,13 @@ class LLMBackend:
 
 
 class AnthropicBackend(LLMBackend):
-    """Anthropic Claude backend (also works with DeepSeek's Anthropic-compatible endpoint)."""
+    """Anthropic Claude backend (also works with DeepSeek and MiniMax via their Anthropic-compatible endpoints)."""
 
     def __init__(self, model: str, max_tokens: int, api_key: str,
-                 base_url: Optional[str] = None, retry_config: Optional[RetryConfig] = None):
+                 base_url: Optional[str] = None, retry_config: Optional[RetryConfig] = None,
+                 provider: str = "anthropic"):
         super().__init__(model, max_tokens, retry_config)
+        self.provider = provider
         import anthropic
         kwargs = {"api_key": api_key}
         if base_url:
@@ -108,7 +110,7 @@ class AnthropicBackend(LLMBackend):
             pass
 
         request_id = self.logger.log_request(
-            provider="anthropic", model=self.model,
+            provider=self.provider, model=self.model,
             messages_count=len(messages), estimated_tokens=estimated,
             tools=tools,
         ) if self.logger else ""
@@ -186,7 +188,7 @@ class AnthropicBackend(LLMBackend):
             pass
 
         request_id = self.logger.log_request(
-            provider="anthropic", model=self.model,
+            provider=self.provider, model=self.model,
             messages_count=len(messages), estimated_tokens=estimated,
             tools=tools,
         ) if self.logger else ""
@@ -598,17 +600,17 @@ def create_backend(config: dict) -> LLMBackend:
     import os
 
     llm_cfg = config.get("llm", {})
-    provider = llm_cfg.get("provider", "anthropic").lower()
-    model = llm_cfg.get("model", "claude-sonnet-4-6-20250514")
+    provider = llm_cfg.get("provider", "minimax").lower()
+    model = llm_cfg.get("model", "MiniMax-M2.7")
     max_tokens = llm_cfg.get("max_tokens", 8192)
-    api_key_env = llm_cfg.get("api_key_env", "ANTHROPIC_API_KEY")
+    api_key_env = llm_cfg.get("api_key_env", "MINIMAX_API_KEY")
     base_url = llm_cfg.get("base_url")
 
     api_key = os.environ.get(api_key_env, "")
 
     retry_config = RetryConfig.from_config(llm_cfg)
 
-    # Anthropic-compatible endpoint (e.g. DeepSeek or MiniMax via /anthropic)
+    # Anthropic-compatible endpoint (MiniMax, DeepSeek, etc. via /anthropic)
     if base_url and "/anthropic" in base_url:
         return AnthropicBackend(
             model=model,
@@ -616,6 +618,7 @@ def create_backend(config: dict) -> LLMBackend:
             api_key=api_key,
             base_url=base_url,
             retry_config=retry_config,
+            provider=provider,
         )
 
     if provider in ("openai", "deepseek"):

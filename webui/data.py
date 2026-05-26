@@ -105,7 +105,7 @@ def list_agents() -> list[dict]:
             "name": name,
             "role": info.get("role"),
             "evolution_mode": info.get("evolution_mode", "chaos"),
-            "version": version.get("version", info.get("framework_version", "0.4.0")) if version else info.get("framework_version", "0.4.0"),
+            "version": version.get("version", info.get("framework_version", "0.4.3")) if version else info.get("framework_version", "0.4.3"),
             "status": "running" if running else "stopped",
             "phase": phase,
             "cycle_count": cycle_count,

@@ -82,10 +82,15 @@ def detect_network() -> dict:
     except Exception:
         pass
 
-    # DNS resolution test
+    # DNS resolution tests (check both Anthropic and MiniMax endpoints)
     try:
         socket.getaddrinfo("api.anthropic.com", 443)
         result["can_resolve_dns"] = True
+    except socket.gaierror:
+        pass
+    try:
+        socket.getaddrinfo("api.minimaxi.com", 443)
+        result["can_resolve_minimax"] = True
     except socket.gaierror:
         pass
 

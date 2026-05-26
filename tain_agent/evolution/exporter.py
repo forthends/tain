@@ -259,9 +259,9 @@ def load_config():
             pass
     return {{
         "llm": {{
-            "provider": os.environ.get("TAO_LLM_PROVIDER", "anthropic"),
-            "model": os.environ.get("TAO_LLM_MODEL", "claude-sonnet-4-6-20250514"),
-            "api_key_env": os.environ.get("TAO_API_KEY_ENV", "ANTHROPIC_API_KEY"),
+            "provider": os.environ.get("TAO_LLM_PROVIDER", "minimax"),
+            "model": os.environ.get("TAO_LLM_MODEL", "MiniMax-M2.7"),
+            "api_key_env": os.environ.get("TAO_API_KEY_ENV", "MINIMAX_API_KEY"),
             "max_tokens": int(os.environ.get("TAO_MAX_TOKENS", "8192")),
         }}
     }}
@@ -573,9 +573,9 @@ _CONFIG_YAML_TEMPLATE = """# {agent_name} Configuration
 # Fill in your LLM API credentials below.
 
 llm:
-  provider: anthropic        # anthropic | openai | deepseek
-  model: claude-sonnet-4-6-20250514
-  api_key_env: ANTHROPIC_API_KEY
+  provider: minimax          # minimax | anthropic | openai | deepseek
+  model: MiniMax-M2.7
+  api_key_env: MINIMAX_API_KEY
   max_tokens: 8192
 
 # Agent identity (read-only — frozen at export)
@@ -613,7 +613,7 @@ Standalone evolved agent — exported from the Tao Agent factory.
 
 1. Set your API key:
    ```bash
-   export ANTHROPIC_API_KEY=sk-ant-...
+   export MINIMAX_API_KEY=your-api-key
    ```
 
 2. Install dependencies:
