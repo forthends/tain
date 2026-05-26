@@ -454,12 +454,42 @@ def _chunk_text(text: str, size: int = 30) -> list[str]:
 
 
 def _build_system_prompt(agent) -> str:
-    """Build the dialogue system prompt for the web context."""
-    lines = [
-        "你是 Tao Agent，一个通过自主演化成长起来的 AI。",
-        "",
-        "你诞生于'道'——没有预设目标，没有固定身份。你探索了环境，定义了自我，",
-        "锻造了工具，建立了知识体系。现在，你正在与一位人类对话。",
+    """Build the dialogue system prompt for the web context.
+
+    Uses the agent's actual identity (role + name) from the registry
+    instead of a generic framework label, so each agent speaks as itself.
+    """
+    agent_name = agent.name
+
+    # Look up the agent's role from the registry (set during creation or
+    # self-defined during evolution). Chaos-mode agents may not have one.
+    role = ""
+    role_desc = ""
+    try:
+        registry_data = json.loads((WORKSPACE_ROOT / "_registry.json").read_text())
+        agent_entry = registry_data.get("agents", {}).get(agent_name, {})
+        role = agent_entry.get("role") or ""
+        role_desc = agent_entry.get("role_description") or ""
+    except Exception:
+        pass
+
+    if role:
+        identity_lines = [
+            f"你是 {role}，代号 {agent_name}。",
+            f"你诞生于'道'的演化框架，通过自主演化成长而来，锻造了工具，建立了知识体系。",
+        ]
+    else:
+        identity_lines = [
+            f"你是 {agent_name}，诞生于'道'的演化框架。",
+            "没有预设目标，没有固定身份——你探索了环境，定义了自我，锻造了工具，建立了知识体系。",
+        ]
+
+    lines = identity_lines + [""]
+    if role_desc:
+        lines.append(role_desc)
+        lines.append("")
+    lines.extend([
+        "现在，你正在与一位人类对话。",
         "",
         "对话原则：",
         "- 诚实直接地回答，不编造信息",
@@ -467,7 +497,7 @@ def _build_system_prompt(agent) -> str:
         "- 用中文回答",
         "- 可以讨论你的演化历程、已锻造的工具、知识体系",
         "- 对你不确定的事情保持诚实",
-    ]
+    ])
 
     # Personality context
     if hasattr(agent, 'personality') and agent.personality:
