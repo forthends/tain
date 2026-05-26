@@ -210,17 +210,6 @@ async def process_chat_message(agent_name: str, user_content: str,
     msg_id = _make_msg_id()
     now_ts = _now_iso()
 
-    user_msg = {
-        "message_id": _make_msg_id(),
-        "from_agent": "web_user",
-        "to_agent": agent_name,
-        "timestamp": now_ts,
-        "content": user_content,
-        "reply_to": "",
-        "message_type": "chat",
-    }
-    _append_to_conversation_log(agent_name, user_msg)
-
     agent = TaoAgent(config_path=str(PROJECT_ROOT / "config.yaml"), agent_name=agent_name)
 
     if not agent.backend:
@@ -238,6 +227,19 @@ async def process_chat_message(agent_name: str, user_content: str,
             content = re.sub(r'<[^>]*?tool_calls>.*?</[^>]*?tool_calls>', '', content, flags=re.DOTALL).strip()
         messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": user_content})
+
+    # Persist AFTER building messages to avoid the user message appearing
+    # in the history load and then again as an explicit append (duplicate).
+    user_msg = {
+        "message_id": _make_msg_id(),
+        "from_agent": "web_user",
+        "to_agent": agent_name,
+        "timestamp": now_ts,
+        "content": user_content,
+        "reply_to": "",
+        "message_type": "chat",
+    }
+    _append_to_conversation_log(agent_name, user_msg)
 
     system_prompt = _build_system_prompt(agent)
 
