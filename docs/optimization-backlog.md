@@ -1,0 +1,56 @@
+# Optimization Backlog
+
+> Generated: 2026-05-27 | Scope: Tain Agent Framework v0.4.3
+
+## Status Legend
+- [ ] Pending
+- [~] In Progress
+- [x] Done
+
+---
+
+## 1. Architecture & Code Quality
+
+- [ ] **1.1 agent.py split** — 1045-line monolith mixes lifecycle, state, config, cognitive loop concerns
+- [ ] **1.2 PRAL bridge simplification** — CognitiveBridge extension pattern bypasses original cognitive_loop/improvement_loop, creating dual abstraction layers
+- [ ] **1.3 Message bus upgrade** — File-polling inter-agent communication has latency/reliability issues under load
+
+## 2. Performance
+
+- [ ] **2.1 State persistence batching** — Every cycle sync-writes to disk, high I/O during intense evolution
+- [ ] **2.2 Chat history incremental loading** — Full history loaded each time, degrades as conversations grow
+- [ ] **2.3 Knowledge content caching** — Server re-renders markdown every request
+
+## 3. Observability
+
+- [ ] **3.1 Structured logging** — Replace `print()` statements with leveled logging
+- [ ] **3.2 Metrics expansion** — Beyond cycle_count/tool_efficacy, add degradation/trend indicators
+- [ ] **3.3 Alerting mechanism** — Detect and notify when agent is stuck or degraded
+
+## 4. Web UI
+
+- [ ] **4.1 Tailwind build step** — Migrate from CDN Play to npm build for `@apply` support and custom themes
+- [ ] **4.2 Dark mode** — Add theme toggle with system preference detection
+- [ ] **4.3 Dashboard charts** — Add evolution trend and metric visualization
+
+## 5. Agent Capabilities
+
+- [ ] **5.1 Knowledge vectorization** — Semantic search over agent knowledge files
+- [ ] **5.2 Web search tool** — Internet access capability for agents
+- [ ] **5.3 MCP integration deepening** — Richer external tool ecosystem
+
+## 6. Reliability
+
+- [ ] **6.1 Agent state recovery** — Crash recovery with consistent state restoration
+- [ ] **6.2 LLM call retry** — Automatic retry with backoff for transient failures
+- [ ] **6.3 Graceful degradation** — Subsystem failures should not crash the agent
+
+## 7. Security
+
+- [ ] **7.1 Web UI authentication** — Basic auth or API key protection
+- [ ] **7.2 API rate limiting** — Per-endpoint rate limits
+
+## 8. Testing
+
+- [ ] **8.1 E2E tests** — Browser-based UI testing
+- [ ] **8.2 Coverage reporting** — Measure and track test coverage
