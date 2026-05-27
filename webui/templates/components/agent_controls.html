@@ -1,23 +1,23 @@
 <div id="agent-controls" class="flex items-center gap-2">
-    <span class="text-sm text-gray-500 mr-2">
+    <span class="text-sm text-body mr-2">
         <span class="status-dot {{ 'status-running' if agent.status == 'running' else 'status-stopped' }} mr-1"></span>
         {{ agent.status }}
     </span>
     {% if agent.status == 'running' %}
     <button hx-post="/agent/{{ agent.name }}/controls/stop"
             hx-target="#agent-controls" hx-swap="outerHTML"
-            class="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition-colors">
+            class="btn-secondary border-[#ef4444] text-[#ef4444] hover:bg-[#fef2f2]">
         Stop
     </button>
     <button hx-post="/agent/{{ agent.name }}/controls/restart"
             hx-target="#agent-controls" hx-swap="outerHTML"
-            class="px-4 py-2 bg-yellow-500 text-white text-sm rounded-lg hover:bg-yellow-600 transition-colors">
+            class="btn-secondary">
         Restart
     </button>
     {% else %}
     <button hx-post="/agent/{{ agent.name }}/controls/start"
             hx-target="#agent-controls" hx-swap="outerHTML"
-            class="px-4 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 transition-colors">
+            class="btn-primary">
         Start
     </button>
     {% endif %}

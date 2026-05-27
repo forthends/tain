@@ -2,12 +2,17 @@
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE_ROOT = PROJECT_ROOT / "agent_workspace"
 PID_DIR = WORKSPACE_ROOT  # .agent_daemon_{name}.pid files live here
+
+# Simple TTL cache for knowledge file listings
+_knowledge_cache: dict[str, tuple[float, list[dict]]] = {}
+_KNOWLEDGE_CACHE_TTL = 10  # seconds
 
 
 def _read_json(path: Path) -> dict | None:
@@ -196,6 +201,11 @@ def get_agent_personality(name: str) -> dict | None:
 
 
 def get_agent_knowledge(name: str) -> list[dict]:
+    now = time.monotonic()
+    cached = _knowledge_cache.get(name)
+    if cached and (now - cached[0]) < _KNOWLEDGE_CACHE_TTL:
+        return cached[1]
+
     entries = []
     for subdir in ("knowledge", "files", "poetry", "journal", "commitments"):
         d = WORKSPACE_ROOT / name / subdir
@@ -213,6 +223,7 @@ def get_agent_knowledge(name: str) -> list[dict]:
                     "directory": subdir,
                     "size": size,
                 })
+    _knowledge_cache[name] = (now, entries)
     return entries
 
 

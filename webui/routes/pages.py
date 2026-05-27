@@ -187,12 +187,15 @@ async def agent_decisions_list(name: str, phase: str = "", type: str = "",
 async def agent_knowledge_render(name: str, path: str):
     from webui.data import get_agent_knowledge_content
     from webui.render import render_content
+
     fmt, content = get_agent_knowledge_content(name, path)
     html = render_content(content, fmt)
     filename = path.split("/")[-1]
-    return _render("components/knowledge_viewer.html", {
+    response = _render("components/knowledge_viewer.html", {
         "filename": filename, "format": fmt, "html": html,
     })
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return response
 
 
 @router.get("/sidebar/agents", response_class=HTMLResponse)

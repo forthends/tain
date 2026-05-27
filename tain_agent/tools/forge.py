@@ -63,7 +63,7 @@ parameters:
 
 ## Usage
 
-This skill was forged by a Tao Agent. It provides the `{name}` tool.
+This skill was forged by a Tain Agent. It provides the `{name}` tool.
 
 ## Parameters
 

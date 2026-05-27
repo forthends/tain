@@ -1,55 +1,69 @@
 <!-- Live Tab — real-time agent output stream -->
 <div x-data="liveOutput('{{ agent.name }}', '{{ agent.role or '' }}')" x-init="connect()" class="flex flex-col" style="height: calc(100vh - 340px);">
     <!-- Agent info header -->
-    <div class="flex-shrink-0 mb-3 pb-3 border-b border-gray-200">
-        <div class="flex items-center gap-2">
-            <span class="text-sm font-semibold text-gray-800">{{ agent.name }}</span>
-            {% if agent.role %}<span class="text-sm text-gray-400">{{ agent.role }}</span>{% endif %}
-            <span class="text-xs text-gray-300">·</span>
+    <div class="flex-shrink-0 mb-3 pb-3 border-b border-hairline">
+        <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-sm font-semibold text-ink">{{ agent.name }}</span>
+            {% if agent.role %}<span class="text-sm text-body">{{ agent.role }}</span>{% endif %}
+            <span class="text-xs text-mute">·</span>
             <span class="flex items-center gap-1.5 text-xs">
-                <span :class="connected ? 'text-green-500' : 'text-gray-400'" class="status-dot"></span>
-                <span x-text="connected ? 'Connected' : 'Disconnected'" class="text-gray-500"></span>
+                <span :class="connected ? 'text-green-500' : 'text-mute'" class="status-dot"></span>
+                <span x-text="connected ? 'Connected' : 'Disconnected'" class="text-body"></span>
             </span>
-            <span class="text-xs text-gray-300" x-show="lineCount > 0">
+            <span class="text-xs text-mute" x-show="lineCount > 0">
                 <span x-text="lineCount"></span> lines
             </span>
-            <span class="text-xs text-gray-400" x-show="lastUpdate">
-                Last: <span x-text="lastUpdate" class="text-gray-500 font-mono"></span>
+            <span class="text-xs text-body" x-show="lastUpdate">
+                Last: <span x-text="lastUpdate" class="text-charcoal font-mono"></span>
             </span>
             <span class="flex-1"></span>
             <button @click="autoScroll = !autoScroll"
-                    :class="autoScroll ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-white text-gray-500 border-gray-200'"
-                    class="text-xs px-2 py-1 rounded border transition-colors">
+                    :class="autoScroll ? 'bg-ink text-on-dark border-ink' : 'btn-secondary'"
+                    class="text-xs px-3 py-1 rounded-full border transition-colors">
                 Auto-scroll
             </button>
             <button @click="clearOutput()"
-                    class="text-xs px-2 py-1 rounded border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition-colors">
+                    class="btn-secondary text-xs">
                 Clear
             </button>
             <button @click="reconnect()"
-                    class="text-xs px-2 py-1 rounded border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition-colors">
+                    class="btn-secondary text-xs">
                 Reconnect
             </button>
         </div>
     </div>
 
-    <!-- Output area -->
-    <div x-ref="output"
-         class="flex-1 bg-gray-900 text-green-400 font-mono text-xs rounded-lg p-4 overflow-y-auto shadow-inner"
-         @scroll="onScroll()">
-        <div x-ref="content">
-            <div x-show="lines.length === 0" class="text-gray-500 flex flex-col items-center justify-center h-full" style="min-height: 200px;">
-                <svg class="w-8 h-8 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                </svg>
-                <span x-show="connected">Waiting for agent output...</span>
-                <span x-show="!connected">Connecting...</span>
+    <!-- Terminal window -->
+    <div class="flex-1 flex flex-col rounded-lg overflow-hidden border border-hairline">
+        <!-- Terminal title bar — fixed, does not scroll -->
+        <div class="flex-shrink-0 bg-canvas-soft px-4 py-2.5 flex items-center gap-2 border-b border-hairline">
+            <div class="terminal-dots">
+                <div class="terminal-dot cursor-default" style="background:#ff5f56;"></div>
+                <div class="terminal-dot cursor-default" style="background:#ffbd2e;"></div>
+                <div class="terminal-dot cursor-default" style="background:#27c93f;"></div>
             </div>
-            <template x-for="line in lines" :key="line.id">
-                <div class="leading-relaxed hover:bg-gray-800/50 px-1 rounded" style="min-height: 1.25rem;"
-                     x-text="line.text"
-                     :class="line.type === 'error' ? 'text-red-400' : line.type === 'tool' ? 'text-cyan-400' : ''"></div>
-            </template>
+            <span class="text-xs text-mute font-mono flex-1 text-center">tain — agent output</span>
+            <div class="flex gap-1.5">
+                <span class="text-[10px] text-mute font-mono" x-text="lineCount"></span>
+                <span class="text-[10px] text-mute font-mono">lines</span>
+            </div>
+        </div>
+
+        <!-- Terminal body — scrollable output -->
+        <div x-ref="output"
+             class="flex-1 bg-ink text-on-dark font-mono text-xs p-4 overflow-y-auto"
+             @scroll="onScroll()">
+            <div x-ref="content">
+                <div x-show="lines.length === 0" class="text-on-dark-mute flex flex-col items-center justify-center h-full" style="min-height: 160px;">
+                    <span x-show="connected">Waiting for agent output...</span>
+                    <span x-show="!connected">Connecting...</span>
+                </div>
+                <template x-for="line in lines" :key="line.id">
+                    <div class="leading-relaxed hover:bg-white/5 px-1 rounded" style="min-height: 1.25rem;"
+                         x-text="line.text"
+                         :class="line.type === 'error' ? 'text-[#ff5f56]' : line.type === 'tool' ? 'text-[#27c93f]' : 'text-[#e2e8f0]'"></div>
+                </template>
+            </div>
         </div>
     </div>
 </div>

@@ -1,7 +1,7 @@
 """
 Skill Exporter — convert forged tools to agentskills.io standard format.
 
-Transforms Tao Agent forged tools (Python .py + .meta.json) into
+Transforms Tain Agent forged tools (Python .py + .meta.json) into
 standard Agent Skills (SKILL.md + scripts/ + references/) that can
 be consumed by Claude Code, Copilot, Cursor, and other agents.
 

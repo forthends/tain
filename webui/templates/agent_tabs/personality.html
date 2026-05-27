@@ -1,34 +1,34 @@
 <!-- Personality Tab -->
 <div>
     {% if personality and personality.get('traits') %}
-    <div class="mb-6">
-        <table class="w-full text-sm bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <thead class="bg-gray-50">
+    <div class="mb-8">
+        <table class="w-full text-sm bg-canvas rounded-lg border border-hairline overflow-hidden">
+            <thead class="bg-canvas-soft">
                 <tr>
-                    <th class="text-left px-4 py-2 text-gray-500 font-medium">Dimension</th>
-                    <th class="text-left px-4 py-2 text-gray-500 font-medium">Confidence</th>
-                    <th class="text-left px-4 py-2 text-gray-500 font-medium">First Observed</th>
-                    <th class="text-left px-4 py-2 text-gray-500 font-medium">Reinforcements</th>
+                    <th class="text-left px-4 py-2 text-mute font-medium text-xs uppercase tracking-wider">Dimension</th>
+                    <th class="text-left px-4 py-2 text-mute font-medium text-xs uppercase tracking-wider">Confidence</th>
+                    <th class="text-left px-4 py-2 text-mute font-medium text-xs uppercase tracking-wider">First Observed</th>
+                    <th class="text-left px-4 py-2 text-mute font-medium text-xs uppercase tracking-wider">Reinforcements</th>
                 </tr>
             </thead>
             <tbody>
                 {% for category, trait_list in personality.traits.items() %}
                 {% for t in trait_list %}
-                <tr class="border-t border-gray-100 hover:bg-gray-50">
+                <tr class="border-t border-hairline hover:bg-canvas-soft">
                     <td class="px-4 py-2">
-                        <div class="font-medium">{{ t.get('value', '?') }}</div>
-                        <div class="text-xs text-gray-400">{{ category }}</div>
+                        <div class="font-medium text-ink">{{ t.get('value', '?') }}</div>
+                        <div class="text-xs text-mute">{{ category }}</div>
                     </td>
                     <td class="px-4 py-2">
                         <div class="flex items-center gap-2">
-                            <div class="w-16 bg-gray-200 rounded-full h-2">
-                                <div class="bg-blue-500 h-2 rounded-full" style="width:{{ (t.get('confidence', 0) * 100)|int }}%"></div>
+                            <div class="w-16 bg-hairline rounded-full h-2">
+                                <div class="bg-ink h-2 rounded-full" style="width:{{ (t.get('confidence', 0) * 100)|int }}%"></div>
                             </div>
-                            <span class="text-xs">{{ "%.2f"|format(t.get('confidence', 0)) }}</span>
+                            <span class="text-xs text-mute">{{ "%.2f"|format(t.get('confidence', 0)) }}</span>
                         </div>
                     </td>
-                    <td class="px-4 py-2 text-xs text-gray-400">{{ t.get('first_observed_at', '?')[:10] }}</td>
-                    <td class="px-4 py-2 text-xs">{{ t.get('observations', 0) }}</td>
+                    <td class="px-4 py-2 text-xs text-mute">{{ t.get('first_observed_at', '?')[:10] }}</td>
+                    <td class="px-4 py-2 text-xs text-charcoal">{{ t.get('observations', 0) }}</td>
                 </tr>
                 {% endfor %}
                 {% endfor %}
@@ -36,22 +36,22 @@
         </table>
     </div>
 
-    <h3 class="text-sm font-semibold text-gray-700 mb-3">Emergence Stories</h3>
+    <h3 class="text-sm font-semibold text-ink mb-3">Emergence Stories</h3>
     <div class="space-y-3">
         {% for category, trait_list in personality.traits.items() %}
         {% for t in trait_list %}
         {% if t.get('emergence_story') %}
-        <div x-data="{open: false}" class="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div @click="open = !open" class="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50">
-                <span class="text-sm font-medium">{{ t.get('value') }}</span>
-                <span class="text-xs text-gray-400">confidence: {{ "%.2f"|format(t.get('confidence', 0)) }}</span>
+        <div x-data="{open: false}" class="bg-canvas rounded-lg border border-hairline overflow-hidden">
+            <div @click="open = !open" class="flex items-center justify-between p-3 cursor-pointer hover:bg-canvas-soft">
+                <span class="text-sm font-medium text-ink">{{ t.get('value') }}</span>
+                <span class="text-xs text-mute">confidence: {{ "%.2f"|format(t.get('confidence', 0)) }}</span>
             </div>
-            <div x-show="open" class="border-t border-gray-100 p-3 bg-gray-50 text-sm text-gray-600">
+            <div x-show="open" class="border-t border-hairline p-3 bg-canvas-soft text-sm text-body">
                 <p>{{ t.get('emergence_story', '') }}</p>
                 {% if t.get('reinforcement_stories') %}
                 <div class="mt-2 space-y-1">
                     {% for story in t.reinforcement_stories %}
-                    <p class="text-xs text-gray-500">· {{ story }}</p>
+                    <p class="text-xs text-mute">{{ story }}</p>
                     {% endfor %}
                 </div>
                 {% endif %}
@@ -62,6 +62,6 @@
         {% endfor %}
     </div>
     {% else %}
-    <p class="text-gray-400 text-sm">No personality data yet. The agent may not have been bootstrapped or its personality hasn't emerged.</p>
+    <p class="text-mute text-sm">No personality data yet. The agent may not have been bootstrapped or its personality hasn't emerged.</p>
     {% endif %}
 </div>

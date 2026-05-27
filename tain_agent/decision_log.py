@@ -1,7 +1,7 @@
 """
 Decision Log — 抉择日志系统
 
-Every decision the Tao Agent makes is recorded here with full context,
+Every decision the Tain Agent makes is recorded here with full context,
 options considered, reasoning, and outcome.
 
 Format: JSONL (one JSON object per line) for append-only durability.
@@ -43,12 +43,22 @@ def _truncate_options(options: list[dict]) -> list[dict]:
 
 
 class DecisionLog:
-    """Immutable append-only log of every decision the agent makes."""
+    """Immutable append-only log of every decision the agent makes.
+
+    Uses write buffering: records are accumulated in memory and flushed
+    in batches to reduce per-cycle disk I/O. Outcomes are appended to a
+    separate outcomes file instead of rewriting the entire decisions file.
+    """
+
+    _FLUSH_INTERVAL = 10  # flush buffer every N records
 
     def __init__(self, log_dir: str = "tain_agent/logs", log_file: str = "decisions.jsonl"):
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.log_path = self.log_dir / log_file
+        self._outcomes_path = self.log_dir / "outcomes.jsonl"
+        self._buffer: list[dict] = []
+        self._buffer_count = 0
 
     def record(
         self,
@@ -61,7 +71,7 @@ class DecisionLog:
         phase: str,
         actual_outcome: Optional[str] = None,
     ) -> str:
-        """Record a decision to the immutable log. Returns the decision ID."""
+        """Record a decision. Buffered in memory, flushed periodically. Returns the decision ID."""
         decision_id = str(uuid.uuid4())[:8]
         # Truncate large fields to prevent log bloat
         options_considered = _truncate_options(options_considered)
@@ -79,34 +89,57 @@ class DecisionLog:
             "expected_outcome": expected_outcome,
             "actual_outcome": actual_outcome,
         }
-        with open(self.log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        self._buffer.append(entry)
+        self._buffer_count += 1
+        if self._buffer_count >= self._FLUSH_INTERVAL:
+            self.flush()
         return decision_id
 
     def update_outcome(self, decision_id: str, actual_outcome: str) -> None:
-        """Update a previous decision with its actual outcome (rewrites the line)."""
-        if not self.log_path.exists():
-            return
-        lines = []
-        with open(self.log_path, "r", encoding="utf-8", errors="replace") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                except json.JSONDecodeError:
-                    continue  # skip corrupted lines
-                if entry.get("id") == decision_id:
-                    entry["actual_outcome"] = actual_outcome
-                lines.append(json.dumps(entry, ensure_ascii=False))
-        with open(self.log_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
+        """Append outcome to the outcomes log (append-only, no full rewrite)."""
+        outcome = {
+            "decision_id": decision_id,
+            "actual_outcome": actual_outcome,
+            "recorded_at": now().isoformat(),
+        }
+        with open(self._outcomes_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(outcome, ensure_ascii=False) + "\n")
+
+    def flush(self) -> int:
+        """Write all buffered records to disk. Returns number of records written."""
+        if not self._buffer:
+            return 0
+        count = len(self._buffer)
+        with open(self.log_path, "a", encoding="utf-8") as f:
+            for entry in self._buffer:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        self._buffer.clear()
+        self._buffer_count = 0
+        return count
+
+    def _load_outcomes(self) -> dict[str, str]:
+        """Load outcome updates from the outcomes log. Returns {decision_id: outcome_text}."""
+        outcomes = {}
+        if self._outcomes_path.exists():
+            with open(self._outcomes_path, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                        did = rec.get("decision_id")
+                        if did:
+                            outcomes[did] = rec.get("actual_outcome", "")
+                    except json.JSONDecodeError:
+                        continue
+        return outcomes
 
     def read_all(self) -> list[dict]:
-        """Read all decision entries."""
+        """Read all decision entries, merging in outcome updates."""
         if not self.log_path.exists():
             return []
+        outcomes = self._load_outcomes()
         entries = []
         with open(self.log_path, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -116,6 +149,8 @@ class DecisionLog:
                 try:
                     entry = json.loads(line)
                     if isinstance(entry, dict) and "id" in entry:
+                        if entry["id"] in outcomes:
+                            entry["actual_outcome"] = outcomes[entry["id"]]
                         entries.append(entry)
                 except json.JSONDecodeError:
                     continue  # skip corrupted lines

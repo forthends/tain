@@ -176,7 +176,7 @@ class Identity:
 
         if cycles > 0:
             lines.append(
-                f"I underwent {cycles} evolution cycles in the Tao Agent factory, "
+                f"I underwent {cycles} evolution cycles in the Tain Agent factory, "
                 f"forged {tools} tools, and built understanding across "
                 f"{expertise_count} knowledge domains."
             )
@@ -209,7 +209,7 @@ class Identity:
 
         if plain:
             return body
-        return _wrap_box(body, f"Tao Agent {self.name} v{self.version}")
+        return _wrap_box(body, f"Tain Agent {self.name} v{self.version}")
 
     def welcome_back(self, last_session: Optional[dict] = None,
                      doc_count: int = 0, plain: bool = False) -> str:

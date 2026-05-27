@@ -1,12 +1,12 @@
 {% for a in agents %}
 <a href="/agent/{{ a.name }}"
-   class="block px-3 py-2 rounded-md mb-0.5 text-sm hover:bg-gray-800 transition-colors {% if (current_agent and current_agent == a.name) or (agent and agent.name == a.name) %}bg-gray-800{% endif %}">
+   class="block px-3 py-2 rounded-full mb-0.5 text-sm hover:bg-canvas-soft transition-colors {% if (current_agent and current_agent == a.name) or (agent and agent.name == a.name) %}bg-canvas-soft{% endif %}">
     <span class="status-dot {{ 'status-running' if a.status == 'running' else 'status-stopped' }} mr-2"></span>
     {{ a.name }}
-    {% if a.role %}<span class="text-xs text-gray-500 ml-1">{{ a.role }}</span>{% endif %}
+    {% if a.role %}<span class="text-xs text-mute ml-1">{{ a.role }}</span>{% endif %}
 </a>
 {% endfor %}
 
 {% if not agents %}
-<a class="block px-3 py-2 rounded-md text-sm text-gray-500">No agents</a>
+<div class="block px-3 py-2 rounded-full text-sm text-mute">No agents</div>
 {% endif %}

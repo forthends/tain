@@ -3,65 +3,164 @@
 
 {% block content %}
 <div class="p-6">
-    <h1 class="text-2xl font-bold text-gray-900 mb-1">Dashboard</h1>
-    <p class="text-sm text-gray-500 mb-6">Agent overview and system status</p>
+    <h1 class="text-display-lg text-ink mb-1" style="font-family: 'SF Pro Rounded', 'Nunito', system-ui, -apple-system, sans-serif;">Dashboard</h1>
+    <p class="text-sm text-mute mb-8">Agent overview and system status</p>
 
     <!-- Agent cards grid -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-12">
         {% if agents %}
         {% for a in agents %}
         <a href="/agent/{{ a.name }}"
-           class="block bg-white rounded-xl shadow-sm border border-gray-200 p-5 hover:shadow-md hover:border-blue-300 transition-all group">
+           class="block bg-canvas rounded-lg border border-hairline p-5 hover:border-ink transition-colors group">
             <div class="flex items-center justify-between mb-3">
                 <span class="status-dot {{ 'status-running' if a.status == 'running' else 'status-stopped' }}"></span>
-                <span class="text-xs text-gray-400">{{ a.evolution_mode }}</span>
+                <span class="text-xs text-mute">{{ a.evolution_mode }}</span>
             </div>
-            <h3 class="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">{{ a.name }}</h3>
-            {% if a.role %}<p class="text-sm text-gray-500 mb-2">{{ a.role }}</p>{% endif %}
-            <div class="flex items-center gap-3 text-xs text-gray-400 mt-3">
+            <h3 class="text-lg font-semibold text-ink group-hover:text-charcoal transition-colors">{{ a.name }}</h3>
+            {% if a.role %}<p class="text-sm text-body mb-2">{{ a.role }}</p>{% endif %}
+            <div class="flex items-center gap-3 text-xs text-mute mt-3">
                 <span>v{{ a.version }}</span>
-                <span>·</span>
+                <span>&middot;</span>
                 <span>{{ a.tool_count }} tools</span>
-                <span>·</span>
+                <span>&middot;</span>
                 <span>{{ a.cycle_count }} cycles</span>
             </div>
             <div class="flex items-center gap-2 mt-2 text-xs">
-                <span class="px-2 py-0.5 rounded-full {{ 'bg-green-100 text-green-700' if a.status == 'running' else 'bg-gray-100 text-gray-500' }}">
+                <span class="pill-badge {{ 'bg-[#dcfce7] text-[#166534]' if a.status == 'running' else 'bg-canvas-soft text-mute' }}">
                     {{ 'running' if a.status == 'running' else 'stopped' }}
                 </span>
-                <span class="text-gray-400">phase: {{ a.phase }}</span>
+                <span class="text-mute">phase: {{ a.phase }}</span>
             </div>
         </a>
         {% endfor %}
-        {% else %}
-        <div class="col-span-full bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
-            <p class="text-gray-400 text-lg mb-2">No agents yet</p>
-            <a href="/create" class="text-blue-500 hover:text-blue-600 text-sm">Create your first agent →</a>
-        </div>
         {% endif %}
     </div>
 
+    <!-- Metrics chart -->
+    {% if agents %}
+    <div class="bg-canvas rounded-lg border border-hairline p-5 mb-12">
+        <h2 class="text-sm font-semibold text-ink mb-4">Agent Metrics Comparison</h2>
+        <div class="relative" style="height: 320px;">
+            <canvas id="metricsChart"></canvas>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- System info -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-        <h2 class="text-sm font-semibold text-gray-700 mb-3">System Info</h2>
+    <div class="bg-canvas rounded-lg border border-hairline p-5">
+        <h2 class="text-sm font-semibold text-ink mb-3">System Info</h2>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
-                <span class="text-gray-400">Framework</span>
-                <p class="font-medium">v{{ framework_version }}</p>
+                <span class="text-mute">Framework</span>
+                <p class="font-medium text-ink">v{{ framework_version }}</p>
             </div>
             <div>
-                <span class="text-gray-400">LLM Provider</span>
-                <p class="font-medium">{{ llm_provider }}</p>
+                <span class="text-mute">LLM Provider</span>
+                <p class="font-medium text-ink">{{ llm_provider }}</p>
             </div>
             <div>
-                <span class="text-gray-400">Model</span>
-                <p class="font-medium">{{ llm_model }}</p>
+                <span class="text-mute">Model</span>
+                <p class="font-medium text-ink">{{ llm_model }}</p>
             </div>
             <div>
-                <span class="text-gray-400">Agents</span>
-                <p class="font-medium">{{ agents|length }} registered</p>
+                <span class="text-mute">Agents</span>
+                <p class="font-medium text-ink">{{ agents|length }} registered</p>
             </div>
         </div>
     </div>
 </div>
+
+{% if agents %}
+<script>
+(function() {
+    const isDark = document.documentElement.classList.contains('dark');
+    const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+    const textColor = isDark ? '#a3a3a3' : '#737373';
+
+    fetch('/api/agents')
+        .then(r => r.json())
+        .then(agents => {
+            if (!agents.length) return;
+
+            const names = agents.map(a => a.name);
+            const cycles = agents.map(a => a.cycle_count || 0);
+            const tools = agents.map(a => a.tool_count || 0);
+            const decisions = agents.map(a => a.decision_count || 0);
+            const lineage = agents.map(a => a.lineage_count || 0);
+
+            new Chart(document.getElementById('metricsChart'), {
+                type: 'bar',
+                data: {
+                    labels: names,
+                    datasets: [
+                        {
+                            label: 'Cycles',
+                            data: cycles,
+                            backgroundColor: '#000000',
+                            borderRadius: 6,
+                            borderSkipped: false,
+                        },
+                        {
+                            label: 'Tools',
+                            data: tools,
+                            backgroundColor: '#525252',
+                            borderRadius: 6,
+                            borderSkipped: false,
+                        },
+                        {
+                            label: 'Decisions',
+                            data: decisions,
+                            backgroundColor: '#737373',
+                            borderRadius: 6,
+                            borderSkipped: false,
+                        },
+                        {
+                            label: 'Evolution Events',
+                            data: lineage,
+                            backgroundColor: '#a3a3a3',
+                            borderRadius: 6,
+                            borderSkipped: false,
+                        },
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: textColor,
+                                usePointStyle: true,
+                                padding: 16,
+                                font: { size: 12 },
+                            },
+                        },
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: textColor, font: { size: 11 } },
+                            grid: { color: gridColor },
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: textColor,
+                                font: { size: 11 },
+                                precision: 0,
+                            },
+                            grid: { color: gridColor },
+                        },
+                    },
+                },
+            });
+        })
+        .catch(err => console.warn('Chart load failed:', err));
+
+    const observer = new MutationObserver(() => {
+        setTimeout(() => location.reload(), 150);
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+})();
+</script>
+{% endif %}
 {% endblock %}

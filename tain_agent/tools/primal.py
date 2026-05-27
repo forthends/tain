@@ -1,7 +1,7 @@
 """
 Primal Tools — 原始工具
 
-The first tools the Tao Agent is born with.
+The first tools the Tain Agent is born with.
 These are the "senses" it uses to explore the world.
 
 All file operations are scoped to the agent's isolated workspace.

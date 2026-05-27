@@ -30,7 +30,7 @@ from tain_agent.core.trials import TrialScheduler, TRIAL_DEFINITIONS
 def _make_config(seed=None, drives_override=None):
     """Build a minimal config dict for diversity verification."""
     cfg = {
-        "agent": {"name": "Tao Agent", "version": "2.0.0-dev", "timezone": "Asia/Shanghai"},
+        "agent": {"name": "Tain Agent", "version": "2.0.0-dev", "timezone": "Asia/Shanghai"},
         "llm": {"provider": "test", "model": "test", "max_tokens": 100, "api_key_env": "NONE", "base_url": ""},
         "safety": {"protected_paths": [], "confirm_destructive": False},
         "logging": {"directory": "/tmp", "decision_log_file": "test.jsonl", "memory_file": "test.json"},

@@ -1,7 +1,7 @@
 """
 Tool Registry — 工具注册表
 
-All tools the Tao Agent can use are registered here.
+All tools the Tain Agent can use are registered here.
 The registry is self-describing: the agent can query it to discover what it can do.
 """
 

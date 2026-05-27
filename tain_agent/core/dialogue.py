@@ -2,8 +2,7 @@
 Dialogue Bridge — 人类对话
 
 Interactive human-AI dialogue bridge via terminal REPL.
-Follows the CognitiveBridge extension pattern: wraps TaoAgent,
-drives its subsystems without modifying protected agent.py.
+Wraps TaoAgent and drives its subsystems for interactive dialogue.
 
 Features:
   - Streaming response (token-by-token)
@@ -226,7 +225,7 @@ class DialogueBridge:
         """Print welcome banner."""
         print(f"""
 ╔══════════════════════════════════════════════╗
-║  Tao Agent 对话模式 — v{self.agent.version:<24s} ║
+║  Tain Agent 对话模式 — v{self.agent.version:<24s} ║
 ║                                              ║
 ║  输入消息开始对话                              ║
 ║  /help  查看可用命令                           ║
@@ -428,7 +427,7 @@ class DialogueBridge:
                         # Stop spinner on first text token
                         if not prefix_printed:
                             breath.stop()
-                            sys.stdout.write("\nTao Agent: ")
+                            sys.stdout.write("\nTain Agent: ")
                             sys.stdout.flush()
                             prefix_printed = True
                         token = event["text"]
@@ -629,7 +628,7 @@ class DialogueBridge:
         """Show help text."""
         print(textwrap.dedent("""
 
-        ═══ Tao Agent 对话模式 — 帮助 ═══
+        ═══ Tain Agent 对话模式 — 帮助 ═══
 
         命令:
           /help       显示此帮助

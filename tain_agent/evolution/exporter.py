@@ -223,7 +223,7 @@ def rewrite_imports(source: str) -> str:
 _MAIN_PY_TEMPLATE = '''"""
 {agent_name} v{version} — standalone evolved agent.
 
-Exported from Tao Agent factory on {export_date}.
+Exported from Tain Agent factory on {export_date}.
 Evolution cycles: {evolution_cycles}
 Tools: {tool_count}  |  Knowledge docs: {knowledge_count}
 """
@@ -601,7 +601,7 @@ def _generate_readme(agent_name: str, version: str, tool_count: int,
     export_date = _now_iso()[:19]
     return f"""# {agent_name} v{version}
 
-Standalone evolved agent — exported from the Tao Agent factory.
+Standalone evolved agent — exported from the Tain Agent factory.
 
 ## Identity
 

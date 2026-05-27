@@ -53,6 +53,9 @@ rag_storage/
 # Claude Code
 .claude/
 
+# Web UI build dependencies
+webui/node_modules/
+
 # Environment secrets (contains API keys)
 .env
 .env.*

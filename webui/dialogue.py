@@ -7,8 +7,10 @@ with an async generator suitable for SSE streaming.
 
 import asyncio
 import json
+import os
 import re
 import uuid
+from collections import deque
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import AsyncGenerator
@@ -57,13 +59,26 @@ def _cleanup_incomplete_messages(messages: list[dict]) -> None:
 
 
 def _load_conversation_history(agent_name: str) -> list[dict]:
+    """Load recent conversation history using tail-reading to avoid full file load."""
     conv_file = WORKSPACE_ROOT / agent_name / "logs" / "conversations" / "web_user.jsonl"
     if not conv_file.exists():
         return []
-    messages = []
+
+    # Read last ~200KB for ~200 messages (typical message ~1KB)
+    TAIL_BYTES = 200 * 1024
+    file_size = conv_file.stat().st_size
+    messages = deque()
+
     try:
-        for line in conv_file.read_text(encoding="utf-8").strip().split("\n"):
-            if line.strip():
+        with open(conv_file, "r", encoding="utf-8") as f:
+            if file_size > TAIL_BYTES:
+                f.seek(max(0, file_size - TAIL_BYTES))
+                # Skip partial first line from seek
+                f.readline()
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
                 try:
                     msg = json.loads(line)
                     if isinstance(msg, dict) and "message_id" in msg:
@@ -72,7 +87,7 @@ def _load_conversation_history(agent_name: str) -> list[dict]:
                     continue
     except IOError:
         pass
-    return messages
+    return list(messages)
 
 
 def _append_to_conversation_log(agent_name: str, message: dict) -> None:
@@ -459,7 +474,7 @@ def _build_system_prompt(agent) -> str:
     Uses the agent's actual identity (role + name) from the registry
     instead of a generic framework label, so each agent speaks as itself.
     """
-    agent_name = agent.name
+    agent_name = agent.agent_name
 
     # Look up the agent's role from the registry (set during creation or
     # self-defined during evolution). Chaos-mode agents may not have one.

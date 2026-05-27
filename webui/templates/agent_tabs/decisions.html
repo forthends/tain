@@ -1,11 +1,11 @@
 <!-- Decisions Tab -->
 <div>
     <div class="flex items-center gap-3 mb-4">
-        <span class="text-sm text-gray-500">Filter:</span>
+        <span class="text-sm text-mute">Filter:</span>
         <select name="phase" hx-get="/agent/{{ agent.name }}/decisions-list?limit=20"
                 hx-target="#decisions-content" hx-trigger="change"
                 hx-include="[name='phase'],[name='type']"
-                class="text-sm border border-gray-300 rounded px-2 py-1">
+                class="text-sm bg-canvas border border-hairline rounded-full px-3 py-1.5 text-ink focus:ring-1 focus:ring-ink outline-none">
             <option value="">All phases</option>
             <option value="bootstrap">bootstrap</option>
             <option value="self_define">self_define</option>
@@ -14,7 +14,7 @@
         <select name="type" hx-get="/agent/{{ agent.name }}/decisions-list?limit=20"
                 hx-target="#decisions-content" hx-trigger="change"
                 hx-include="[name='phase'],[name='type']"
-                class="text-sm border border-gray-300 rounded px-2 py-1">
+                class="text-sm bg-canvas border border-hairline rounded-full px-3 py-1.5 text-ink focus:ring-1 focus:ring-ink outline-none">
             <option value="">All types</option>
             <option value="tool_call">tool_call</option>
             <option value="tool_forge">tool_forge</option>

@@ -1,13 +1,13 @@
 # Phase 3.1 — Agent Skills 集成设计
 
 > 方向 2 (Tool→Skill 导出) + 方向 4 (知识库标准化)
-> 将 Tao Agent 的进化产物对齐 agentskills.io 开放标准
+> 将 Tain Agent 的进化产物对齐 agentskills.io 开放标准
 
 ---
 
 ## 一、设计目标
 
-让 Tao Agent 的进化产物（工具 + 知识）以 **agentskills.io 标准格式** 输出，实现：
+让 Tain Agent 的进化产物（工具 + 知识）以 **agentskills.io 标准格式** 输出，实现：
 
 1. **工具可被外部 Agent 消费**：锻造的 `.py` 工具导出为标准 `SKILL.md` + `scripts/` 结构，Claude Code / Copilot / Cursor 等可直接加载
 2. **知识可被外部 Agent 检索**：知识文档采用 SKILL.md 的 YAML frontmatter 格式，支持渐进式发现
@@ -19,7 +19,7 @@
 
 ### 2.1 转换映射
 
-将 Tao Agent 的锻造工具转换为 Agent Skills 标准格式：
+将 Tain Agent 的锻造工具转换为 Agent Skills 标准格式：
 
 ```
 锻造工具                                   Agent Skill

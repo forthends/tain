@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Supervisor for Tao Agent — 双生火焰 (Twin Flame).
+"""Supervisor for Tain Agent — 双生火焰 (Twin Flame).
 
 The Guardian archetype: keeps the agent alive, monitors health,
 and ensures continuity across restarts.
@@ -182,7 +182,7 @@ def main():
     global _log_fh
 
     parser = argparse.ArgumentParser(
-        description="Tao Agent Guardian — 双生火焰 (Twin Flame)",
+        description="Tain Agent Guardian — 双生火焰 (Twin Flame)",
     )
     parser.add_argument("--agent-name", type=str, default=None,
                         help="Agent name to manage")
@@ -326,7 +326,7 @@ def main():
         log(f"Health warnings: {health['issues']}")
 
     log("═══════════════════════════════════════════")
-    log(f"   Tao Agent Guardian — Twin Flame v0.4   ")
+    log(f"   Tain Agent Guardian — Twin Flame v0.4   ")
     log(f"   Agent: {agent_name}")
     log("   道生一，一生二，二生三，三生万物       ")
     log("═══════════════════════════════════════════")

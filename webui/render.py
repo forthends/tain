@@ -5,6 +5,7 @@ No external dependencies. Handles the Markdown subset used by agents.
 """
 import re
 import json as _json
+from functools import lru_cache
 from html import escape
 
 
@@ -12,6 +13,7 @@ def _escape_html(text: str) -> str:
     return escape(text)
 
 
+@lru_cache(maxsize=64)
 def render_markdown(text: str) -> str:
     """Render a Markdown string to HTML.
 

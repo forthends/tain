@@ -36,7 +36,8 @@ class AgentFactory:
     Each agent lives in its own directory under the workspace root:
         agent_workspace/
           _registry.json
-          _messages/
+          _message_bus.db         # SQLite message bus (v0.4.3+)
+          _messages/              # (legacy — kept for backward compat)
           <agent_name>/
             version.json
             personality.json
