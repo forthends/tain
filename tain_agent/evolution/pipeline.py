@@ -152,8 +152,8 @@ class SelfImprovementPipeline:
             return stage.complete(False, error="CapabilityRegistry not available.")
 
         try:
-            gaps = self._capability_registry.assess_capabilities()
-            
+            gaps = self._capability_registry.assess()
+
             if not gaps or not gaps.get("gaps"):
                 return stage.complete(
                     True,
@@ -164,7 +164,7 @@ class SelfImprovementPipeline:
             return stage.complete(
                 True,
                 output={
-                    "capability_id": top_gap.get("capability_id", "unknown"),
+                    "capability_id": top_gap.get("id", "unknown"),
                     "priority": top_gap.get("priority", "MEDIUM"),
                     "description": top_gap.get("description", ""),
                 },

@@ -313,10 +313,10 @@ class OpenAICompatibleBackend(LLMBackend):
 def create_backend(config: dict) -> LLMBackend:
     """Factory: create the appropriate LLM backend from config dict."""
     llm_cfg = config.get("llm", {})
-    provider = llm_cfg.get("provider", "anthropic").lower()
-    model = llm_cfg.get("model", "claude-sonnet-4-6-20250514")
+    provider = llm_cfg.get("provider", "minimax").lower()
+    model = llm_cfg.get("model", "MiniMax-M2.7")
     max_tokens = llm_cfg.get("max_tokens", 8192)
-    api_key_env = llm_cfg.get("api_key_env", "ANTHROPIC_API_KEY")
+    api_key_env = llm_cfg.get("api_key_env", "MINIMAX_API_KEY")
     base_url = llm_cfg.get("base_url")
 
     api_key = os.environ.get(api_key_env, "")

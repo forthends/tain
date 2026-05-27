@@ -7,5 +7,5 @@ defines itself, and evolves through continuous self-improvement.
 v0.4.0 — Multi-agent support, dual evolution modes, inter-agent communication.
 """
 
-__version__ = "0.4.0"
+__version__ = "0.4.3"
 __compatible_agent_versions__ = ">=0.0.1"

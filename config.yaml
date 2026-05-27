@@ -3,7 +3,7 @@
 
 # ── Framework ──────────────────────────────────────────────────────────
 framework:
-  version: "0.4.0"
+  version: "0.4.3"
   min_agent_version: "0.0.1"
 
 # ── Agent defaults ─────────────────────────────────────────────────────
@@ -25,6 +25,12 @@ llm:
   max_tokens: 8192
   api_key_env: "MINIMAX_API_KEY"
   base_url: "https://api.minimaxi.com/anthropic"
+  retry:
+    enabled: true
+    max_retries: 3
+    initial_delay: 1.0
+    max_delay: 30.0
+    exponential_base: 2.0
   # ── Alternatives ──
   # DeepSeek via OpenAI-compatible:
   #   provider: deepseek, model: deepseek-v4-pro, api_key_env: DEEPSEEK_API_KEY, base_url: https://api.deepseek.com/anthropic
@@ -32,6 +38,11 @@ llm:
   #   provider: anthropic, model: claude-sonnet-4-6-20250514, api_key_env: ANTHROPIC_API_KEY, (no base_url)
   # MiniMax via Anthropic-compatible (recommended, supports thinking blocks):
   #   provider: minimax, model: MiniMax-M2.7, api_key_env: MINIMAX_API_KEY, base_url: https://api.minimaxi.com/anthropic
+
+# ── Conversation context management ────────────────────────────────────
+conversation:
+  token_limit: 80000                # trigger summarization when estimated tokens exceed this
+  model_context_window: 131072      # model's total context window (MiniMax-M2.7 = 131072)
 
 bootstrap:
   # Maximum cycles for the environment exploration phase

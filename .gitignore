@@ -56,3 +56,6 @@ rag_storage/
 # Environment secrets (contains API keys)
 .env
 .env.*
+
+.backup/
+.demo/

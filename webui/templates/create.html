@@ -6,7 +6,7 @@
     <h1 class="text-2xl font-bold text-gray-900 mb-1">Create New Agent</h1>
     <p class="text-sm text-gray-500 mb-6">创建新Agent</p>
 
-    <form @submit.prevent="createAgent" class="space-y-5" x-data="{createAgent: async function() { const fd = new FormData($el); const data = Object.fromEntries(fd); try { const resp = await fetch('/api/agents/create', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)}); const result = await resp.json(); const el = document.getElementById('create-result'); if (resp.ok) { el.innerHTML = '<div class=\"bg-green-50 border border-green-200 rounded-lg p-4 text-green-700\">Agent <strong>'+result.name+'</strong> created successfully. <a href=\"/agent/'+result.name+'\" class=\"underline\">View agent →</a></div>'; } else { el.innerHTML = '<div class=\"bg-red-50 border border-red-200 rounded-lg p-4 text-red-700\">'+result.detail+'</div>'; } } catch(e) { document.getElementById('create-result').innerHTML = '<div class=\"bg-red-50 border border-red-200 rounded-lg p-4 text-red-700\">Error: '+e.message+'</div>'; } }}">
+    <form id="create-form" class="space-y-5">
         <div class="bg-white rounded-lg border border-gray-200 p-4">
             <label class="block text-sm font-medium text-gray-700 mb-2">Agent Name</label>
             <input type="text" name="name" required pattern="[a-z][a-z0-9_-]{0,31}"
@@ -51,8 +51,30 @@
     <div id="create-result" class="mt-4"></div>
 
     <script>
-    document.querySelectorAll('input[name="mode"]').forEach(r => {
-        r.addEventListener('change', () => {
+    document.getElementById('create-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var fd = new FormData(this);
+        var data = Object.fromEntries(fd);
+        var el = document.getElementById('create-result');
+        try {
+            var resp = await fetch('/api/agents/create', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data),
+            });
+            var result = await resp.json();
+            if (resp.ok) {
+                el.innerHTML = '<div class="bg-green-50 border border-green-200 rounded-lg p-4 text-green-700">Agent <strong>' + result.name + '</strong> created successfully. <a href="/agent/' + result.name + '" class="underline">View agent &rarr;</a></div>';
+            } else {
+                el.innerHTML = '<div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">' + result.detail + '</div>';
+            }
+        } catch(err) {
+            el.innerHTML = '<div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">Error: ' + err.message + '</div>';
+        }
+    });
+
+    document.querySelectorAll('input[name="mode"]').forEach(function(r) {
+        r.addEventListener('change', function() {
             document.getElementById('role-fields').style.display =
                 document.querySelector('input[name="mode"]:checked').value === 'specified' ? 'block' : 'none';
         });

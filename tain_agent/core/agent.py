@@ -128,9 +128,9 @@ class TaoAgent:
 
         self.timezone_name = agent_cfg.get("timezone", "Asia/Shanghai")
         set_timezone(self.timezone_name)
-        self.model = llm_cfg.get("model", "claude-sonnet-4-6-20250514")
+        self.model = llm_cfg.get("model", "MiniMax-M2.7")
         self.max_tokens = llm_cfg.get("max_tokens", 8192)
-        self.api_key = os.environ.get(llm_cfg.get("api_key_env", "ANTHROPIC_API_KEY"), "")
+        self.api_key = os.environ.get(llm_cfg.get("api_key_env", "MINIMAX_API_KEY"), "")
         self.protected_paths = safety_cfg.get("protected_paths", [])
         self.confirm_destructive = safety_cfg.get("confirm_destructive", True)
 
@@ -149,7 +149,7 @@ class TaoAgent:
 
         # Framework version & AgentFactory for registry access
         fw_cfg = self.config.get("framework", {})
-        self.framework_version = fw_cfg.get("version", "0.4.0")
+        self.framework_version = fw_cfg.get("version", "0.4.3")
         self._factory = AgentFactory(workspace_root=self.workspace_root)
 
         # ── Evolution mode & role ──────────────────────────────────
@@ -223,6 +223,8 @@ class TaoAgent:
         self.conversation = ConversationManager(
             checkpoint_dir=self.log_dir,
             auto_checkpoint_interval=10,
+            token_limit=self.config.get("conversation", {}).get("token_limit", 80000),
+            model_context_window=self.config.get("conversation", {}).get("model_context_window", 131072),
         )
         self.tools = ToolRegistry()
         self.forge = ToolForge(self.tools, decision_log=self.decision_log,
@@ -331,10 +333,14 @@ class TaoAgent:
         # Initialize LLM backend
         if self.api_key:
             self.backend = create_backend(self.config)
+            from tain_agent.core.llm_logger import LLMLogger
+            self.llm_logger = LLMLogger(Path(self.log_dir))
+            self.backend.set_logger(self.llm_logger)
         else:
-            api_key_env = self.config.get("llm", {}).get("api_key_env", "ANTHROPIC_API_KEY")
+            api_key_env = self.config.get("llm", {}).get("api_key_env", "MINIMAX_API_KEY")
             print(f"⚠️  未设置 {api_key_env} 环境变量。Agent 将在无 LLM 状态下启动。")
             self.backend = None
+            self.llm_logger = None
 
         # Phase 3b: Wire improvement loop code generator to LLM backend
         # This closes the loop — the improvement loop can now autonomously
@@ -578,7 +584,7 @@ Output format (JSON only, no markdown):
     def run(self, autonomous: bool = False) -> None:
         """Start the agent. This is the moment of awakening."""
         if not self.backend:
-            api_key_env = self.config.get("llm", {}).get("api_key_env", "ANTHROPIC_API_KEY")
+            api_key_env = self.config.get("llm", {}).get("api_key_env", "MINIMAX_API_KEY")
             print(f"❌ 未设置 {api_key_env} 环境变量。")
             print(f"   请在 config.yaml 中配置或设置环境变量。")
             return
@@ -648,7 +654,7 @@ Output format (JSON only, no markdown):
                 print(f"\n⚠️  LLM 调用异常: {e}")
                 if self.conversation.len() > 16:
                     print("  🔄 裁剪对话历史后重试...")
-                    self.conversation.keep_first_and_last(keep_last=8)
+                    self.conversation.trim_to_token_budget(keep_last=8)
                     try:
                         messages = self.conversation.to_claude_messages()
                         llm_response = self.backend.create_message(

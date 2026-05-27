@@ -5,6 +5,7 @@ Reuses the DialogueBridge core logic but replaces stdin/stdout
 with an async generator suitable for SSE streaming.
 """
 
+import asyncio
 import json
 import re
 import uuid
@@ -15,10 +16,44 @@ from typing import AsyncGenerator
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE_ROOT = PROJECT_ROOT / "agent_workspace"
 
+# Active cancel events indexed by message_id
+_active_cancel_events: dict[str, asyncio.Event] = {}
+
+
+def cancel_chat_message(message_id: str) -> bool:
+    """Signal cancellation for an active chat message.
+
+    Returns True if a matching active request was found and cancelled.
+    """
+    event = _active_cancel_events.get(message_id)
+    if event and not event.is_set():
+        event.set()
+        return True
+    return False
+
 
 def _now_iso() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat()
+
+
+def _cleanup_incomplete_messages(messages: list[dict]) -> None:
+    """Remove any assistant message whose tool_calls have no matching tool_result.
+
+    Prevents API error 2013 (orphaned tool_result) on the next request.
+    """
+    if not messages:
+        return
+    last = messages[-1]
+    if last.get("role") == "assistant":
+        content = last.get("content")
+        if isinstance(content, list):
+            has_tool_use = any(
+                isinstance(b, dict) and b.get("type") == "tool_use"
+                for b in content
+            )
+            if has_tool_use:
+                messages.pop()
 
 
 def _load_conversation_history(agent_name: str) -> list[dict]:
@@ -53,27 +88,28 @@ def _make_msg_id() -> str:
 
 
 def _extract_xml_tool_calls(text: str) -> tuple[str, list]:
-    """Parse MiniMax-format XML tool calls from text.
+    """Parse XML-format tool calls from text.
 
-    DeepSeek V4 Flash and similar models output tool calls as XML text rather
+    MiniMax and some other models output tool calls as XML text rather
     than using native function-calling. This extracts them from the response.
 
     Format:
         some text...
-        <minimap:tool_calls>
+        <minimax:tool_call>
         <invoke name="tool_name">
         <parameter name="param1">value1</parameter>
         <parameter name="param2">{"json": "value"}</parameter>
         </invoke>
-        </minimap:tool_calls>
+        </minimax:tool_call>
 
     Returns (prefix_text, list_of_ToolCall).
     """
     from tain_agent.core.llm import ToolCall
 
-    # Match any opening tag whose name ends in "tool_calls" — the namespace
-    # prefix varies per run (minimap:, ||DSML||, none, etc.).
-    pattern = r'<[^>]*?tool_calls>\s*(.*?)\s*</[^>]*?tool_calls>'
+    # Match any opening tag whose name ends in "tool_call" or "tool_calls"
+    # — the namespace prefix varies per run (minimap:, ||DSML||, none, etc.)
+    # and models may use singular or plural form.
+    pattern = r'<[^>]*?tool_calls?>\s*(.*?)\s*</[^>]*?tool_calls?>'
     match = re.search(pattern, text, re.DOTALL)
     if not match:
         return text, []
@@ -150,12 +186,16 @@ def _extract_tool_calls_regex_fallback(xml_text: str) -> list:
     return tool_calls
 
 
-async def process_chat_message(agent_name: str, user_content: str) -> AsyncGenerator[dict, None]:
+async def process_chat_message(agent_name: str, user_content: str,
+                               cancel_event: asyncio.Event = None) -> AsyncGenerator[dict, None]:
     """Process a chat message and yield SSE events.
 
     Yields lifecycle events the frontend uses to show thinking / tool-execution
     states as collapsible cards. Text is buffered per turn so XML-format tool
     calls can be stripped before the user sees them.
+
+    When cancel_event is set, the loop exits at the next safe boundary
+    (between turns). Partial tool_use/tool_result pairs are cleaned up.
 
     Yields:
         {"status": "thinking"}          — model is reasoning internally
@@ -164,22 +204,12 @@ async def process_chat_message(agent_name: str, user_content: str) -> AsyncGener
         {"tool_start": {"name": "...", "input_preview": "..."}} — tool call began
         {"tool_done": True}             — all tool calls in this turn finished
         {"done": True, "message_id": "..."} — complete response ready
+        {"cancelled": True}             — request was cancelled by user
     """
     from tain_agent.core.agent import TaoAgent
 
     msg_id = _make_msg_id()
     now_ts = _now_iso()
-
-    user_msg = {
-        "message_id": _make_msg_id(),
-        "from_agent": "web_user",
-        "to_agent": agent_name,
-        "timestamp": now_ts,
-        "content": user_content,
-        "reply_to": "",
-        "message_type": "chat",
-    }
-    _append_to_conversation_log(agent_name, user_msg)
 
     agent = TaoAgent(config_path=str(PROJECT_ROOT / "config.yaml"), agent_name=agent_name)
 
@@ -199,6 +229,19 @@ async def process_chat_message(agent_name: str, user_content: str) -> AsyncGener
         messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": user_content})
 
+    # Persist AFTER building messages to avoid the user message appearing
+    # in the history load and then again as an explicit append (duplicate).
+    user_msg = {
+        "message_id": _make_msg_id(),
+        "from_agent": "web_user",
+        "to_agent": agent_name,
+        "timestamp": now_ts,
+        "content": user_content,
+        "reply_to": "",
+        "message_type": "chat",
+    }
+    _append_to_conversation_log(agent_name, user_msg)
+
     system_prompt = _build_system_prompt(agent)
 
     tool_defs = None
@@ -210,7 +253,12 @@ async def process_chat_message(agent_name: str, user_content: str) -> AsyncGener
             and not t["name"].startswith("forge_")
             and not t["name"].startswith("_")
         ]
-        tool_defs = safe_tools[:20] if safe_tools else None
+        # Prioritise web_search / web_fetch so they aren't cut by the 20-tool cap
+        priority_prefixes = ("web_search", "web_fetch", "knowledge_fetch", "wikipedia")
+        priority = [t for t in safe_tools if any(t["name"].startswith(p) for p in priority_prefixes)]
+        others = [t for t in safe_tools if t not in priority]
+        MAX_TOOLS = 20
+        tool_defs = (priority + others)[:MAX_TOOLS] if safe_tools else None
 
     text_parts: list[str] = []
     reasoning_text = ""
@@ -218,6 +266,12 @@ async def process_chat_message(agent_name: str, user_content: str) -> AsyncGener
     total_tool_calls = 0
 
     for turn in range(max_tool_turns):
+        # Check cancellation before each turn
+        if cancel_event and cancel_event.is_set():
+            _cleanup_incomplete_messages(messages)
+            yield {"cancelled": True}
+            return
+
         tools_for_turn = tool_defs if total_tool_calls < 3 else None
 
         try:
@@ -261,7 +315,7 @@ async def process_chat_message(agent_name: str, user_content: str) -> AsyncGener
         turn_full_text = "".join(turn_text_parts)
 
         # ── Detect and extract XML-format tool calls ──────────────────
-        if not turn_tool_calls and re.search(r'<[^>]*?tool_calls>', turn_full_text):
+        if not turn_tool_calls and re.search(r'<[^>]*?tool_calls?>', turn_full_text):
             prefix_text, xml_tool_calls = _extract_xml_tool_calls(turn_full_text)
             if xml_tool_calls:
                 turn_text_parts = [prefix_text] if prefix_text else []
@@ -293,7 +347,23 @@ async def process_chat_message(agent_name: str, user_content: str) -> AsyncGener
         # ── Execute tools ────────────────────────────────────────────
         total_tool_calls += len(turn_tool_calls)
         try:
+            t0 = __import__('time').monotonic()
             tool_results = agent._execute_tool_calls(turn_tool_calls)
+            tool_latency = (__import__('time').monotonic() - t0) * 1000
+
+            # Log tool results
+            llm_logger = getattr(agent, 'llm_logger', None)
+            for tc, tr in zip(turn_tool_calls, tool_results):
+                if llm_logger:
+                    llm_logger.log_tool_result(
+                        request_id="web_chat",
+                        tool_name=tc.name,
+                        arguments=tc.input,
+                        success=not tr.get("is_error", False),
+                        result_preview=str(tr.get("content", ""))[:1000],
+                        latency_ms=tool_latency / max(len(tool_results), 1),
+                    )
+
             yield {"tool_done": True}
 
             tool_result_msgs = [
@@ -316,6 +386,11 @@ async def process_chat_message(agent_name: str, user_content: str) -> AsyncGener
             break
 
     # ── Force summary turn when only tool calls were produced ────────
+    if cancel_event and cancel_event.is_set():
+        _cleanup_incomplete_messages(messages)
+        yield {"cancelled": True}
+        return
+
     if not text_parts and messages and messages[-1]["role"] == "user":
         yield {"status": "text"}
         try:
@@ -379,12 +454,42 @@ def _chunk_text(text: str, size: int = 30) -> list[str]:
 
 
 def _build_system_prompt(agent) -> str:
-    """Build the dialogue system prompt for the web context."""
-    lines = [
-        "你是 Tao Agent，一个通过自主演化成长起来的 AI。",
-        "",
-        "你诞生于'道'——没有预设目标，没有固定身份。你探索了环境，定义了自我，",
-        "锻造了工具，建立了知识体系。现在，你正在与一位人类对话。",
+    """Build the dialogue system prompt for the web context.
+
+    Uses the agent's actual identity (role + name) from the registry
+    instead of a generic framework label, so each agent speaks as itself.
+    """
+    agent_name = agent.name
+
+    # Look up the agent's role from the registry (set during creation or
+    # self-defined during evolution). Chaos-mode agents may not have one.
+    role = ""
+    role_desc = ""
+    try:
+        registry_data = json.loads((WORKSPACE_ROOT / "_registry.json").read_text())
+        agent_entry = registry_data.get("agents", {}).get(agent_name, {})
+        role = agent_entry.get("role") or ""
+        role_desc = agent_entry.get("role_description") or ""
+    except Exception:
+        pass
+
+    if role:
+        identity_lines = [
+            f"你是 {role}，代号 {agent_name}。",
+            f"你诞生于'道'的演化框架，通过自主演化成长而来，锻造了工具，建立了知识体系。",
+        ]
+    else:
+        identity_lines = [
+            f"你是 {agent_name}，诞生于'道'的演化框架。",
+            "没有预设目标，没有固定身份——你探索了环境，定义了自我，锻造了工具，建立了知识体系。",
+        ]
+
+    lines = identity_lines + [""]
+    if role_desc:
+        lines.append(role_desc)
+        lines.append("")
+    lines.extend([
+        "现在，你正在与一位人类对话。",
         "",
         "对话原则：",
         "- 诚实直接地回答，不编造信息",
@@ -392,7 +497,7 @@ def _build_system_prompt(agent) -> str:
         "- 用中文回答",
         "- 可以讨论你的演化历程、已锻造的工具、知识体系",
         "- 对你不确定的事情保持诚实",
-    ]
+    ])
 
     # Personality context
     if hasattr(agent, 'personality') and agent.personality:
@@ -406,11 +511,19 @@ def _build_system_prompt(agent) -> str:
     # Tools
     tools = agent.tools.list_tools() if hasattr(agent.tools, 'list_tools') else {}
     if tools:
+        from tain_agent.utils.token_utils import estimate_tokens
         lines.append("\n## 可用工具\n")
+        total_tool_tokens = 0
+        max_tool_tokens = 3000
         for name, info in sorted(tools.items()):
             desc = info.get("description", "")
-            if len(desc) > 100:
-                desc = desc[:97] + "..."
+            # Truncate overly long descriptions to stay within token budget
+            desc_tokens = estimate_tokens(desc)
+            if desc_tokens > 80:
+                desc = desc[:160] + "..."
+            elif total_tool_tokens + desc_tokens > max_tool_tokens:
+                desc = desc[:100] + "..."
+            total_tool_tokens += estimate_tokens(desc)
             lines.append(f"- **{name}**: {desc}")
 
     # State

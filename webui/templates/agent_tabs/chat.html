@@ -114,15 +114,15 @@
                        class="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-shadow placeholder:text-gray-400"
                        :disabled="streaming"
                        @keydown.enter="sendMessage">
-                <button type="submit"
+                <button x-show="!streaming" type="submit"
                         class="px-5 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-40"
-                        :disabled="streaming || !input.trim()">
-                    <span x-show="!streaming">Send</span>
-                    <span x-show="streaming" class="flex items-center gap-1">
-                        <span class="w-1.5 h-1.5 bg-white rounded-full animate-bounce"></span>
-                        <span class="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style="animation-delay:0.1s"></span>
-                        <span class="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style="animation-delay:0.2s"></span>
-                    </span>
+                        :disabled="!input.trim()">
+                    Send
+                </button>
+                <button x-show="streaming" @click.prevent="stopGeneration"
+                        class="px-5 py-2.5 bg-red-500 text-white text-sm font-medium rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2">
+                    <span class="w-2 h-2 bg-white rounded-sm"></span>
+                    Stop
                 </button>
             </form>
             <p class="text-xs text-gray-400 mt-2 text-center">
