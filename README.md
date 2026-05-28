@@ -2,9 +2,11 @@
 
 > 道生一，一生二，二生三，三生万物。
 
-A framework for building self-evolving AI agents. Each agent can start from chaos (self-awakening) or with a specified role and personality. Agents operate in isolated workspaces, forge their own tools, build knowledge, and evolve through continuous self-improvement. Multiple agents can run simultaneously and communicate with each other.
+A practical AI agent framework with multi-provider LLM support, safe tool-use execution, behavioral evolution tracking, and inter-agent communication. Agents operate in isolated workspaces and evolve through **framework-measured behavioral metrics** — not LLM self-evaluation.
 
-**v0.4.3** — LLM Retry Resilience · Token-Aware Context · Chat Cancellation · MCP Integration · ACP Protocol
+**v0.5.0** — AST Sandbox · Honest Evolution · Drive System · Multi-Agent Bus · Web UI
+
+[Safety Model](docs/SAFETY.md) · [Evolution Design](docs/EVOLUTION.md) · [Architecture](docs/architecture.md)
 
 ---
 
@@ -43,12 +45,12 @@ See [Quick Start Guide](docs/quickstart.md) for detailed instructions.
 
 ## Core Features
 
-### Self-Evolving Agents
-Agents evolve through the PRAL cognitive cycle (**P**erceive → **R**eason → **A**ct → **L**earn). They forge their own tools, build knowledge gardens, and develop emergent personalities through experience — not menu selection.
+### Behavioral Evolution Tracking
+Agents operate through the PRAL cognitive cycle (**P**erceive → **R**eason → **A**ct → **L**earn). The framework measures real behavioral metrics — tool success rates, action diversity, drive intensities — rather than relying on LLM self-evaluation. Personality traits emerge from observed behavior patterns, not prompted introspection.
 
-### Dual Evolution Modes
-- **Chaos Mode (混沌模式)**: The agent awakens with an empty personality. Identity emerges from action patterns.
-- **Specified Mode (指定人格模式)**: The agent starts with a predefined role and personality traits, which still evolve through experience.
+### Dual Creation Modes
+- **Chaos Mode (混沌模式)**: The agent starts with an empty personality, developing identity through tool usage patterns.
+- **Specified Mode (指定人格模式)**: The agent starts with a predefined role, which still adapts through experience.
 
 ### Multi-Agent Architecture
 Run multiple agents simultaneously, each in its own isolated workspace (`agent_workspace/<name>/`). Agents register in a shared registry and can discover each other.
@@ -56,8 +58,8 @@ Run multiple agents simultaneously, each in its own isolated workspace (`agent_w
 ### Inter-Agent Communication
 Agents can discover peers, send messages, check their inbox, and maintain persistent conversation histories. Communication uses a file-based message bus — no sockets or external services required.
 
-### Tool Forging
-Agents create their own tools through a 6-stage safety pipeline: NameCheck → Sandbox → WorkspaceValidation → Compile → Exec → Discover → Register. All forged tools are sandboxed with restricted imports and timeout protection. Forged tools can be exported as SKILL.md packages.
+### Safe Tool Forging
+Tools are created through a **7-stage safety pipeline**: NameCheck → AST Import Whitelist → AST Call Blacklist → PathValidation → Compile → Subprocess Smoke Test → Register. All forged tools run in subprocess isolation with a 10-second timeout. See [Safety Model](docs/SAFETY.md).
 
 ### Web UI
 Real-time SSE-streamed chat with agents, tabbed dashboards for decision logs and knowledge, agent lifecycle controls, and multi-agent management. See [Web UI](#web-ui) section.

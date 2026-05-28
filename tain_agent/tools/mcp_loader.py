@@ -2,20 +2,50 @@
 MCP Tool Loader — dynamic external tool discovery via Model Context Protocol.
 
 Lets an agent discover and use tools from external MCP servers
-(stdio, SSE, or HTTP transports). MCP tools are wrapped as local
-Tool instances and registered on the agent's ToolRegistry.
+(stdio transport). MCP tools are wrapped as local Tool instances
+and registered on the agent's ToolRegistry.
 
 Config: agent_workspace/<name>/mcp.json
+
+Security:
+  - Command whitelist prevents arbitrary binary execution
+  - Shell-injection patterns rejected in args
+  - Dangerous env vars stripped from merged environment
+  - Subprocess timeout prevents hung servers
 """
 
 import asyncio
 import json
+import os
 import subprocess
 import uuid
 from pathlib import Path
 from typing import Optional
 
 from tain_agent.tools.base import Tool
+
+# ── Security constants ──────────────────────────────────────────────────
+
+_COMMAND_WHITELIST = frozenset(
+    os.environ.get("TAIN_MCP_COMMAND_WHITELIST", "npx,node,python,python3,uvx").split(",")
+)
+
+_SHELL_INJECTION_PATTERNS = (";", "|", "&&", "||", "$", "`", ">", "<", "&")
+
+_DANGEROUS_ENV_VARS = frozenset({
+    "LD_PRELOAD", "LD_LIBRARY_PATH", "PYTHONSTARTUP", "PYTHONPATH",
+    "NODE_OPTIONS", "NODE_PATH", "PERL5LIB", "RUBYLIB", "DYLD_INSERT_LIBRARIES",
+    "DYLD_LIBRARY_PATH",
+})
+
+_ALLOWED_ENV_VAR_PREFIXES = (
+    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_",
+    "TMPDIR", "TMP", "TEMP",
+    "ANTHROPIC_", "OPENAI_", "MINIMAX_", "DEEPSEEK_",
+    "TAIN_", "TAO_",
+)
+
+_MCP_STARTUP_TIMEOUT = 30  # seconds
 
 
 # ── MCP config ────────────────────────────────────────────────────────
@@ -62,11 +92,44 @@ class MCPClient:
         self._request_id = 0
 
     def start(self) -> dict:
-        """Start the MCP server subprocess and initialize the session."""
-        import os
+        """Start the MCP server subprocess and initialize the session.
 
-        merged_env = os.environ.copy()
-        merged_env.update(self.env)
+        Validates command against whitelist, args against shell injection,
+        and env vars against safe-list before launching.
+
+        Raises:
+            ValueError: If command is not whitelisted or args contain injection.
+        """
+        # ── Validate command ──────────────────────────────────────────
+        if self.command not in _COMMAND_WHITELIST:
+            raise ValueError(
+                f"MCP command '{self.command}' is not in the allowed whitelist. "
+                f"Allowed: {sorted(_COMMAND_WHITELIST)}. "
+                f"Set TAIN_MCP_COMMAND_WHITELIST env var to extend."
+            )
+
+        # ── Validate args — reject shell injection patterns ────────────
+        for arg in self.args:
+            if any(pattern in arg for pattern in _SHELL_INJECTION_PATTERNS):
+                raise ValueError(
+                    f"MCP arg '{arg}' contains shell-injection characters. "
+                    f"Rejected patterns: {' '.join(_SHELL_INJECTION_PATTERNS)}"
+                )
+
+        # ── Sanitize environment ──────────────────────────────────────
+        merged_env = {}
+        for key, value in os.environ.items():
+            if key in _DANGEROUS_ENV_VARS:
+                continue
+            if any(key.startswith(prefix) or key == prefix
+                   for prefix in _ALLOWED_ENV_VAR_PREFIXES):
+                merged_env[key] = value
+
+        # Apply MCP-specific env vars (already validated above)
+        for key, value in self.env.items():
+            if key in _DANGEROUS_ENV_VARS:
+                continue
+            merged_env[key] = value
 
         self.process = subprocess.Popen(
             [self.command] + self.args,
@@ -77,7 +140,19 @@ class MCPClient:
             env=merged_env,
         )
 
-        # Initialize MCP session
+        # ── Wait for process to start ─────────────────────────────────
+        try:
+            self.process.wait(timeout=0.5)
+            # Process exited immediately — likely a startup failure
+            stderr_output = self.process.stderr.read() if self.process.stderr else ""
+            raise RuntimeError(
+                f"MCP server '{self.command}' exited immediately "
+                f"with code {self.process.returncode}. stderr: {stderr_output[:500]}"
+            )
+        except subprocess.TimeoutExpired:
+            pass  # Process is still running — expected
+
+        # Initialize MCP session with timeout
         init_result = self._send_request("initialize", {
             "protocolVersion": "2024-11-05",
             "capabilities": {},

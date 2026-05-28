@@ -96,19 +96,55 @@ def resolve_content_path(workspace: Path, content_type: str,
                          filename: str) -> Path:
     """Resolve a semantic content type + filename to a workspace path.
 
+    Does NOT follow symlinks — validates that every path component stays
+    within the workspace boundary.
+
     Args:
         workspace: The agent's workspace root directory.
         content_type: One of the keys in STORAGE_SCHEMA (e.g. "poem", "knowledge").
         filename: The filename to write (e.g. "spring.md").
 
     Returns:
-        Absolute Path resolved within the workspace.
+        Absolute Path within the workspace.
         Falls back to "files/" for unknown content types.
+
+    Raises:
+        ValueError: If any path component escapes the workspace or is a symlink.
     """
+    # Reject filenames that attempt path traversal
+    if ".." in filename.split("/") or filename.startswith("/"):
+        raise ValueError(f"Filename '{filename}' attempts path traversal")
+
+    workspace = workspace.resolve(strict=False)
     subdir = STORAGE_SCHEMA.get(content_type, "files/")
-    target = (workspace / subdir / filename).resolve()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    return target
+    target = workspace / subdir / filename
+
+    # Resolve without following symlinks on the final component
+    # Walk each component manually to detect symlinks
+    resolved_parts: list[str] = []
+    for part in target.parts:
+        resolved_parts.append(part)
+        partial = Path(*resolved_parts)
+        if partial.exists() and partial.is_symlink():
+            raise ValueError(
+                f"Symlink detected in path: {partial}. "
+                f"Symlinks are not allowed in workspace paths for security."
+            )
+
+    # Normalize without following symlinks (resolve parent, append basename)
+    parent_resolved = target.parent.resolve(strict=False)
+    final_path = parent_resolved / target.name
+
+    # Verify the final path is within workspace
+    try:
+        final_path.relative_to(workspace)
+    except ValueError:
+        raise ValueError(
+            f"Resolved path '{final_path}' escapes workspace '{workspace}'"
+        )
+
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    return final_path
 
 
 def get_schema_description() -> str:

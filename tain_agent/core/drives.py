@@ -264,9 +264,7 @@ class DriveSystem:
         """Suggest what kind of action the agent should take, based on
         the currently most neglected (highest intensity) drive.
         """
-        # Find the drive with highest intensity (most neglected/unsatisfied)
         top_drive = max(self.drives, key=self.drives.get)
-        intensity = self.drives[top_drive]
 
         suggestions = {
             "curiosity": "探索一个新领域或学习一件你不知道的事",
@@ -276,6 +274,49 @@ class DriveSystem:
         }
 
         return suggestions.get(top_drive, "根据你的判断选择一个行动方向")
+
+    def get_action_weights(self) -> dict[str, float]:
+        """Return tool-category weights derived from current drive intensities.
+
+        Categories map to drives:
+          - observation → curiosity (read, search, explore)
+          - optimization → mastery (improve, refine, test)
+          - creation → creation (forge, write, generate)
+          - maintenance → conservation (assess, report, organize)
+
+        Returns:
+            Dict of category → weight (0.0–1.0), normalized to sum to 1.0.
+        """
+        raw = {
+            "observation": self.drives.get("curiosity", 0.5),
+            "optimization": self.drives.get("mastery", 0.5),
+            "creation": self.drives.get("creation", 0.5),
+            "maintenance": self.drives.get("conservation", 0.5),
+        }
+        total = sum(raw.values())
+        if total == 0:
+            return {k: 0.25 for k in raw}
+        return {k: round(v / total, 3) for k, v in raw.items()}
+
+    def get_exploration_prompt(self) -> str:
+        """If exploration pressure is high, return a prompt injection
+        suggesting the agent try something new. Returns empty string
+        if exploration score is low.
+        """
+        score = self.compute_exploration_score()
+        if score < 0.5:
+            return ""
+
+        top_drive = max(self.drives, key=self.drives.get)
+        drive_name = DRIVE_DEFINITIONS[top_drive]["name_zh"]
+
+        suggestions = {
+            "curiosity": "你感到一股强烈的探索冲动——有没有一个你一直好奇但从未深入了解的领域？",
+            "mastery": "你感到精进的渴望——有没有一个工具或技能你一直想打磨到极致？",
+            "creation": "创造的冲动在你心中涌动——有什么东西你想带到这个世界上来？",
+            "conservation": "你觉得是时候整理了——有没有积压的工作需要清理和优化？",
+        }
+        return f"[内驱力信号 · {drive_name}] {suggestions.get(top_drive, '')}"
 
     def dominate_drive(self) -> str:
         """Return the name of the currently dominant drive."""

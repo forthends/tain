@@ -29,18 +29,44 @@ class SelfModify:
         self._mod_timestamps: dict[str, list[float]] = {}  # path → [timestamps]
 
     def _is_protected(self, path: str) -> bool:
-        """Check if a path is protected from modification."""
+        """Check if a path is protected from modification.
+
+        A path is protected if:
+          1. It resolves outside the agent's base directory
+          2. It matches a protected path entry
+          3. It contains parent-directory traversal
+        """
         p = Path(path)
-        if not p.is_absolute():
-            p = self.base_dir / p
-        try:
-            rel = str(p.resolve().relative_to(self.base_dir))
-        except ValueError:
-            # Path is outside base_dir — deny modification
+
+        # Reject paths with parent-directory traversal
+        parts = p.parts
+        if ".." in parts:
             return True
+
+        if not p.is_absolute():
+            p = (self.base_dir / p).resolve()
+        else:
+            p = p.resolve()
+
+        # Ensure resolved path stays within base_dir
+        try:
+            rel = str(p.relative_to(self.base_dir.resolve()))
+        except ValueError:
+            return True
+
+        # Check against protected paths using component-level matching
+        # to prevent bypass via partial string matches
         for protected in self.protected:
-            if rel.startswith(protected) or protected.startswith(rel):
+            prot_path = Path(protected)
+            prot_parts = prot_path.parts
+            rel_parts = Path(rel).parts
+
+            # Exact match or the relative path starts with the protected prefix
+            if rel_parts == prot_parts:
                 return True
+            if len(rel_parts) >= len(prot_parts) and rel_parts[:len(prot_parts)] == prot_parts:
+                return True
+
         return False
 
     def read_self(self, path: str) -> str:

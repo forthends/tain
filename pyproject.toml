@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tain-agent"
+version = "0.5.0"
+description = "A practical AI agent framework with multi-provider LLM support, tool-use execution, and honest behavioral evolution tracking"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Tain Agent Contributors"},
+]
+dependencies = [
+    "anthropic>=0.34.0",
+    "openai>=1.0.0",
+    "pyyaml>=6.0",
+    "duckduckgo_search>=5.0",
+    "requests>=2.28.0",
+    "rich>=13.0.0",
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "jinja2>=3.1.0",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "tiktoken>=0.5.0",
+]
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+tain = "main:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "strict"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tain_agent"]

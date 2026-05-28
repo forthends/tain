@@ -134,7 +134,25 @@ class ACPServer:
         workspace_path = params.get("workspace_path", "")
 
         if workspace_path:
-            os.makedirs(workspace_path, exist_ok=True)
+            # Validate path does not escape agent_workspace/
+            resolved = Path(workspace_path).resolve()
+            workspace_root = (PROJECT_ROOT / "agent_workspace").resolve()
+            try:
+                resolved.relative_to(workspace_root)
+            except ValueError:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32001,
+                        "message": (
+                            f"workspace_path must be within agent_workspace/. "
+                            f"Got: {workspace_path}"
+                        ),
+                    },
+                }
+            os.makedirs(resolved, exist_ok=True)
+            workspace_path = str(resolved)
 
         self.sessions[session_id] = {
             "workspace_path": workspace_path,

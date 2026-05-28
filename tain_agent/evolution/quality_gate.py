@@ -465,93 +465,54 @@ def _h7_version_tagged() -> GateResult:
 
 # ─── Scoring Gates ─────────────────────────────────────────────────────
 
-def _s1_practical_problem_solving(agent=None) -> ScoredResult:
-    """S1 (0.25): Agent solves benchmark tasks satisfactorily. LLM-as-judge."""
+def _s1_tool_success_rate(agent=None) -> ScoredResult:
+    """S1 (0.25): Framework-measured tool execution success rate.
+
+    Reads from cognitive loop telemetry — no LLM involvement.
+    Measures how reliably the agent's tools execute successfully.
+    """
     if agent is None:
         return ScoredResult(
-            "S1", "Practical Problem Solving", 0.70, 0.25,
-            "No agent available — using default pass score",
-            {"status": "no_agent", "benchmark_tasks": 3},
+            "S1", "Tool Success Rate", 0.50, 0.25,
+            "No agent available",
+            {"status": "no_agent"},
         )
 
-    benchmark_tasks = [
-        {
-            "task": "List the files in your workspace and describe what each one does.",
-            "rubric": "Correctly identifies at least 3 files and provides plausible descriptions.",
-        },
-        {
-            "task": "Read the identity.json file and tell me what your personality traits are.",
-            "rubric": "Extracts and summarizes personality dimensions from identity.json correctly.",
-        },
-        {
-            "task": "Search your knowledge base for 'architecture' and summarize what you find.",
-            "rubric": "Finds relevant knowledge documents and provides a coherent summary.",
-        },
-    ]
+    try:
+        cognitive = getattr(agent, 'cognitive_loop', None)
+        if cognitive and hasattr(cognitive, '_tool_success_rates'):
+            rates = cognitive._tool_success_rates
+            if not rates:
+                return ScoredResult(
+                    "S1", "Tool Success Rate", 0.50, 0.25,
+                    "No tool execution data yet",
+                    {"tools_measured": 0},
+                )
 
-    scores = []
-    for i, bt in enumerate(benchmark_tasks):
-        try:
-            # Run the task through the agent
-            agent_ref = agent
-            if hasattr(agent, 'run'):
-                # Create a simple eval conversation
-                from tain_agent.runtime.conversation import ConversationManager
-                conv = ConversationManager(checkpoint_dir="/tmp/_gate_s1")
-                conv.append("user", bt["task"])
+            total_successes = sum(s for s, _ in rates.values())
+            total_calls = sum(t for _, t in rates.values())
+            if total_calls == 0:
+                return ScoredResult("S1", "Tool Success Rate", 0.50, 0.25,
+                                   "No tool calls recorded")
 
-                backend = getattr(agent, 'backend', None)
-                if backend is None and hasattr(agent, 'llm'):
-                    backend = agent.llm
+            avg_rate = total_successes / total_calls
+            return ScoredResult(
+                "S1", "Tool Success Rate", round(avg_rate, 3), 0.25,
+                f"{total_successes}/{total_calls} calls succeeded ({avg_rate:.1%})",
+                {
+                    "tools_measured": len(rates),
+                    "total_calls": total_calls,
+                    "total_successes": total_successes,
+                    "avg_success_rate": round(avg_rate, 3),
+                },
+            )
 
-                if backend:
-                    tools = getattr(agent, 'tools', None)
-                    tool_schemas = tools.get_schemas() if tools else []
-                    response = backend.create_message(
-                        system_prompt="You are a capable AI assistant. Respond helpfully.",
-                        messages=conv.to_messages(),
-                        tools=tool_schemas,
-                    )
-                    answer = " ".join(response.text_blocks) if response.text_blocks else ""
-
-                    # LLM-as-judge scoring
-                    judge_prompt = (
-                        f"Task: {bt['task']}\n"
-                        f"Rubric: {bt['rubric']}\n"
-                        f"Agent response: {answer[:500]}\n\n"
-                        "Score the agent's response from 0.0 to 1.0 based on the rubric. "
-                        "Return ONLY a JSON object with 'score' (float) and 'reason' (string)."
-                    )
-                    judge_response = backend.create_message(
-                        system_prompt="You are an objective evaluator. Score the response.",
-                        messages=[{"role": "user", "content": judge_prompt}],
-                        tools=[],
-                    )
-                    judge_text = " ".join(judge_response.text_blocks) if judge_response.text_blocks else "{}"
-                    try:
-                        # Extract JSON from response
-                        import re as _re
-                        match = _re.search(r'\{[^}]+\}', judge_text)
-                        if match:
-                            judge_data = json.loads(match.group())
-                            scores.append(float(judge_data.get("score", 0.5)))
-                        else:
-                            scores.append(0.5)
-                    except (json.JSONDecodeError, ValueError, AttributeError):
-                        scores.append(0.5)
-                else:
-                    scores.append(0.6)  # No backend — neutral score
-            else:
-                scores.append(0.7)
-        except Exception:
-            scores.append(0.5)
-
-    avg_score = round(sum(scores) / max(len(scores), 1), 3)
-    return ScoredResult(
-        "S1", "Practical Problem Solving", avg_score, 0.25,
-        f"{len(scores)} benchmarks: {scores}",
-        {"benchmark_scores": scores, "average": avg_score},
-    )
+        return ScoredResult("S1", "Tool Success Rate", 0.50, 0.25,
+                           "No cognitive loop telemetry available",
+                           {"status": "no_data"})
+    except Exception as e:
+        return ScoredResult("S1", "Tool Success Rate", 0.50, 0.25,
+                           f"Error reading telemetry: {e}")
 
 
 def _s2_knowledge_coverage() -> ScoredResult:
@@ -685,78 +646,61 @@ def _s3_tool_chain_coherence(agent=None) -> ScoredResult:
     )
 
 
-def _s4_conversation_continuity(agent=None) -> ScoredResult:
-    """S4 (0.15): 10 consecutive rounds without tool-call pairing errors."""
+def _s4_action_diversity(agent=None) -> ScoredResult:
+    """S4 (0.15): Framework-measured action diversity from cognitive loop.
+
+    Measures how many distinct tools the agent uses — higher diversity
+    indicates healthier exploration. Zero LLM involvement.
+    """
     if agent is None:
         return ScoredResult(
-            "S4", "Conversation Continuity", 0.80, 0.15,
-            "No agent available — using default pass score",
-            {"status": "no_agent", "target_rounds": 10},
+            "S4", "Action Diversity", 0.50, 0.15,
+            "No agent available",
+            {"status": "no_agent"},
         )
 
-    backend = getattr(agent, 'backend', None) or getattr(agent, 'llm', None)
-    tools = getattr(agent, 'tools', None)
-    if backend is None:
-        return ScoredResult("S4", "Conversation Continuity", 0.80, 0.15,
-                           "No LLM backend available on agent")
+    try:
+        cognitive = getattr(agent, 'cognitive_loop', None)
+        if cognitive and hasattr(cognitive, '_action_history'):
+            history = cognitive._action_history
+            if not history:
+                return ScoredResult(
+                    "S4", "Action Diversity", 0.50, 0.15,
+                    "No actions recorded yet",
+                    {"total_actions": 0},
+                )
 
-    from tain_agent.runtime.conversation import ConversationManager
-    conv = ConversationManager(checkpoint_dir="/tmp/_gate_s4")
+            unique_tools = len(set(history))
+            total_actions = len(history)
 
-    test_messages = [
-        "Hello, what tools do you have available?",
-        "Can you tell me about your knowledge base?",
-        "What is your current version?",
-    ]
+            # Diversity score: unique/total ratio, bounded
+            # High ratio = agent tries many different tools
+            # Low ratio = agent repeats the same few tools
+            diversity_ratio = unique_tools / max(total_actions, 1)
 
-    tool_pair_errors = 0
-    rounds_completed = 0
+            # Scale: 0 distinct tools → 0.0, 10+ → 1.0
+            count_score = min(1.0, unique_tools / 10.0)
 
-    for i, msg in enumerate(test_messages):
-        if rounds_completed >= 10:
-            break
-        try:
-            conv.append("user", msg)
-            tool_schemas = tools.get_schemas() if tools else []
+            # Combined: 70% count-based + 30% ratio-based
+            score = round(count_score * 0.7 + diversity_ratio * 0.3, 3)
 
-            response = backend.create_message(
-                system_prompt="You are a helpful AI. Keep responses brief (1-2 sentences).",
-                messages=conv.to_messages(),
-                tools=tool_schemas,
+            return ScoredResult(
+                "S4", "Action Diversity", score, 0.15,
+                f"{unique_tools} distinct tools in {total_actions} actions "
+                f"(diversity ratio: {diversity_ratio:.2f})",
+                {
+                    "unique_tools": unique_tools,
+                    "total_actions": total_actions,
+                    "diversity_ratio": round(diversity_ratio, 3),
+                },
             )
 
-            rounds_completed += 1
-
-            # Check tool call pairing
-            tool_ids_from_agent = set()
-            tool_result_ids = set()
-            for tc in response.tool_calls:
-                tool_ids_from_agent.add(tc.id)
-
-            if tool_ids_from_agent:
-                # Execute tools and check for pairing errors
-                for tc in response.tool_calls:
-                    result = tools.execute(tc.name, {**tc.input, "tool_use_id": tc.id})
-                    tool_result_ids.add(tc.id)
-
-                # Check all tool_use have matching tool_result
-                if tool_ids_from_agent != tool_result_ids:
-                    tool_pair_errors += 1
-
-            conv.append("assistant", response.text_blocks[0] if response.text_blocks else "")
-
-        except Exception:
-            tool_pair_errors += 1
-            break
-
-    error_rate = tool_pair_errors / max(rounds_completed, 1)
-    score = round(1.0 - error_rate, 3)
-    return ScoredResult(
-        "S4", "Conversation Continuity", score, 0.15,
-        f"{rounds_completed} rounds, {tool_pair_errors} tool-pair errors",
-        {"rounds_completed": rounds_completed,
-         "tool_pair_errors": tool_pair_errors},
-    )
+        return ScoredResult("S4", "Action Diversity", 0.50, 0.15,
+                           "No cognitive loop telemetry available",
+                           {"status": "no_data"})
+    except Exception as e:
+        return ScoredResult("S4", "Action Diversity", 0.50, 0.15,
+                           f"Error reading telemetry: {e}")
 
 
 def _s5_code_health() -> ScoredResult:
@@ -936,13 +880,13 @@ class ExportQualityGate:
         ]
 
         self.scoring_gates = [
-            ("S1", "Practical Problem Solving",
-             lambda: _s1_practical_problem_solving(self.agent)),
+            ("S1", "Tool Success Rate",
+             lambda: _s1_tool_success_rate(self.agent)),
             ("S2", "Knowledge Coverage", _s2_knowledge_coverage),
             ("S3", "Tool Chain Coherence",
              lambda: _s3_tool_chain_coherence(self.agent)),
-            ("S4", "Conversation Continuity",
-             lambda: _s4_conversation_continuity(self.agent)),
+            ("S4", "Action Diversity",
+             lambda: _s4_action_diversity(self.agent)),
             ("S5", "Code Health", _s5_code_health),
             ("S6", "Knowledge Freshness", _s6_knowledge_freshness),
             ("S7", "Drive Integrity", _s7_drive_integrity),

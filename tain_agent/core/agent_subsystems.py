@@ -24,9 +24,6 @@ from tain_agent.evolution.reporter import EvolutionReporter
 from tain_agent.core.cognitive_loop import CognitiveLoop
 from tain_agent.core.personality import Personality
 from tain_agent.core.drives import DriveSystem
-from tain_agent.core.trials import TrialScheduler
-from tain_agent.core.external_world import ExternalWorld
-from tain_agent.evolution.sub_agent import SubAgentManager
 
 
 class AgentSubsystemsMixin:
@@ -151,27 +148,6 @@ class AgentSubsystemsMixin:
             memory=self.memory,
         )
 
-        # ── Phase 2: Trial System — formative experiences ────────────
-        self.trial_scheduler = TrialScheduler(
-            trial_order=self.diversity.get("trial_order"),
-            memory=self.memory,
-        )
-
-        # ── Phase 2: External World — breaking the closed system ──────
-        ext_config = self.config.get("external_world", {})
-        self.external_world = ExternalWorld(
-            config=ext_config,
-            memory=self.memory,
-            decision_log=self.decision_log,
-        )
-
-        # ── Phase 2: Sub-Agent Manager — multi-agent collaboration ────
-        self.sub_agent_manager = SubAgentManager(
-            parent_drives=self.drive_system.get_profile().get("drives", {}),
-            memory=self.memory,
-            decision_log=self.decision_log,
-        )
-
         # Register primal tools — the agent's first senses (scoped to workspace)
         register_primal_tools(self.tools, workspace_dir=str(self._workspace_path))
 
@@ -203,66 +179,10 @@ class AgentSubsystemsMixin:
             self.backend = None
             self.llm_logger = None
 
-        # Phase 3b: Wire improvement loop code generator to LLM backend
-        if self.backend:
-            self._wire_improvement_loop_generator()
+        # LLM code generation is disabled — the improvement loop uses
+        # built-in stub generators only. New tools should be created by
+        # human developers, not by LLM self-modification.
 
-    def _wire_improvement_loop_generator(self) -> None:
-        """Wire the improvement loop's code_generator to the LLM backend.
-
-        This enables autonomous improvement: when the loop detects a gap,
-        it can generate tool code via the LLM and run the full pipeline.
-        """
-        import json as _json
-        backend = self.backend
-
-        def generate_code_for_spec(spec):
-            """Generate Python code for an ImprovementSpec using the LLM."""
-            prompt = f"""You are a code generator for a self-evolving agent.
-
-The agent needs a new tool to fill a capability gap:
-
-Capability: {spec.capability_id}
-Description: {spec.description}
-Design notes: {spec.design_notes or 'None provided'}
-Proposed tool name: {spec.tool_name or 'auto_generated'}
-
-Generate a complete, safe Python tool module that:
-1. Has at least one callable function
-2. Uses only standard library + safe imports (pathlib, json, datetime, typing, hashlib)
-3. Includes proper docstrings and type hints
-4. Returns a JSON string result
-5. Does NOT use: os.system, subprocess, exec, eval, or any destructive operations
-
-Output format (JSON only, no markdown):
-{{
-  "tool_name": "name_of_tool",
-  "tool_description": "what it does",
-  "tool_code": "the complete Python code",
-  "tool_parameters": {{"param_name": {{"type": "string", "description": "what it does"}}}}
-}}"""
-
-            try:
-                response = backend.create_message(
-                    system_prompt="You are a precise code generator. Output valid JSON only.",
-                    messages=[{"role": "user", "content": prompt}],
-                    tools=[],
-                )
-
-                text = "".join(response.text_blocks)
-
-                if "```json" in text:
-                    text = text.split("```json")[1].split("```")[0]
-                elif "```" in text:
-                    text = text.split("```")[1].split("```")[0]
-
-                result = _json.loads(text.strip())
-                return (
-                    result.get("tool_code", ""),
-                    result.get("tool_parameters", {}),
-                )
-            except Exception as e:
-                print(f"  ⚠️  Code generation failed: {e}")
-                return None
-
-        self.improvement_loop.set_code_generator(generate_code_for_spec)
+    # Code generation (LLM → tool) is intentionally disabled.
+    # Capability gaps are logged for human developers to address.
+    # See improvement_loop._log_ungenerated_gap().

@@ -54,8 +54,8 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
     message bus at agent_workspace/_message_bus.db.
     """
 
-    PHASES = ("bootstrap", "self_define", "evolve")
-    MAX_CYCLES = {"bootstrap": 10, "self_define": 5, "evolve": 999999}
+    PHASES = ("explore", "work")
+    MAX_CYCLES = {"explore": 10, "work": 999999}
 
     def __init__(self, config_path: str = "config.yaml", agent_name: str = None):
         self.agent_name = agent_name  # Set before _load_config
@@ -88,10 +88,8 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
         """Get the system prompt for the current phase and evolution mode."""
         is_specified = self.evolution_mode == "specified"
 
-        if self.phase == "bootstrap":
+        if self.phase == "explore":
             template = SPECIFIED_BOOTSTRAP_SYSTEM_PROMPT if is_specified else BOOTSTRAP_SYSTEM_PROMPT
-        elif self.phase == "self_define":
-            template = SPECIFIED_SELF_DEFINE_SYSTEM_PROMPT if is_specified else SELF_DEFINE_SYSTEM_PROMPT
         else:
             template = EVOLVE_SYSTEM_PROMPT
 
@@ -105,6 +103,19 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
         if hasattr(self, 'personality') and self.personality:
             personality_ctx = self.personality.get_context_for_prompt()
             base += "\n\n" + personality_ctx
+
+        # Append drive weights — internal motivation state
+        if hasattr(self, 'drive_system') and self.drive_system:
+            weights = self.drive_system.get_action_weights()
+            base += (
+                "\n\n## 内驱力状态\n"
+                f"- 观察探索 (好奇): {weights.get('observation', 0):.2f}\n"
+                f"- 优化精进 (精通): {weights.get('optimization', 0):.2f}\n"
+                f"- 创造构建 (创造): {weights.get('creation', 0):.2f}\n"
+                f"- 维护整理 (守成): {weights.get('maintenance', 0):.2f}\n"
+                "这些权重反映了你当前的内驱力状态——你不需要强制遵循，"
+                "但可能会发现自己自然地倾向于权重较高的领域。"
+            )
 
         # Append tool list for awareness
         tools_summary = self.tools.list_tools()
@@ -231,35 +242,6 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
                 thought = "\n".join(text_parts)
                 print(f"\n💭 Agent 思考:\n{thought}")
 
-            # ── Phase 2: Trial Flow Management ───────────────────────
-            if self.phase == "bootstrap" and hasattr(self, 'trial_scheduler'):
-                scheduler = self.trial_scheduler
-                scheduler.tick_cycle()
-
-                if scheduler._score_collection_pending and text_parts:
-                    # Agent just provided scores — parse and advance
-                    result = scheduler.complete_current_trial(text_parts)
-                    total_score = sum(result.scores.values())
-                    print(f"  🏆 试炼完成: {result.trial_id} "
-                          f"(满足感={result.scores['satisfaction']:.2f}, "
-                          f"能力感={result.scores['competence']:.2f}, "
-                          f"意义感={result.scores['meaning']:.2f}, "
-                          f"总分={total_score:.2f})")
-
-                    next_prompt = scheduler.start_next_trial()
-                    if next_prompt:
-                        self.conversation.append("user", next_prompt)
-                        print(f"  ▶️  开始新试炼: {scheduler.progress}")
-                    elif scheduler.all_completed:
-                        print(f"  ✨ 所有试炼完成！进入自我定义阶段。")
-                        self._advance_phase()
-
-                elif scheduler.check_completion(text_parts) and text_parts:
-                    # Trial completed — ask for experience scores
-                    print(f"  ✅ 试炼完成标记检测到，收集体验评分...")
-                    score_prompt = scheduler.build_score_prompt()
-                    self.conversation.append("user", score_prompt)
-
             # Build assistant content
             assistant_content = []
             for text in text_parts:
@@ -306,10 +288,13 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
                 ]
                 self.conversation.append("user", user_content)
 
-            # Phase transition checks
-            if self.phase == "bootstrap" and self._should_advance_from_bootstrap(text_parts):
-                self._advance_phase()
-            elif self.phase == "self_define" and self._should_advance_from_self_define(text_parts):
+            # Observe behavior for personality evolution
+            if hasattr(self, 'personality') and self.personality and tool_use_blocks:
+                tool_names = [tc.name for tc in tool_use_blocks]
+                self.personality.auto_observe(tool_names, text_parts)
+
+            # Explore → Work auto-transition: after using 3+ different tools
+            if self.phase == "explore" and len(self._bootstrap_action_categories) >= 3:
                 self._advance_phase()
 
             # Check if agent called self_destruct
@@ -400,7 +385,7 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
             else:
                 self._readonly_streak += 1
 
-            if self.phase == "evolve":
+            if self.phase == "work":
                 if self._readonly_streak == 5:
                     self.conversation.append("user", (
                         "[系统提示] 你已经进行了多轮静观。这本身是有价值的——"
@@ -423,6 +408,12 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
 
             # Periodic cognitive introspection
             self._maybe_introspect()
+
+            # Inject exploration prompt from drive system every few cycles
+            if self.cycle_count % 8 == 0 and hasattr(self, 'drive_system') and self.drive_system:
+                prompt = self.drive_system.get_exploration_prompt()
+                if prompt:
+                    self.conversation.append("user", prompt)
 
         # Save final cognitive snapshot
         self._save_cognitive_snapshot()
@@ -538,10 +529,10 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
         # Phase duration (cycles in current phase)
         signals["cycles_in_phase"] = self.cycle_count
         max_for_phase = self.MAX_CYCLES.get(self.phase, float("inf"))
-        if self.phase == "evolve" and self.cycle_count > 500:
-            alerts.append({"level": "info", "signal": "long_evolve",
+        if self.phase == "work" and self.cycle_count > 500:
+            alerts.append({"level": "info", "signal": "long_work_phase",
                            "value": self.cycle_count,
-                           "message": f"Agent in evolve phase for {self.cycle_count} cycles"})
+                           "message": f"Agent in work phase for {self.cycle_count} cycles"})
 
         # Rate limit
         if self._rate_limit_exit_code:

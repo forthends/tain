@@ -43,12 +43,23 @@ class TestACPNewSession:
 
     @pytest.mark.asyncio
     async def test_new_session_with_workspace(self):
+        from tain_agent.acp.server import PROJECT_ROOT
+        server = ACPServer()
+        valid_ws = str(PROJECT_ROOT / "agent_workspace" / "test_acp_ws")
+        result = await server._handle_new_session(
+            {"workspace_path": valid_ws}, 1
+        )
+        assert result["result"]["workspace_path"] == valid_ws
+        assert "acp_" in result["result"]["session_id"]
+
+    @pytest.mark.asyncio
+    async def test_new_session_rejects_path_traversal(self):
         server = ACPServer()
         result = await server._handle_new_session(
-            {"workspace_path": "/tmp/test_acp_ws"}, 1
+            {"workspace_path": "/tmp/escape_attempt"}, 1
         )
-        assert result["result"]["workspace_path"] == "/tmp/test_acp_ws"
-        assert "acp_" in result["result"]["session_id"]
+        assert "error" in result
+        assert result["error"]["code"] == -32001
 
 
 class TestACPCancel:

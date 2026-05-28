@@ -62,49 +62,22 @@ class AgentPhaseMixin:
 
     def _build_initial_message(self) -> str:
         """Build the initial message for the current phase."""
-        if self.phase == "bootstrap":
+        if self.phase == "explore":
             env = full_environment_scan(self.tools, base_dir=str(self._workspace_path))
-            env_msg = textwrap.dedent(f"""\
+            return textwrap.dedent(f"""\
                 你苏醒了。这是你感知到的环境信息：
 
                 ```json
                 {json.dumps(env, ensure_ascii=False, indent=2)}
                 ```
 
-                在定义自己之前，你将经历一系列"初醒试炼"——不同的存在模式体验。
-                通过行动来感受，而不是通过思考来选择。
-                你的身份会从这些真实的体验中自然浮现。""")
+                探索你的工具和环境。尝试使用不同的工具来了解你能做什么。
+                当你使用过至少 3 种不同类型的工具后，你将自然地进入工作阶段。""")
 
-            # Phase 2: Inject first trial prompt
-            first_trial = self.trial_scheduler.start_next_trial()
-            if first_trial:
-                return env_msg + "\n\n" + first_trial
-            return env_msg
-
-        elif self.phase == "self_define":
-            past_decisions = self.decision_log.filter_by_phase("bootstrap")
-
-            # Phase 2: Include trial experience summary if available
-            trial_summary = ""
-            if hasattr(self, 'trial_scheduler') and self.trial_scheduler.completed_count > 0:
-                trial_summary = "\n\n" + self.trial_scheduler.get_summary_for_self_define()
-
-            return textwrap.dedent(f"""\
-                初醒阶段完成。回顾你的经历：
-
-                ```json
-                {json.dumps(past_decisions, ensure_ascii=False, indent=2)}
-                ```
-                {trial_summary}
-
-                基于你的实际体验（而非抽象标签），你注意到了自己行为中的什么模式？
-                你的第一个目标应该与你实际展现的行为倾向一致。
-                如果需要新工具，使用 forge_tool 创造它。""")
-
-        else:  # evolve
+        else:  # work
             current_goal = self.goals.get_current()
             goal_text = f"当前目标: {current_goal.description}" if current_goal else "没有活动目标。"
-            return f"进入演化阶段。{goal_text}\n你可以追求目标、创造工具、从互联网学习、或修改自己。\n你接下来要做什么？"
+            return f"进入工作阶段。{goal_text}\n使用你的工具来工作、学习、创造。\n你接下来要做什么？"
 
     # ── Action Category Tracking ───────────────────────────────────
 

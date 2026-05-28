@@ -20,7 +20,7 @@ class AgentConfigMixin:
             saved = self.memory.long_term.get("agent_phase")
             if saved and saved in self.PHASES:
                 return saved
-        return "bootstrap"
+        return "explore"
 
     def _save_phase_to_memory(self) -> None:
         """Persist current phase to long-term memory."""
