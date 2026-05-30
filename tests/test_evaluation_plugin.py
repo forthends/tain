@@ -164,3 +164,56 @@ class TestTriggerManager:
         reset = tm.consume()
         assert reset["routine"] is True
         assert tm.should_run_routine is False
+
+
+from tain_agent.plugins.evaluation.reporter import EvaluationReporter
+
+
+class TestEvaluationReporter:
+    def _make_snapshot(self):
+        dims = {
+            "identity": DimensionMaturity(dimension="identity", score=0.7, level=MaturityTier.CAPABLE, trend=TrendDirection.STABLE, evidence=["3 domains", "5 values"], recommendations=["upgrade autonomy"]),
+            "memory": DimensionMaturity(dimension="memory", score=0.3, level=MaturityTier.DEVELOPING, trend=TrendDirection.IMPROVING, evidence=["20 episodes"], recommendations=["consolidate memories"]),
+            "skill": DimensionMaturity(dimension="skill", score=0.85, level=MaturityTier.MATURE, trend=TrendDirection.STABLE, evidence=["8 skills, 2 expert"], recommendations=["teach skills"]),
+            "tool": DimensionMaturity(dimension="tool", score=0.6, level=MaturityTier.CAPABLE, trend=TrendDirection.DECLINING, evidence=["15 tools"], recommendations=["run forge cycle"]),
+            "knowledge": DimensionMaturity(dimension="knowledge", score=0.55, level=MaturityTier.CAPABLE, trend=TrendDirection.STABLE, evidence=["25 entities"], recommendations=["expand knowledge"]),
+            "workflow": DimensionMaturity(dimension="workflow", score=0.4, level=MaturityTier.DEVELOPING, trend=TrendDirection.IMPROVING, evidence=["5 completed"], recommendations=["practice workflows"]),
+            "collaboration": DimensionMaturity(dimension="collaboration", score=0.2, level=MaturityTier.DEVELOPING, trend=TrendDirection.STABLE, evidence=["1 collab"], recommendations=["contact other agents"]),
+        }
+        return EvaluationSnapshot(agent_id="a1", dimensions=dims)
+
+    def test_generate_report_produces_all_sections(self):
+        reporter = EvaluationReporter()
+        snap = self._make_snapshot()
+        report = reporter.generate(snap, agent_name="test_agent", history=[])
+        assert report.agent_id == "a1"
+        assert report.agent_name == "test_agent"
+        assert len(report.dimensions) == 7
+        assert len(report.strengths) > 0
+        assert len(report.risks) > 0
+        assert len(report.action_items) > 0
+
+    def test_strengths_are_high_score_stable_dimensions(self):
+        reporter = EvaluationReporter()
+        report = reporter.generate(self._make_snapshot(), agent_name="test", history=[])
+        assert any("skill" in s.lower() for s in report.strengths)
+
+    def test_risks_include_low_score_and_declining(self):
+        reporter = EvaluationReporter()
+        report = reporter.generate(self._make_snapshot(), agent_name="test", history=[])
+        risk_dims = [r.dimension for r in report.risks]
+        assert "collaboration" in risk_dims
+        assert "tool" in risk_dims
+
+    def test_action_items_sorted_by_priority(self):
+        reporter = EvaluationReporter()
+        report = reporter.generate(self._make_snapshot(), agent_name="test", history=[])
+        priorities = [a.priority for a in report.action_items]
+        assert priorities == sorted(priorities)
+
+    def test_render_markdown_report(self):
+        reporter = EvaluationReporter()
+        report = reporter.generate(self._make_snapshot(), agent_name="test", history=[])
+        md = reporter.render_markdown(report)
+        assert "Evaluation Report" in md
+        assert "test" in md
