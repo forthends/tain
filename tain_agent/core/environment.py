@@ -238,11 +238,6 @@ def apply_diversity_to_config(config: dict) -> dict:
         "allow_forge": True,
     }))
 
-    # Trial order randomization (Fisher-Yates shuffle)
-    default_trials = ["sense", "build", "fix", "wait", "seek"]
-    trial_order = list(default_trials)
-    rng.shuffle(trial_order)
-
     # Drive randomization
     drives_config = config.get("drives", {})
     drives = {
@@ -268,7 +263,6 @@ def apply_diversity_to_config(config: dict) -> dict:
         "tool_bias": tool_bias,
         "knowledge_seeds": knowledge_seeds,
         "constraints": constraints,
-        "trial_order": trial_order,
         "drives": drives,
         "exploration": exploration,
     }
@@ -293,7 +287,6 @@ def print_diversity_profile(diversity: dict) -> None:
   ║  创造:   {drives['creation']:<28.2f} ║
   ║  守成:   {drives['conservation']:<28.2f} ║
   ╠══════════════════════════════════════╣
-  ║  试炼顺序: {', '.join(diversity['trial_order'][:3]):<26s} ║
   ║  知识种子: {diversity['knowledge_seeds'][0] if diversity['knowledge_seeds'] else '无':<26s} ║
   ╚══════════════════════════════════════╝
     """.strip())

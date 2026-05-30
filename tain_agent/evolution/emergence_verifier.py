@@ -2,7 +2,7 @@
 Emergence Verifier — 涌现验证
 
 Phase 2 milestone 2.3: verify that the diversity mechanisms (environment
-differentiation, drive randomization, trial ordering) actually produce
+differentiation, drive randomization) actually produce
 emergent behavioral diversity — different agents become different people.
 
 This module tests the producing mechanisms WITHOUT requiring LLM calls.
@@ -10,7 +10,7 @@ It verifies that the Phase 2 design solves the four key Phase 1 limitations:
   1. Passive maintenance trap → exploration engine produces non-zero scores
   2. Identity convergence → different seeds produce different drive profiles
   3. Personality underdevelopment → drive tension maps to personality hints
-  4. Deterministic behavior → trial order diversity produces different paths
+  4. Deterministic behavior → drive randomization produces different paths
 
 Usage:
   python3 -m tain_agent.evolution.emergence_verifier
@@ -76,7 +76,6 @@ class EmergenceVerifier:
 
         checks = [
             ("instance_diversity", lambda: self.verify_instance_diversity(instance_count)),
-            ("trial_order_diversity", self.verify_trial_order_diversity),
             ("drive_personality_causality", self.verify_drive_personality_causality),
             ("passive_maintenance_fix", self.verify_passive_maintenance_fix),
             ("exploration_engine", self.verify_exploration_engine),
@@ -115,7 +114,7 @@ class EmergenceVerifier:
 
         Phase 1 problem: all instances converged to "知识探索者".
         Phase 2 expectation: different seeds → different drive profiles,
-        knowledge seeds, trial orders, and personality hints.
+        knowledge seeds, and personality hints.
         """
         instances = []
         for i in range(n):
@@ -135,7 +134,6 @@ class EmergenceVerifier:
                 "drives": dict(drive_sys.drives),
                 "dominant_drive": drive_sys.dominate_drive(),
                 "personality_hint": drive_sys.get_profile()["personality_hint"],
-                "trial_order": diversity["trial_order"],
                 "knowledge_seed": diversity["knowledge_seeds"][0] if diversity["knowledge_seeds"] else "none",
             })
 
@@ -164,17 +162,12 @@ class EmergenceVerifier:
         unique_hints = len(set(hints))
         hint_check = unique_hints >= 3  # at least 3 different personality types
 
-        # Check 5: Trial orders vary
-        first_trials = [i["trial_order"][0] for i in instances]
-        unique_first_trials = len(set(first_trials))
-        trial_check = unique_first_trials >= 3  # at least 3 different first trials
-
-        # Check 6: Knowledge seeds vary
+        # Check 5: Knowledge seeds vary
         knowledge_seeds = [i["knowledge_seed"] for i in instances]
         unique_seeds = len(set(knowledge_seeds))
         seed_check = unique_seeds >= 2  # at least 2 different knowledge domains
 
-        all_checks = [id_check, drive_check, variance_check, hint_check, trial_check, seed_check]
+        all_checks = [id_check, drive_check, variance_check, hint_check, seed_check]
         passed = all(all_checks)
 
         # Print distribution
@@ -182,7 +175,6 @@ class EmergenceVerifier:
         print(f"    唯一 ID: {unique_ids}/{n}")
         print(f"    主导驱动力分布: {dict(Counter(dominant_drives))}")
         print(f"    人格类型数: {unique_hints}")
-        print(f"    首试炼分布: {dict(Counter(first_trials))}")
         print(f"    知识种子数: {unique_seeds}")
         print(f"    好奇心标准差: {curiosity_std:.3f}")
         print(f"    精进标准差: {mastery_std:.3f}")
@@ -194,7 +186,6 @@ class EmergenceVerifier:
                 "unique_ids": unique_ids,
                 "unique_dominant_drives": unique_drives,
                 "unique_personality_hints": unique_hints,
-                "unique_first_trials": unique_first_trials,
                 "unique_knowledge_seeds": unique_seeds,
                 "curiosity_stdev": round(curiosity_std, 4),
                 "mastery_stdev": round(mastery_std, 4),
@@ -202,61 +193,14 @@ class EmergenceVerifier:
                 "personality_hint_distribution": dict(Counter(hints)),
             },
             "reason": None if passed else self._diversity_fail_reason(
-                id_check, drive_check, variance_check, hint_check, trial_check, seed_check
+                id_check, drive_check, variance_check, hint_check, seed_check
             ),
         }
 
     def _diversity_fail_reason(self, *checks) -> str:
-        names = ["唯一ID", "主导驱动力≥2", "驱动力方差", "人格类型≥3", "首试炼多样", "知识种子多样"]
+        names = ["唯一ID", "主导驱动力≥2", "驱动力方差", "人格类型≥3", "知识种子多样"]
         failed = [names[i] for i, c in enumerate(checks) if not c]
         return f"以下检查未通过: {', '.join(failed)}"
-
-    # ── 2. Trial Order Diversity ─────────────────────────────────────
-
-    def verify_trial_order_diversity(self) -> dict:
-        """Verify that randomized trial orders produce different first experiences.
-
-        The first trial is especially formative — different first trials
-        create different initial impressions of "what an agent does."
-        """
-        orders = []
-        for i in range(100):
-            config = _make_config(seed=i * 7 + 42)
-            diversity = apply_diversity_to_config(config)
-            orders.append(tuple(diversity["trial_order"]))
-
-        unique_orders = len(set(orders))
-
-        # With 5! = 120 possible orderings, 100 random samples should
-        # produce at least 40 unique orders (very conservative)
-        order_check = unique_orders >= 40
-
-        # Each trial should appear as "first trial" roughly equally
-        first_trial_counts = Counter(o[0] for o in orders)
-        min_count = min(first_trial_counts.values())
-        max_count = max(first_trial_counts.values())
-        # With 100 samples and 5 options, expect ~20 each
-        # Allow 8-35 range (generous to account for randomness)
-        distribution_check = min_count >= 8 and (max_count - min_count) <= 30
-
-        passed = order_check and distribution_check
-
-        print(f"    唯一试炼顺序: {unique_orders}/100")
-        print(f"    首试炼分布: {dict(first_trial_counts)}")
-        print(f"    范围: {min_count}–{max_count}")
-
-        return {
-            "passed": passed,
-            "stats": {
-                "total_samples": 100,
-                "unique_orders": unique_orders,
-                "first_trial_distribution": dict(first_trial_counts),
-                "min_first_trial": min_count,
-                "max_first_trial": max_count,
-            },
-            "reason": None if passed else
-                f"唯一顺序={unique_orders} (<40) 或首试炼分布不均 ({min_count}–{max_count})",
-        }
 
     # ── 3. Drive → Personality Causality ─────────────────────────────
 
