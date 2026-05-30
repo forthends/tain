@@ -293,8 +293,9 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
                 tool_names = [tc.name for tc in tool_use_blocks]
                 self.personality.auto_observe(tool_names, text_parts)
 
-            # Explore → Work auto-transition: after using 3+ different tools
-            if self.phase == "explore" and len(self._bootstrap_action_categories) >= 3:
+            # Explore → Work auto-transition: after using enough different tool categories
+            min_cats = getattr(self, 'min_action_categories', 3)
+            if self.phase == "explore" and len(self._bootstrap_action_categories) >= min_cats:
                 self._advance_phase()
 
             # Check if agent called self_destruct

@@ -65,8 +65,9 @@ class AgentConfigMixin:
         self.decision_log_file = log_cfg.get("decision_log_file", "decisions.jsonl")
         self.memory_file = log_cfg.get("memory_file", "memory.json")
 
-        self.max_exploration_cycles = self.config.get("bootstrap", {}).get("max_exploration_cycles", 10)
-        self.max_definition_cycles = self.config.get("bootstrap", {}).get("max_definition_cycles", 5)
+        self.max_exploration_cycles = self.config.get("exploration", {}).get("max_exploration_cycles", 10)
+        self.max_definition_cycles = self.config.get("exploration", {}).get("max_definition_cycles", 5)
+        self.min_action_categories = self.config.get("exploration", {}).get("min_action_categories", 2)
 
         # Framework version & AgentFactory for registry access
         fw_cfg = self.config.get("framework", {})

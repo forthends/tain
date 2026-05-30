@@ -44,7 +44,7 @@ conversation:
   token_limit: 80000                # trigger summarization when estimated tokens exceed this
   model_context_window: 131072      # model's total context window (MiniMax-M2.7 = 131072)
 
-bootstrap:
+exploration:
   # Maximum cycles for the environment exploration phase
   max_exploration_cycles: 10
   # Maximum cycles for self-definition phase
