@@ -7,6 +7,7 @@ from tain_agent.plugins.evaluation.models import (
 )
 from tain_agent.plugins.evaluation.engine import MaturityEngine
 from tain_agent.plugins.evaluation.triggers import TriggerManager
+from tain_agent.plugins.evaluation.gate import ProductionGate
 
 
 class TestMaturityTier:
@@ -217,3 +218,53 @@ class TestEvaluationReporter:
         md = reporter.render_markdown(report)
         assert "Evaluation Report" in md
         assert "test" in md
+
+
+class TestProductionGate:
+    def test_not_ready_when_any_dimension_below_075(self):
+        gate = ProductionGate(required_streak=3)
+        dims = {}
+        for d in ["identity", "memory", "skill", "tool", "knowledge", "workflow", "collaboration"]:
+            score = 0.8 if d != "memory" else 0.4
+            dims[d] = DimensionMaturity(dimension=d, score=score, level=MaturityTier.CAPABLE, trend=TrendDirection.STABLE)
+        snap = EvaluationSnapshot(agent_id="a1", dimensions=dims)
+        readiness = gate.evaluate(snap, history=[])
+        assert readiness.status == ProductionStatus.NOT_READY
+
+    def test_stabilizing_when_all_pass_but_streak_insufficient(self):
+        gate = ProductionGate(required_streak=3)
+        dims = {d: DimensionMaturity(dimension=d, score=0.80, level=MaturityTier.MATURE, trend=TrendDirection.STABLE)
+                for d in ["identity", "memory", "skill", "tool", "knowledge", "workflow", "collaboration"]}
+        snap = EvaluationSnapshot(agent_id="a1", dimensions=dims)
+        readiness = gate.evaluate(snap, history=[snap])
+        assert readiness.stable_streak >= 1
+        assert readiness.status == ProductionStatus.STABILIZING
+
+    def test_ready_for_trial_when_streak_met(self):
+        gate = ProductionGate(required_streak=2)
+        dims = {d: DimensionMaturity(dimension=d, score=0.85, level=MaturityTier.MATURE, trend=TrendDirection.STABLE)
+                for d in ["identity", "memory", "skill", "tool", "knowledge", "workflow", "collaboration"]}
+        s1 = EvaluationSnapshot(agent_id="a1", dimensions=dims)
+        s2 = EvaluationSnapshot(agent_id="a1", dimensions=dims)
+        readiness = gate.evaluate(s2, history=[s1, s2])
+        assert readiness.status == ProductionStatus.READY_FOR_TRIAL
+        assert readiness.stable_streak >= 2
+
+    def test_scenario_passes_upgrades_to_production_ready(self):
+        gate = ProductionGate(required_streak=1)
+        dims = {d: DimensionMaturity(dimension=d, score=0.90, level=MaturityTier.EXCELLENT, trend=TrendDirection.STABLE)
+                for d in ["identity", "memory", "skill", "tool", "knowledge", "workflow", "collaboration"]}
+        snap = EvaluationSnapshot(agent_id="a1", dimensions=dims)
+        readiness = gate.evaluate(snap, history=[snap])
+        if readiness.status == ProductionStatus.READY_FOR_TRIAL:
+            scenario = ScenarioResult(task_name="test", passed=True, evidence={"result": "ok"})
+            readiness.scenario_results.append(scenario)
+            gate.certify(readiness)
+            assert readiness.status == ProductionStatus.PRODUCTION_READY
+
+    def test_scenario_template_for_role(self):
+        gate = ProductionGate()
+        template = gate.get_scenario_template("coding")
+        assert template["task_name"] == "独立开发验收"
+        general = gate.get_scenario_template("unknown_role")
+        assert general["task_name"] == "综合能力验收"
