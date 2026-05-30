@@ -18,6 +18,7 @@ from webui.data import (
     get_agent_decisions, get_agent_tools, get_agent_evolution,
     get_agent_metrics, get_agent_personality, get_agent_knowledge,
 )
+from webui.process import ProcessManager
 
 router = APIRouter()
 TEMPLATE_DIR = str(Path(__file__).resolve().parent.parent / "templates")
@@ -277,12 +278,7 @@ async def _tail_log_shared(path: Path):
 
 @router.post("/agent/{name}/controls/start", response_class=HTMLResponse)
 async def agent_control_start(request: Request, name: str):
-    import subprocess, sys
-    supervisor = str(Path(__file__).resolve().parent.parent.parent / "supervise_agent.py")
-    subprocess.run(
-        [sys.executable, supervisor, "--agent-name", name, "--daemon", "--"],
-        capture_output=True, text=True,
-    )
+    ProcessManager().start(name)
     import time
     time.sleep(0.5)
     agent = get_agent(name)
@@ -295,12 +291,7 @@ async def agent_control_start(request: Request, name: str):
 
 @router.post("/agent/{name}/controls/stop", response_class=HTMLResponse)
 async def agent_control_stop(request: Request, name: str):
-    import subprocess, sys
-    supervisor = str(Path(__file__).resolve().parent.parent.parent / "supervise_agent.py")
-    subprocess.run(
-        [sys.executable, supervisor, "--agent-name", name, "--stop"],
-        capture_output=True, text=True,
-    )
+    ProcessManager().stop(name)
     import time
     time.sleep(0.5)
     agent = get_agent(name)
@@ -313,19 +304,7 @@ async def agent_control_stop(request: Request, name: str):
 
 @router.post("/agent/{name}/controls/restart", response_class=HTMLResponse)
 async def agent_control_restart(request: Request, name: str):
-    import subprocess, sys
-    supervisor = str(Path(__file__).resolve().parent.parent.parent / "supervise_agent.py")
-    subprocess.run(
-        [sys.executable, supervisor, "--agent-name", name, "--stop"],
-        capture_output=True, text=True,
-    )
-    import time
-    time.sleep(1)
-    subprocess.run(
-        [sys.executable, supervisor, "--agent-name", name, "--daemon", "--"],
-        capture_output=True, text=True,
-    )
-    time.sleep(0.5)
+    ProcessManager().restart(name)
     agent = get_agent(name)
     resp = _render("components/agent_controls.html", {
         "request": request, "agent": agent or {"name": name, "status": "unknown"},
