@@ -8,10 +8,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from webui.data import get_agent
-from webui.dialogue import (
-    process_chat_message, _load_conversation_history,
-    _active_cancel_events, cancel_chat_message,
-)
+from webui.streaming import stream_chat_message, _active_cancel_events, cancel_chat_message
+from webui.conversation_store import load_history
 
 router = APIRouter()
 
@@ -25,7 +23,7 @@ async def api_chat_history(name: str, limit: int = 50):
     agent = get_agent(name)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    messages = _load_conversation_history(name)
+    messages = load_history(name)
     return {"messages": messages[-limit:], "total": len(messages)}
 
 
@@ -44,7 +42,7 @@ async def api_chat_send(name: str, req: ChatRequest):
         yield f"data: {json.dumps({'message_id': message_id}, ensure_ascii=False)}\n\n"
 
         try:
-            async for event in process_chat_message(name, req.content, cancel_event):
+            async for event in stream_chat_message(name, req.content, cancel_event):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except asyncio.CancelledError:
             yield f"data: {json.dumps({'cancelled': True}, ensure_ascii=False)}\n\n"
