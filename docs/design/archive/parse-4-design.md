@@ -8,12 +8,12 @@
 
 ## Overview
 
-After 100+ agent evolution cycles (v0.0.1 → v2.36.0), a comprehensive audit of the Tao Agent Framework revealed architectural limitations that need addressing. This document designs a major version refactoring (v4.0.0) with 7 core upgrades.
+After 100+ agent evolution cycles (v0.0.1 → v2.36.0), a comprehensive audit of the Tain Agent Framework revealed architectural limitations that need addressing. This document designs a major version refactoring (v4.0.0) with 7 core upgrades.
 
 ### Rename
 | Before | After |
 |--------|-------|
-| Tao Agent (道) | **Tain Agent Framework** |
+| Tain Agent (道) | **Tain Agent Framework** |
 | `tain_agent/` | `tain_agent/` |
 
 ---

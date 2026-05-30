@@ -13,6 +13,7 @@ Harness Engineering principles — progressively compress context against
 import json
 import re
 from tain_agent.core.time_utils import now
+from tain_agent.utils.token_utils import estimate_tokens as _estimate_tokens
 from pathlib import Path
 from typing import Optional, Callable
 
@@ -84,8 +85,8 @@ class ContextCompressor:
         self.total_compressions = 0
     
     def estimate_tokens(self, text: str) -> int:
-        """Rough token estimate: ~4 chars per token."""
-        return len(text) // 4
+        """Estimate token count using the shared token utility."""
+        return _estimate_tokens(text)
     
     def get_stage(self, text: str) -> int:
         """Determine which compression stage is needed."""
@@ -177,12 +178,17 @@ class WorkingMemory:
 
 
 class LongTermMemory:
-    """File-based persistent memory. Survives restarts."""
+    """File-based persistent memory. Survives restarts.
+
+    Uses a dirty flag: changes are accumulated in memory and flushed
+    to disk on demand (flush()) or on agent stop, reducing per-set I/O.
+    """
 
     def __init__(self, file_path: str = "tain_agent/logs/memory.json"):
         self.file_path = Path(file_path)
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
         self._store: dict = self._load()
+        self._dirty = False
 
     def _load(self) -> dict:
         if self.file_path.exists():
@@ -196,14 +202,25 @@ class LongTermMemory:
         self.file_path.write_text(
             json.dumps(self._store, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        self._dirty = False
+
+    def flush(self) -> None:
+        """Persist to disk if there are pending changes."""
+        if self._dirty:
+            self._save()
 
     def set(self, key: str, value) -> None:
-        """Persist a value under key with timestamp and save to disk."""
+        """Persist a value under key with timestamp. Marks dirty, does not save immediately."""
         self._store[key] = {
             "value": value,
             "updated_at": now().isoformat(),
         }
-        self._save()
+        self._dirty = True
+
+    def delete(self, key: str) -> None:
+        """Remove a key from persistent storage."""
+        self._store.pop(key, None)
+        self._dirty = True
 
     def get(self, key: str, default=None):
         """Retrieve a persisted value, returning default if not found."""
@@ -214,15 +231,10 @@ class LongTermMemory:
         """Return all stored keys."""
         return list(self._store.keys())
 
-    def delete(self, key: str) -> None:
-        """Remove a key from persistent storage."""
-        self._store.pop(key, None)
-        self._save()
-
     def clear(self) -> None:
         """Remove all entries from persistent storage."""
         self._store.clear()
-        self._save()
+        self._dirty = True
 
 
 class Memory:

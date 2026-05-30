@@ -2,16 +2,16 @@
 {% block title %}{{ agent.name }} — Tain Agent Framework{% endblock %}
 
 {% block content %}
-<div class="bg-white border-b border-gray-200 px-6 py-4">
+<div class="bg-canvas border-b border-hairline px-6 py-4">
     <div class="flex items-center justify-between">
         <div>
-            <a href="/" class="text-sm text-gray-400 hover:text-blue-500 transition-colors">← Dashboard</a>
+            <a href="/" class="text-sm text-mute hover:text-ink transition-colors">← Dashboard</a>
             <div class="flex items-center gap-3 mt-1">
                 <span class="status-dot {{ 'status-running' if agent.status == 'running' else 'status-stopped' }}"></span>
-                <h1 class="text-xl font-bold text-gray-900">{{ agent.name }}</h1>
-                {% if agent.role %}<span class="text-gray-500">{{ agent.role }}</span>{% endif %}
+                <h1 class="text-xl font-semibold text-ink">{{ agent.name }}</h1>
+                {% if agent.role %}<span class="text-body">{{ agent.role }}</span>{% endif %}
             </div>
-            <div class="text-xs text-gray-400 mt-1">
+            <div class="text-xs text-mute mt-1">
                 v{{ agent.version }} · {{ agent.tool_count }} tools · {{ agent.cycle_count }} cycles · {{ agent.evolution_mode }}
             </div>
         </div>
@@ -74,9 +74,9 @@ document.addEventListener('alpine:init', () => {
     input: '',
     streaming: false,
     streamText: '',
-    status: '',              // 'thinking' | 'text' | ''
-    activeTools: [],         // { name, input_preview, done: bool }
-    cancelMessageId: null,   // server-assigned message_id for cancellation
+    status: '',
+    activeTools: [],
+    cancelMessageId: null,
 
     async init() {
         try {
@@ -110,7 +110,7 @@ document.addEventListener('alpine:init', () => {
                 message_id: 'cancelled_' + Date.now(),
                 from_agent: agentName,
                 to_agent: 'web_user',
-                content: this.streamText + '\n\n[已取消]',
+                content: this.streamText + '\n\n[Cancelled]',
                 timestamp: new Date().toISOString(),
                 message_type: 'chat',
             });
@@ -173,7 +173,7 @@ document.addEventListener('alpine:init', () => {
                                         message_id: 'cancelled_' + Date.now(),
                                         from_agent: agentName,
                                         to_agent: 'web_user',
-                                        content: this.streamText + '\n\n[已取消]',
+                                        content: this.streamText + '\n\n[Cancelled]',
                                         timestamp: new Date().toISOString(),
                                         message_type: 'chat',
                                     });
@@ -197,7 +197,6 @@ document.addEventListener('alpine:init', () => {
                             } else if (data.tool_done) {
                                 this.activeTools.forEach(t => t.done = true);
                             } else if (data.done) {
-                                // Flush streaming text as a message
                                 if (this.streamText) {
                                     this.messages.push({
                                         message_id: data.message_id,
@@ -266,7 +265,6 @@ document.addEventListener('alpine:init', () => {
                 let text = event.data;
                 if (!text.trim()) return;
 
-                // Parse JSON if SSE sends structured data
                 try {
                     const data = JSON.parse(event.data);
                     if (data.text !== undefined) {
@@ -274,7 +272,6 @@ document.addEventListener('alpine:init', () => {
                         this.lastUpdate = data.timestamp || '';
                     }
                 } catch (e) {
-                    // Fallback: plain text from older server
                     const now = new Date();
                     this.lastUpdate = now.toTimeString().slice(0, 8);
                 }

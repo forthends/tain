@@ -15,6 +15,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
+from tain_agent import __version__
 from tain_agent.core.time_utils import now
 
 # ─── Constants ──────────────────────────────────────────────────────────
@@ -36,7 +37,8 @@ class AgentFactory:
     Each agent lives in its own directory under the workspace root:
         agent_workspace/
           _registry.json
-          _messages/
+          _message_bus.db         # SQLite message bus
+          _messages/              # (legacy — kept for backward compat)
           <agent_name>/
             version.json
             personality.json
@@ -90,7 +92,7 @@ class AgentFactory:
 
     def create(self, name: str, mode: str = EVOLUTION_MODE_CHAOS,
                role: str = "", role_description: str = "",
-               framework_version: str = "0.4.3") -> dict:
+               framework_version: str = __version__) -> dict:
         """Create a new agent workspace and register it.
 
         Args:

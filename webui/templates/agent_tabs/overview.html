@@ -1,49 +1,48 @@
 <!-- Overview Tab -->
 <div>
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div class="bg-white rounded-lg border border-gray-200 p-4">
-            <div class="text-xs text-gray-400 uppercase">Phase</div>
-            <div class="text-lg font-semibold mt-1">{{ agent.phase }}</div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div class="bg-canvas rounded-lg border border-hairline p-4">
+            <div class="text-xs text-mute uppercase tracking-wider">Phase</div>
+            <div class="text-lg font-semibold text-ink mt-1">{{ agent.phase }}</div>
         </div>
-        <div class="bg-white rounded-lg border border-gray-200 p-4">
-            <div class="text-xs text-gray-400 uppercase">Cycle</div>
-            <div class="text-lg font-semibold mt-1">#{{ agent.cycle_count }}</div>
+        <div class="bg-canvas rounded-lg border border-hairline p-4">
+            <div class="text-xs text-mute uppercase tracking-wider">Cycle</div>
+            <div class="text-lg font-semibold text-ink mt-1">#{{ agent.cycle_count }}</div>
         </div>
-        <div class="bg-white rounded-lg border border-gray-200 p-4">
-            <div class="text-xs text-gray-400 uppercase">Forged Tools</div>
-            <div class="text-lg font-semibold mt-1">{{ agent.tool_count }}</div>
+        <div class="bg-canvas rounded-lg border border-hairline p-4">
+            <div class="text-xs text-mute uppercase tracking-wider">Forged Tools</div>
+            <div class="text-lg font-semibold text-ink mt-1">{{ agent.tool_count }}</div>
         </div>
-        <div class="bg-white rounded-lg border border-gray-200 p-4">
-            <div class="text-xs text-gray-400 uppercase">Decisions</div>
-            <div class="text-lg font-semibold mt-1">{{ agent.decision_count }}</div>
+        <div class="bg-canvas rounded-lg border border-hairline p-4">
+            <div class="text-xs text-mute uppercase tracking-wider">Decisions</div>
+            <div class="text-lg font-semibold text-ink mt-1">{{ agent.decision_count }}</div>
         </div>
-        <div class="bg-white rounded-lg border border-gray-200 p-4">
-            <div class="text-xs text-gray-400 uppercase">Active Goals</div>
-            <div class="text-lg font-semibold mt-1">{{ agent.goal_count }}</div>
+        <div class="bg-canvas rounded-lg border border-hairline p-4">
+            <div class="text-xs text-mute uppercase tracking-wider">Active Goals</div>
+            <div class="text-lg font-semibold text-ink mt-1">{{ agent.goal_count }}</div>
         </div>
-        <div class="bg-white rounded-lg border border-gray-200 p-4">
-            <div class="text-xs text-gray-400 uppercase">Evolution Events</div>
-            <div class="text-lg font-semibold mt-1">{{ agent.lineage_count }}</div>
+        <div class="bg-canvas rounded-lg border border-hairline p-4">
+            <div class="text-xs text-mute uppercase tracking-wider">Evolution Events</div>
+            <div class="text-lg font-semibold text-ink mt-1">{{ agent.lineage_count }}</div>
         </div>
-        <div class="bg-white rounded-lg border border-gray-200 p-4">
-            <div class="text-xs text-gray-400 uppercase">Conversations</div>
-            <div class="text-lg font-semibold mt-1">{{ agent.conv_messages }}</div>
+        <div class="bg-canvas rounded-lg border border-hairline p-4">
+            <div class="text-xs text-mute uppercase tracking-wider">Conversations</div>
+            <div class="text-lg font-semibold text-ink mt-1">{{ agent.conv_messages }}</div>
         </div>
-        <div class="bg-white rounded-lg border border-gray-200 p-4">
-            <div class="text-xs text-gray-400 uppercase">Knowledge Files</div>
-            <div class="text-lg font-semibold mt-1">{{ agent.knowledge_count }}</div>
+        <div class="bg-canvas rounded-lg border border-hairline p-4">
+            <div class="text-xs text-mute uppercase tracking-wider">Knowledge Files</div>
+            <div class="text-lg font-semibold text-ink mt-1">{{ agent.knowledge_count }}</div>
         </div>
     </div>
 
     {% if goals %}
-    <h3 class="text-sm font-semibold text-gray-700 mb-3">Active Goals</h3>
-    <div class="space-y-2 mb-6">
+    <h3 class="text-sm font-semibold text-ink mb-3">Active Goals</h3>
+    <div class="space-y-2 mb-8">
         {% for g in goals %}
-        <div class="bg-white rounded-lg border border-gray-200 p-3">
+        <div class="bg-canvas rounded-lg border border-hairline p-3">
             <div class="flex items-center justify-between">
-                <span class="text-sm font-medium">◆ {{ g.get('description', g.get('goal', g.get('id', 'Unknown'))) }}</span>
-                <span class="text-xs px-2 py-0.5 rounded-full
-                    {{ 'bg-green-100 text-green-700' if g.get('status') == 'active' else 'bg-gray-100 text-gray-500' }}">
+                <span class="text-sm font-medium text-ink">◆ {{ g.get('description', g.get('goal', g.get('id', 'Unknown'))) }}</span>
+                <span class="pill-badge {{ 'bg-[#dcfce7] text-[#166534]' if g.get('status') == 'active' else 'bg-canvas-soft text-mute' }}">
                     {{ g.get('status', 'unknown') }}
                 </span>
             </div>
@@ -53,28 +52,27 @@
     {% endif %}
 
     {% if recent_decisions %}
-    <h3 class="text-sm font-semibold text-gray-700 mb-3">Recent Decisions</h3>
-    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+    <h3 class="text-sm font-semibold text-ink mb-3">Recent Decisions</h3>
+    <div class="bg-canvas rounded-lg border border-hairline overflow-hidden">
         <table class="w-full text-sm">
-            <thead class="bg-gray-50">
+            <thead class="bg-canvas-soft">
                 <tr>
-                    <th class="text-left px-4 py-2 text-gray-500 font-medium">ID</th>
-                    <th class="text-left px-4 py-2 text-gray-500 font-medium">Phase</th>
-                    <th class="text-left px-4 py-2 text-gray-500 font-medium">Type</th>
-                    <th class="text-left px-4 py-2 text-gray-500 font-medium">Chosen</th>
-                    <th class="text-left px-4 py-2 text-gray-500 font-medium">Outcome</th>
+                    <th class="text-left px-4 py-2 text-mute font-medium text-xs uppercase tracking-wider">ID</th>
+                    <th class="text-left px-4 py-2 text-mute font-medium text-xs uppercase tracking-wider">Phase</th>
+                    <th class="text-left px-4 py-2 text-mute font-medium text-xs uppercase tracking-wider">Type</th>
+                    <th class="text-left px-4 py-2 text-mute font-medium text-xs uppercase tracking-wider">Chosen</th>
+                    <th class="text-left px-4 py-2 text-mute font-medium text-xs uppercase tracking-wider">Outcome</th>
                 </tr>
             </thead>
             <tbody>
                 {% for d in recent_decisions %}
-                <tr class="border-t border-gray-100 hover:bg-gray-50">
-                    <td class="px-4 py-2 text-gray-400 font-mono text-xs">{{ (d.get('id') or '?')[:12] }}</td>
-                    <td class="px-4 py-2">{{ d.get('phase', '?') }}</td>
-                    <td class="px-4 py-2">{{ d.get('decision_type', '?') }}</td>
-                    <td class="px-4 py-2">{{ (d.get('chosen_option') or d.get('chosen') or '?')[:40] }}</td>
+                <tr class="border-t border-hairline hover:bg-canvas-soft">
+                    <td class="px-4 py-2 text-mute font-mono text-xs">{{ (d.get('id') or '?')[:12] }}</td>
+                    <td class="px-4 py-2 text-charcoal">{{ d.get('phase', '?') }}</td>
+                    <td class="px-4 py-2 text-charcoal">{{ d.get('decision_type', '?') }}</td>
+                    <td class="px-4 py-2 text-charcoal">{{ (d.get('chosen_option') or d.get('chosen') or '?')[:40] }}</td>
                     <td class="px-4 py-2">
-                        <span class="text-xs px-2 py-0.5 rounded-full
-                            {{ 'bg-green-100 text-green-700' if (d.get('actual_outcome') or '').startswith('SUCCESS') else 'bg-yellow-100 text-yellow-700' }}">
+                        <span class="pill-badge {{ 'bg-[#dcfce7] text-[#166534]' if (d.get('actual_outcome') or '').startswith('SUCCESS') else 'bg-[#fef9c3] text-[#854d0e]' }}">
                             {{ (d.get('actual_outcome') or 'pending')[:20] }}
                         </span>
                     </td>

@@ -63,7 +63,7 @@ parameters:
 
 ## Usage
 
-This skill was forged by a Tao Agent. It provides the `{name}` tool.
+This skill was forged by a Tain Agent. It provides the `{name}` tool.
 
 ## Parameters
 
@@ -134,11 +134,13 @@ class ToolForge:
         sandbox_func = self._get_sandbox()
         if sandbox_func is None:
             return {
-                "passed": True,
-                "report": "\u26a0\ufe0f Sandbox not available — skipping safety check.",
-                "warnings": [{"level": "WARN", "type": "sandbox_unavailable",
-                              "detail": "ToolSandbox module could not be loaded."}],
-                "errors": [],
+                "passed": False,
+                "report": "Sandbox unavailable — refusing to forge tool without safety check.",
+                "warnings": [{"level": "CRITICAL", "type": "sandbox_unavailable",
+                              "detail": "ToolSandbox module could not be loaded. "
+                                        "Tool forging is disabled for safety."}],
+                "errors": [{"type": "sandbox_unavailable",
+                           "detail": "Cannot verify tool safety. Refusing to forge."}],
                 "functions_found": [],
                 "sandbox_result": None,
             }

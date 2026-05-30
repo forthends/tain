@@ -1,16 +1,16 @@
 <div class="knowledge-viewer">
-    <div class="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
+    <div class="flex items-center justify-between mb-4 pb-3 border-b border-hairline">
         <div>
-            <h3 class="text-sm font-semibold text-gray-800">{{ filename }}</h3>
-            <span class="text-xs text-gray-400">{{ format }}</span>
+            <h3 class="text-sm font-semibold text-ink">{{ filename }}</h3>
+            <span class="text-xs text-mute">{{ format }}</span>
         </div>
         <div class="flex gap-2">
             {% if format == "markdown" %}
-            <span class="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">Markdown</span>
+            <span class="pill-badge bg-canvas-soft text-ink">Markdown</span>
             {% elif format == "json" %}
-            <span class="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-600">JSON</span>
+            <span class="pill-badge bg-canvas-soft text-ink">JSON</span>
             {% else %}
-            <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Text</span>
+            <span class="pill-badge bg-canvas-soft text-mute">Text</span>
             {% endif %}
         </div>
     </div>
@@ -20,38 +20,37 @@
 </div>
 
 <style>
-.rendered-content .md-heading { font-weight: 600; color: #1a1a2e; margin: 1em 0 0.5em; }
-.rendered-content .md-h1 { font-size: 1.5rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.3em; }
-.rendered-content .md-h2 { font-size: 1.25rem; border-bottom: 1px solid #f3f4f6; padding-bottom: 0.2em; }
+.rendered-content .md-heading { font-weight: 600; color: #000000; margin: 1em 0 0.5em; }
+.rendered-content .md-h1 { font-size: 1.5rem; border-bottom: 1px solid #e5e5e5; padding-bottom: 0.3em; }
+.rendered-content .md-h2 { font-size: 1.25rem; border-bottom: 1px solid #f5f5f5; padding-bottom: 0.2em; }
 .rendered-content .md-h3 { font-size: 1.1rem; }
-.rendered-content .md-h4 { font-size: 1rem; color: #374151; }
-.rendered-content p { margin: 0.5em 0; color: #374151; }
-.rendered-content strong { color: #1f2937; }
+.rendered-content .md-h4 { font-size: 1rem; color: #525252; }
+.rendered-content p { margin: 0.5em 0; color: #525252; }
+.rendered-content strong { color: #000000; }
 .rendered-content ul, .rendered-content ol { margin: 0.5em 0; padding-left: 1.5em; }
-.rendered-content li { margin: 0.25em 0; color: #374151; }
+.rendered-content li { margin: 0.25em 0; color: #525252; }
 .rendered-content .md-blockquote {
-    border-left: 3px solid #3b82f6;
+    border-left: 3px solid #000000;
     padding: 0.25em 0.75em;
     margin: 0.75em 0;
-    background: #f0f7ff;
-    color: #374151;
-    border-radius: 0 4px 4px 0;
+    background: #fafafa;
+    color: #525252;
+    border-radius: 0 6px 6px 0;
 }
 .rendered-content pre {
-    background: #1e293b;
-    color: #e2e8f0;
+    background: #000000;
+    color: #ffffff;
     padding: 1rem;
-    border-radius: 0.5rem;
+    border-radius: 12px;
     overflow-x: auto;
     margin: 0.75em 0;
     font-size: 0.8125rem;
     line-height: 1.6;
 }
 .rendered-content code.inline-code {
-    background: #f1f5f9;
-    color: #e11d48;
+    background: #f5f5f5;
     padding: 0.1em 0.35em;
-    border-radius: 3px;
+    border-radius: 6px;
     font-size: 0.875em;
     font-family: ui-monospace, SFMono-Regular, monospace;
 }
@@ -63,26 +62,46 @@
     font-size: 0.875rem;
 }
 .rendered-content .md-table th {
-    background: #f8fafc;
+    background: #fafafa;
     text-align: left;
     padding: 0.5rem 0.75rem;
-    border: 1px solid #e5e7eb;
+    border: 1px solid #e5e5e5;
     font-weight: 600;
-    color: #374151;
+    color: #525252;
 }
 .rendered-content .md-table td {
     padding: 0.4rem 0.75rem;
-    border: 1px solid #e5e7eb;
-    color: #4b5563;
+    border: 1px solid #e5e5e5;
+    color: #737373;
 }
-.rendered-content hr { border: none; border-top: 1px solid #e5e7eb; margin: 1em 0; }
-.rendered-content a { color: #3b82f6; }
+.rendered-content hr { border: none; border-top: 1px solid #e5e5e5; margin: 1em 0; }
+.rendered-content a { color: #000000; }
 .rendered-content a:hover { text-decoration: underline; }
-.rendered-content img { max-width: 100%; border-radius: 4px; }
+.rendered-content img { max-width: 100%; border-radius: 6px; }
+
+/* Dark mode */
+.dark .rendered-content .md-heading { color: #ffffff; }
+.dark .rendered-content .md-h1 { border-bottom-color: #404040; }
+.dark .rendered-content .md-h2 { border-bottom-color: #333333; }
+.dark .rendered-content .md-h4 { color: rgba(255,255,255,0.7); }
+.dark .rendered-content p { color: rgba(255,255,255,0.7); }
+.dark .rendered-content strong { color: #ffffff; }
+.dark .rendered-content li { color: rgba(255,255,255,0.7); }
+.dark .rendered-content .md-blockquote { background: #1a1a1a; color: rgba(255,255,255,0.7); border-left-color: #ffffff; }
+.dark .rendered-content pre { background: #0a0a0a; }
+.dark .rendered-content code.inline-code { background: rgba(255,255,255,0.08); color: #ffffff; }
+.dark .rendered-content .md-table th { background: #1a1a1a; border-color: #404040; color: rgba(255,255,255,0.7); }
+.dark .rendered-content .md-table td { border-color: #404040; color: rgba(255,255,255,0.7); }
+.dark .rendered-content hr { border-top-color: #404040; }
+.dark .rendered-content a { color: #ffffff; }
 
 /* JSON syntax highlighting */
-.json-key { color: #0550ae; }
-.json-string { color: #0a3069; }
-.json-number { color: #0550ae; }
-.json-bool { color: #cf222e; }
+.json-key { color: #000000; }
+.json-string { color: #525252; }
+.json-number { color: #737373; }
+.json-bool { color: #a3a3a3; }
+.dark .json-key { color: #ffffff; }
+.dark .json-string { color: rgba(255,255,255,0.7); }
+.dark .json-number { color: rgba(255,255,255,0.6); }
+.dark .json-bool { color: rgba(255,255,255,0.5); }
 </style>

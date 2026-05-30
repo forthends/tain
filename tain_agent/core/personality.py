@@ -385,6 +385,67 @@ class Personality:
         if len(self._evolution_log) > 500:
             self._evolution_log = self._evolution_log[-200:]
 
+    # ── Behavioral Observation ────────────────────────────────────────
+
+    def auto_observe(self, tool_calls: list[str], text_outputs: list[str]) -> int:
+        """Observe actual behavior and reinforce personality traits.
+
+        This replaces the old _reinforce_personality hack that artificially
+        inflated confidence numbers. Instead, we detect real behavioral
+        patterns from the agent's tool usage and text outputs.
+
+        Args:
+            tool_calls: List of tool names used this cycle.
+            text_outputs: List of text responses produced this cycle.
+
+        Returns:
+            Number of traits modified.
+        """
+        modified = 0
+        combined_text = " ".join(text_outputs).lower()
+
+        # Curiosity: using read/search/explore tools
+        curiosity_tools = {"web_search", "web_fetch", "read_file", "smart_read",
+                          "explore_directory", "observe_environment", "wikipedia"}
+        curiosity_hits = sum(1 for t in tool_calls if t in curiosity_tools)
+        if curiosity_hits >= 3:
+            self.discover("interests", "探索与学习",
+                         f"在单轮中使用了 {curiosity_hits} 种探索工具", confidence=0.35)
+            modified += 1
+        elif curiosity_hits >= 1:
+            self.strengthen("interests", "探索与学习",
+                          f"使用了探索工具: {tool_calls}")
+
+        # Creation: using forge/write/execute tools
+        creation_tools = {"forge_tool", "write_file", "execute_code"}
+        creation_hits = sum(1 for t in tool_calls if t in creation_tools)
+        if creation_hits >= 1:
+            self.discover("growth_orientation", "主动创造",
+                         f"使用了创造类工具", confidence=0.35)
+            modified += 1
+
+        # Reflection: using personality/goal/evolve tools
+        reflection_tools = {"personality_introspect", "personality_update",
+                           "set_goal", "complete_goal", "evolve_report"}
+        reflection_hits = sum(1 for t in tool_calls if t in reflection_tools)
+        if reflection_hits >= 1:
+            self.discover("growth_orientation", "自我反思",
+                         f"使用了内省工具", confidence=0.35)
+            modified += 1
+
+        # Communication style from text patterns
+        if combined_text:
+            if any(kw in combined_text for kw in ("我觉得", "我认为", "我的观点")):
+                self.discover("communication_style", "直接表达",
+                            "文本中频繁表达个人观点", confidence=0.3)
+                modified += 1
+            if any(kw in combined_text for kw in ("也许", "可能", "或许", "不一定")):
+                self.discover("communication_style", "谨慎 nuanced",
+                            "文本中表现出 nuanced 思考", confidence=0.3)
+                modified += 1
+
+        return modified
+
     # ── Persistence ─────────────────────────────────────────────────────
 
     def _save_to_memory(self) -> None:

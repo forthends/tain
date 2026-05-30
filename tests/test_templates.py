@@ -76,7 +76,7 @@ class TestRunShell:
         assert "hello" in result["stdout"]
 
     def test_failing_command(self):
-        result = run_shell("exit 1")
+        result = run_shell("bash -c 'exit 1'")
         assert result["success"] is False
         assert result["exit_code"] == 1
 
@@ -112,8 +112,9 @@ class TestEstimateTokens:
         assert est > 0
 
     def test_longer_text(self):
-        est = estimate_tokens("x" * 1000)
-        assert est > 400  # ~500 with tiktoken, ~500 with fallback
+        text = "Hello " * 801  # 4005 chars × 2/5 ≈ 1602 → > 400
+        est = estimate_tokens(text)
+        assert est > 400
 
     def test_chinese_text(self):
         est = estimate_tokens("你好世界 " * 100)

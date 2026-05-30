@@ -3,47 +3,47 @@
 
 {% block content %}
 <div class="p-6 max-w-xl">
-    <h1 class="text-2xl font-bold text-gray-900 mb-1">Create New Agent</h1>
-    <p class="text-sm text-gray-500 mb-6">创建新Agent</p>
+    <h1 class="text-display-lg text-ink mb-1" style="font-family: 'SF Pro Rounded', 'Nunito', system-ui, -apple-system, sans-serif;">Create New Agent</h1>
+    <p class="text-sm text-mute mb-8">Create a new agent instance</p>
 
-    <form id="create-form" class="space-y-5">
-        <div class="bg-white rounded-lg border border-gray-200 p-4">
-            <label class="block text-sm font-medium text-gray-700 mb-2">Agent Name</label>
+    <form id="create-form" class="space-y-4">
+        <div class="bg-canvas rounded-lg border border-hairline p-5">
+            <label class="block text-sm font-medium text-ink mb-2">Agent Name</label>
             <input type="text" name="name" required pattern="[a-z][a-z0-9_-]{0,31}"
                    placeholder="e.g. poet"
-                   class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
-            <p class="text-xs text-gray-400 mt-1">Lowercase letters, digits, hyphens, 1-32 chars. Must start with a letter.</p>
+                   class="input-field">
+            <p class="text-xs text-mute mt-1.5">Lowercase letters, digits, hyphens, 1-32 chars. Must start with a letter.</p>
         </div>
 
-        <div class="bg-white rounded-lg border border-gray-200 p-4">
-            <label class="block text-sm font-medium text-gray-700 mb-3">Evolution Mode</label>
+        <div class="bg-canvas rounded-lg border border-hairline p-5">
+            <label class="block text-sm font-medium text-ink mb-3">Evolution Mode</label>
             <div class="space-y-2">
-                <label class="flex items-center gap-2 text-sm">
-                    <input type="radio" name="mode" value="chaos" checked class="text-blue-500">
-                    混沌模式 (Chaos) — 空白人格，自我觉醒
+                <label class="flex items-center gap-2 text-sm text-body cursor-pointer">
+                    <input type="radio" name="mode" value="chaos" checked class="accent-ink">
+                    Chaos — blank personality, self-awakening
                 </label>
-                <label class="flex items-center gap-2 text-sm">
-                    <input type="radio" name="mode" value="specified" class="text-blue-500">
-                    指定人格模式 (Specified) — 预设角色与人格特质
+                <label class="flex items-center gap-2 text-sm text-body cursor-pointer">
+                    <input type="radio" name="mode" value="specified" class="accent-ink">
+                    Specified — preset role and personality traits
                 </label>
             </div>
         </div>
 
-        <div id="role-fields" style="display:none" class="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
+        <div id="role-fields" style="display:none" class="bg-canvas rounded-lg border border-hairline p-5 space-y-4">
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Role Name</label>
-                <input type="text" name="role" placeholder="e.g. 浪漫主义诗人"
-                       class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                <label class="block text-sm font-medium text-ink mb-1">Role Name</label>
+                <input type="text" name="role" placeholder="e.g. Romantic Poet"
+                       class="input-field">
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Role Description</label>
+                <label class="block text-sm font-medium text-ink mb-1">Role Description</label>
                 <textarea name="role_description" rows="3" placeholder="Describe the agent's personality and role..."
-                          class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"></textarea>
+                          class="input-field rounded-lg !rounded-lg"></textarea>
             </div>
         </div>
 
         <button type="submit"
-                class="w-full px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 transition-colors">
+                class="btn-primary w-full">
             Create Agent
         </button>
     </form>
@@ -64,12 +64,12 @@
             });
             var result = await resp.json();
             if (resp.ok) {
-                el.innerHTML = '<div class="bg-green-50 border border-green-200 rounded-lg p-4 text-green-700">Agent <strong>' + result.name + '</strong> created successfully. <a href="/agent/' + result.name + '" class="underline">View agent &rarr;</a></div>';
+                el.innerHTML = '<div class="bg-canvas-soft border border-hairline rounded-lg p-4 text-ink">Agent <strong>' + result.name + '</strong> created successfully. <a href="/agent/' + result.name + '" class="underline">View agent →</a></div>';
             } else {
-                el.innerHTML = '<div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">' + result.detail + '</div>';
+                el.innerHTML = '<div class="bg-[#fef2f2] border border-[#fecaca] rounded-lg p-4 text-[#991b1b]">' + result.detail + '</div>';
             }
         } catch(err) {
-            el.innerHTML = '<div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">Error: ' + err.message + '</div>';
+            el.innerHTML = '<div class="bg-[#fef2f2] border border-[#fecaca] rounded-lg p-4 text-[#991b1b]">Error: ' + err.message + '</div>';
         }
     });
 

@@ -14,7 +14,8 @@ class TestEstimateTokens:
         assert est > 0
 
     def test_longer_text(self):
-        est = estimate_tokens("x" * 1000)
+        text = "x" * 1003  # 1003 chars × 2/5 ≈ 401.2 → > 400
+        est = estimate_tokens(text)
         assert est > 400
 
     def test_chinese_text(self):

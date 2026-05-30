@@ -1,57 +1,60 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" x-data="theme" :class="{ 'dark': dark }">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Tain Agent Framework{% endblock %}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/tailwind.css">
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@11.2.0/lib/marked.umd.min.js"></script>
     <style>
-        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .status-dot { width: 8px; height: 8px; border-radius: 9999px; display: inline-block; }
         .status-running { background-color: #22c55e; box-shadow: 0 0 6px #22c55e; }
-        .status-stopped { background-color: #6b7280; }
-        .tab-active { border-bottom: 2px solid #3b82f6; color: #3b82f6; }
-        .tab-inactive { color: #6b7280; }
-        .tab-inactive:hover { color: #374151; }
-        pre.code-block { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; font-size: 0.875rem; }
-        .message-human { background: #dbeafe; border-radius: 0.75rem 0.75rem 0.25rem 0.75rem; }
-        .message-agent { background: #f3f4f6; border-radius: 0.75rem 0.75rem 0.75rem 0.25rem; }
+        .status-stopped { background-color: #a3a3a3; }
+        .dark .status-stopped { background-color: #525252; }
+        pre.code-block {
+            background: var(--color-ink);
+            color: var(--color-on-dark);
+            padding: 1rem; border-radius: 12px; overflow-x: auto;
+            font-size: 0.875rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+        .message-human { border-radius: 16px 16px 4px 16px; }
+        .message-agent { border-radius: 16px 16px 16px 4px; }
         .markdown-body { line-height: 1.6; }
-        .markdown-body h1, .markdown-body h2, .markdown-body h3 { font-weight: 600; margin: 0.75em 0 0.5em; }
-        .markdown-body h1 { font-size: 1.25em; }
-        .markdown-body h2 { font-size: 1.15em; }
-        .markdown-body h3 { font-size: 1.05em; }
+        .markdown-body h1 { font-size: 1.25em; font-weight: 600; margin: 0.75em 0 0.5em; }
+        .markdown-body h2 { font-size: 1.15em; font-weight: 600; margin: 0.75em 0 0.5em; }
+        .markdown-body h3 { font-size: 1.05em; font-weight: 600; margin: 0.75em 0 0.5em; }
         .markdown-body p { margin: 0.5em 0; }
         .markdown-body ul, .markdown-body ol { padding-left: 1.5em; margin: 0.5em 0; }
         .markdown-body li { margin: 0.25em 0; }
         .markdown-body ul li { list-style-type: disc; }
         .markdown-body ol li { list-style-type: decimal; }
-        .markdown-body code { background: rgba(0,0,0,0.08); padding: 0.15em 0.4em; border-radius: 3px; font-size: 0.9em; font-family: ui-monospace, SFMono-Regular, monospace; }
-        .markdown-body pre { background: #1e293b; color: #e2e8f0; padding: 0.75rem 1rem; border-radius: 0.5rem; overflow-x: auto; margin: 0.75em 0; font-size: 0.875rem; }
+        .markdown-body code { padding: 0.15em 0.4em; border-radius: 6px; font-size: 0.9em; font-family: ui-monospace, SFMono-Regular, monospace; }
+        .markdown-body pre { padding: 0.75rem 1rem; border-radius: 12px; overflow-x: auto; margin: 0.75em 0; font-size: 0.875rem; }
         .markdown-body pre code { background: none; padding: 0; font-size: inherit; }
-        .markdown-body blockquote { border-left: 3px solid #3b82f6; padding-left: 0.75em; margin: 0.5em 0; color: #4b5563; }
-        .markdown-body a { color: #3b82f6; text-decoration: underline; }
+        .markdown-body blockquote { padding-left: 0.75em; margin: 0.5em 0; }
+        .markdown-body a { text-decoration: underline; }
         .markdown-body strong { font-weight: 600; }
         .markdown-body em { font-style: italic; }
-        .markdown-body hr { border: none; border-top: 1px solid #d1d5db; margin: 1em 0; }
+        .markdown-body hr { border: none; margin: 1em 0; }
     </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="bg-canvas text-ink antialiased">
     <div class="flex h-screen">
-        <!-- Sidebar -->
-        <aside class="w-64 bg-gray-900 text-white flex flex-col flex-shrink-0">
-            <div class="p-4 border-b border-gray-700">
-                <a href="/" class="text-lg font-bold tracking-tight hover:text-blue-400 transition-colors">
-                    Tao Agent 道
+        <!-- Sidebar — light monochrome, hairline border -->
+        <aside class="w-64 bg-canvas border-r border-hairline flex flex-col flex-shrink-0">
+            <div class="px-4 py-4 border-b border-hairline">
+                <a href="/" class="text-lg font-semibold tracking-tight text-ink hover:text-charcoal transition-colors" style="font-family: 'SF Pro Rounded', 'Nunito', system-ui, -apple-system, sans-serif;">
+                    Tain Agent
                 </a>
-                <div class="text-xs text-gray-500 mt-0.5">Tain Framework</div>
+                <div class="text-xs text-mute mt-0.5">Tao Framework</div>
             </div>
 
-            <nav class="flex-1 overflow-y-auto p-3">
-                <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-2">Agents</div>
+            <nav class="flex-1 overflow-y-auto sidebar-scrollbar p-3">
+                <div class="text-xs font-semibold text-mute uppercase tracking-wider mb-2 px-2">Agents</div>
                 <div id="sidebar-agents"
                      hx-get="/sidebar/agents?current={{ agent.name if agent else '' }}"
                      hx-trigger="agentStatusChanged from:body"
@@ -59,27 +62,75 @@
                     {% include "components/sidebar_agents.html" %}
                 </div>
 
-                <div class="mt-3 pt-3 border-t border-gray-700">
-                    <a href="/create" class="block px-3 py-2 rounded-md text-sm text-blue-400 hover:bg-gray-800 transition-colors">
+                <div class="mt-3 pt-3 border-t border-hairline">
+                    <a href="/create" class="block px-3 py-2 rounded-full text-sm text-ink hover:bg-canvas-soft transition-colors">
                         + Create Agent
                     </a>
                 </div>
             </nav>
 
-            <div class="p-3 border-t border-gray-700 text-xs text-gray-500">
-                <div>v{{ framework_version }}</div>
-                <div>{{ llm_provider }}/{{ llm_model }}</div>
-                <a href="/settings" class="text-blue-400 hover:text-blue-300">Settings</a>
+            <div class="p-3 border-t border-hairline">
+                <div class="text-xs text-mute space-y-1">
+                    <div>v{{ framework_version }} &middot; {{ llm_provider }}/{{ llm_model }}</div>
+                    <div class="flex items-center justify-between">
+                        <a href="/settings" class="text-ink hover:text-charcoal transition-colors">Settings</a>
+                        <button @click="toggle()" class="text-mute hover:text-ink transition-colors p-0.5 rounded-full" title="Toggle theme">
+                            <svg x-show="!dark" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+                            </svg>
+                            <svg x-show="dark" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
             </div>
         </aside>
 
         <!-- Main content -->
-        <main class="flex-1 flex flex-col overflow-hidden">
+        <main class="flex-1 flex flex-col overflow-hidden bg-canvas">
             {% block content %}{% endblock %}
         </main>
     </div>
 
     <!-- Toast container -->
     <div id="toast" class="fixed top-4 right-4 z-50" x-data></div>
+
+    <!-- HTMX loading bar -->
+    <div id="htmx-loading-bar"></div>
+
+    <!-- Theme management -->
+    <script>
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('theme', () => ({
+            dark: false,
+            init() {
+                const stored = localStorage.getItem('theme');
+                if (stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                    this.dark = true;
+                }
+                window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+                    if (!localStorage.getItem('theme')) {
+                        this.dark = e.matches;
+                    }
+                });
+            },
+            toggle() {
+                this.dark = !this.dark;
+                localStorage.setItem('theme', this.dark ? 'dark' : 'light');
+            }
+        }));
+    });
+
+    // HTMX loading bar
+    document.addEventListener('htmx:beforeRequest', () => {
+        const bar = document.getElementById('htmx-loading-bar');
+        if (bar) { bar.style.width = '60%'; bar.classList.add('active'); bar.classList.remove('done'); }
+    });
+    document.addEventListener('htmx:afterRequest', () => {
+        const bar = document.getElementById('htmx-loading-bar');
+        if (bar) { bar.style.width = '100%'; bar.classList.add('done'); }
+    });
+    </script>
 </body>
 </html>

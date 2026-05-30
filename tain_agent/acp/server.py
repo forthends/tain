@@ -134,7 +134,25 @@ class ACPServer:
         workspace_path = params.get("workspace_path", "")
 
         if workspace_path:
-            os.makedirs(workspace_path, exist_ok=True)
+            # Validate path does not escape agent_workspace/
+            resolved = Path(workspace_path).resolve()
+            workspace_root = (PROJECT_ROOT / "agent_workspace").resolve()
+            try:
+                resolved.relative_to(workspace_root)
+            except ValueError:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32001,
+                        "message": (
+                            f"workspace_path must be within agent_workspace/. "
+                            f"Got: {workspace_path}"
+                        ),
+                    },
+                }
+            os.makedirs(resolved, exist_ok=True)
+            workspace_path = str(resolved)
 
         self.sessions[session_id] = {
             "workspace_path": workspace_path,
@@ -174,25 +192,21 @@ class ACPServer:
         cancel_event = session["cancel_event"]
 
         try:
-            from webui.dialogue import process_chat_message
+            from tain_agent.core.chat import ChatEngine
+            from tain_agent.core.agent import TaoAgent
 
             agent_name = f"acp_session_{session_id[:8]}"
-            events = process_chat_message(
-                agent_name=agent_name,
-                user_content=text,
-                cancel_event=cancel_event,
-            )
+            agent = TaoAgent(config_path=self.config_path, agent_name=agent_name)
+            engine = ChatEngine(agent)
 
-            async for event in events:
-                if cancel_event.is_set():
-                    self._send_event(session_id, {"type": "cancelled"})
-                    break
+            messages = [{"role": "user", "content": text}]
+            turn = await engine.run_turn(messages, cancel_event)
 
-                acp_event = self._convert_to_acp_event(event)
-                self._send_event(session_id, acp_event)
-
-                if event.get("done"):
-                    break
+            self._send_event(session_id, {"type": "text", "text": turn.text})
+            for tc in turn.tool_calls:
+                self._send_event(session_id, {"type": "tool_call", "name": tc.name, "input": tc.input})
+            if cancel_event.is_set():
+                self._send_event(session_id, {"type": "cancelled"})
 
         except Exception as e:
             self._send_event(session_id, {
@@ -248,39 +262,6 @@ class ACPServer:
         event["session_id"] = session_id
         sys.stdout.write(json.dumps(event, ensure_ascii=False) + "\n")
         sys.stdout.flush()
-
-    def _convert_to_acp_event(self, sse_event: dict) -> dict:
-        """Convert an SSE event from process_chat_message to ACP format."""
-        event_type = "content"
-
-        if "cancelled" in sse_event:
-            event_type = "cancelled"
-        elif sse_event.get("status") == "thinking":
-            event_type = "thinking"
-        elif sse_event.get("status") == "text":
-            event_type = "text_start"
-        elif "text" in sse_event:
-            event_type = "text_delta"
-        elif "tool_start" in sse_event:
-            return {
-                "type": "tool_call",
-                "tool": sse_event["tool_start"],
-            }
-        elif "tool_done" in sse_event:
-            event_type = "tool_done"
-        elif "done" in sse_event:
-            event_type = "done"
-        elif "status" in sse_event:
-            event_type = sse_event["status"]
-
-        result = {"type": event_type}
-        if "text" in sse_event:
-            result["text"] = sse_event["text"]
-            result["length"] = len(sse_event["text"])
-        if "message_id" in sse_event:
-            result["message_id"] = sse_event["message_id"]
-
-        return result
 
 
 def _now_iso() -> str:

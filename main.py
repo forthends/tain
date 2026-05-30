@@ -30,7 +30,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from tain_agent.core.agent import TaoAgent
 from tain_agent.core.agent_factory import AgentFactory
-from tain_agent.core.pral_bridge import CognitiveBridge
 
 # ─── Constants ──────────────────────────────────────────────────────────
 
@@ -179,10 +178,8 @@ def main():
     parser.add_argument("--config", default="config.yaml", help="Path to config file")
 
     # Mode
-    parser.add_argument("--no-pral", action="store_true",
-                        help="Disable PRAL cognitive cycle (use legacy agent.run())")
     parser.add_argument("--pral", action="store_true",
-                        help="(Default) Run with full PRAL cognitive cycle")
+                        help="Run with full PRAL cognitive cycle (default)")
     parser.add_argument("--dialogue", "-d", action="store_true",
                         help="Start in interactive human-AI dialogue mode (REPL)")
     parser.add_argument("--cycles", type=int, default=0,
@@ -387,24 +384,14 @@ def main():
 
     # ── Run agent ───────────────────────────────────────────────────
     try:
-        use_pral = not args.no_pral
-
         if args.dialogue:
-            if use_pral:
-                CognitiveBridge(agent)
             from tain_agent.core.dialogue import DialogueBridge
             dialogue = DialogueBridge(agent)
             dialogue.run()
-
-        elif use_pral:
-            print("PRAL cognitive cycle mode (Perceive -> Reason -> Act -> Learn)")
-            bridge = CognitiveBridge(agent)
-            bridge.run()
-            if bridge._rate_limit_exit_code:
-                sys.exit(bridge._rate_limit_exit_code)
         else:
-            print("Legacy mode (no PRAL cognitive cycle)")
-            agent.run()
+            exit_code = agent.run()
+            if exit_code:
+                sys.exit(exit_code)
     except KeyboardInterrupt:
         print("\n\nInterrupt received.")
         agent.stop()

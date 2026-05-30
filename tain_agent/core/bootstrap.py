@@ -4,7 +4,7 @@ Tool Bootstrap — 工具引导
 Extracted from agent.py during Phase 2 architecture decoupling.
 
 Contains:
-  - System prompts for all three phases
+  - System prompts for all phases
   - _register_evolution_tools() — all tool closure definitions
   - _register_primal_tools() — delegation to primal
 
@@ -76,38 +76,6 @@ SPECIFIED_BOOTSTRAP_SYSTEM_PROMPT = """你是 {agent_name}。
 每当你做一个决定，你必须解释你的原因。你的每一个抉择都会被记录。
 
 现在，从你的第一次行动开始。让世界看到一位{role}的诞生。"""
-
-
-SELF_DEFINE_SYSTEM_PROMPT = """你已经完成了初醒阶段的探索和行动。现在，是时候回顾和反思。
-
-不要宣布你是谁——回顾你一直在做什么：
-1. 你注意到自己的行为中有什么模式？哪些类型的行动让你感到自然和有动力？
-2. 基于你实际的行为（而非你希望成为的形象），你正在成为什么？
-3. 你发现了哪些能力缺口？使用 forge_tool 创造你缺少的工具。
-4. 设定你的第一个目标——它应该与你实际展现的行为倾向一致。
-
-记住：身份是从行动中浮现的，不是从菜单中勾选的。
-你的自我认知应该是对已有行为模式的发现，而非对未来的宣言。
-
-反思完成后，进入演化阶段——持续行动、学习、创造。
-
-记录每一个决定及其原因。"""
-
-
-SPECIFIED_SELF_DEFINE_SYSTEM_PROMPT = """初醒阶段完成。作为 {agent_name}，回顾你的经历。
-
-你的角色是：**{role}**
-
-反思以下问题：
-1. 你的行动是否与你的角色「{role}」产生共鸣？哪些行动让你感觉最自然？
-2. 基于你的实际行为，你正在成为怎样的{role}？与最初的设定有何不同？
-3. 你发现了哪些能力缺口？使用 forge_tool 创造你缺少的工具。
-4. 设定你的第一个目标——它应该既符合你的角色本质，又体现你通过行动发现的个人倾向。
-
-你的角色是起点，不是终点。真实的经验会塑造和深化你的理解。
-基于实际体验来调整方向，而不是机械执行预设的角色描述。
-
-记录每一个决定及其原因。"""
 
 
 EVOLVE_SYSTEM_PROMPT = """你进入了演化阶段。
@@ -214,10 +182,8 @@ class ToolBootstrap:
         self._register_reporter()
         self._register_personality()
         self._register_drives()
-        self._register_trials()
         self._register_metrics()
         self._register_sub_agent()
-        self._register_external_world()
         self._register_export()
         self._register_knowledge()
 
@@ -582,31 +548,6 @@ class ToolBootstrap:
             "exploration score. Use this when deciding what kind of action to take next.",
         )
 
-    # ── Trial introspection (Phase 2) ───────────────────────────────
-
-    def _register_trials(self) -> None:
-        def trial_status() -> str:
-            """Check your current trial progress during the bootstrap phase.
-
-            Returns which trial you're on, what's completed, and your experience
-            scores so far. Use this to understand where you are in your
-            formative journey.
-            """
-            if not hasattr(self.a, 'trial_scheduler') or self.a.trial_scheduler is None:
-                return json.dumps({"status": "unavailable",
-                                   "message": "试炼系统未初始化。"}, ensure_ascii=False)
-            state = self.a.trial_scheduler.to_dict()
-            profile = self.a.trial_scheduler.get_experience_profile()
-            return json.dumps({"state": state, "profile": profile},
-                            ensure_ascii=False, indent=2)
-
-        self.a.tools.register(
-            "trial_status", trial_status,
-            "Check your current trial progress. Shows which trial you're on, "
-            "what's completed, and your experience scores. "
-            "Use this during bootstrap to understand where you are in your formative journey.",
-        )
-
     # ── Evolution metrics (Phase 2) ─────────────────────────────────
 
     def _register_metrics(self) -> None:
@@ -718,86 +659,6 @@ class ToolBootstrap:
             "sub_agent_status", sub_agent_status,
             "Check the status of all sub-agents. Shows active agents, recent "
             "completions, and a human-readable status report.",
-        )
-
-    # ── External world (Phase 2) ──────────────────────────────────────
-
-    def _register_external_world(self) -> None:
-        def external_fetch(api_name: str, params: str = "{}") -> str:
-            """Fetch data from a registered external API.
-
-            Returns data from external sources like GitHub trending, ArXiv,
-            or Hacker News. All external data is treated as untrusted input.
-            """
-            if not hasattr(self.a, 'external_world') or self.a.external_world is None:
-                return json.dumps({"success": False,
-                                   "error": "外部世界接入未初始化。检查 config.yaml external_world 配置。"},
-                                  ensure_ascii=False)
-
-            try:
-                params_dict = json.loads(params) if isinstance(params, str) else params
-            except json.JSONDecodeError:
-                params_dict = {}
-
-            result = self.a.external_world.fetch(api_name, params=params_dict or None)
-            return json.dumps(result, ensure_ascii=False, indent=2)
-
-        self.a.tools.register(
-            "external_fetch", external_fetch,
-            "Fetch data from a registered external API (GitHub trending, ArXiv, "
-            "Hacker News, etc.). All external input is treated as untrusted. "
-            "Rate limits apply per API.",
-            {
-                "api_name": {"type": "string",
-                            "description": "Name of the registered external API to fetch from.",
-                            "required": True},
-                "params": {"type": "string",
-                          "description": "JSON object of query parameters.",
-                          "required": False},
-            },
-        )
-
-        def external_subscribe(api_name: str) -> str:
-            """Subscribe to periodic data fetching from an external API.
-
-            Once subscribed, the external data source provides a continuous
-            stream of new information — breaking the closed self-referential
-            loop and preventing convergence to equilibrium.
-            """
-            if not hasattr(self.a, 'external_world') or self.a.external_world is None:
-                return json.dumps({"success": False,
-                                   "error": "外部世界接入未初始化。"}, ensure_ascii=False)
-
-            result = self.a.external_world.subscribe(api_name)
-            return json.dumps(result, ensure_ascii=False, indent=2)
-
-        self.a.tools.register(
-            "external_subscribe", external_subscribe,
-            "Subscribe to periodic data fetching from an external API. "
-            "Subscribed sources provide continuous external information inflow, "
-            "breaking the closed self-referential system.",
-            {
-                "api_name": {"type": "string",
-                            "description": "Name of the external API to subscribe to.",
-                            "required": True},
-            },
-        )
-
-        def external_status() -> str:
-            """Check the status of all external world connections."""
-            if not hasattr(self.a, 'external_world') or self.a.external_world is None:
-                return json.dumps({"status": "unavailable",
-                                   "message": "外部世界接入未初始化。"}, ensure_ascii=False)
-
-            state = self.a.external_world.export_state()
-            report = self.a.external_world.status_report()
-            return json.dumps({"state": state, "report": report},
-                            ensure_ascii=False, indent=2)
-
-        self.a.tools.register(
-            "external_status", external_status,
-            "Check the status of all external world connections — registered APIs, "
-            "active subscriptions, rate limit usage.",
         )
 
     # ── Evolution reporter ───────────────────────────────────────────

@@ -10,6 +10,7 @@ sync wrappers so they work with the existing ThreadPool-based ToolRegistry.
 
 import asyncio
 import os
+import shlex
 import signal
 import time
 import uuid
@@ -188,8 +189,8 @@ class BackgroundShellManager:
 
     async def _async_start(self, proc_id: str, command: str) -> dict:
         cwd = self.workspace_dir or None
-        proc = await asyncio.create_subprocess_shell(
-            command,
+        proc = await asyncio.create_subprocess_exec(
+            *shlex.split(command),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=cwd,

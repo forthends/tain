@@ -1,7 +1,7 @@
 """
 Tool Registry — 工具注册表
 
-All tools the Tao Agent can use are registered here.
+All tools the Tain Agent can use are registered here.
 The registry is self-describing: the agent can query it to discover what it can do.
 """
 
@@ -25,12 +25,13 @@ class ToolRegistry:
         self.default_timeout = default_timeout
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
-    def register(self, name: str, func: Callable, description: str, parameters: dict = None) -> None:
+    def register(self, name: str, func: Callable, description: str, parameters: dict = None, is_readonly: bool = False) -> None:
         """Register a tool function that the agent can use."""
         self._tools[name] = {
             "func": func,
             "description": description,
             "parameters": parameters or {},
+            "is_readonly": is_readonly,
         }
 
     def register_tool(self, tool) -> None:
@@ -44,6 +45,7 @@ class ToolRegistry:
             "description": tool.description,
             "parameters": tool.parameters or {},
             "_tool_instance": tool,
+            "is_readonly": getattr(tool, "is_readonly", False),
         }
 
     def list_tools(self) -> dict[str, dict]:
@@ -52,6 +54,7 @@ class ToolRegistry:
             name: {
                 "description": info["description"],
                 "parameters": info["parameters"],
+                "is_readonly": info.get("is_readonly", False),
             }
             for name, info in self._tools.items()
         }

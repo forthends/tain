@@ -10,6 +10,7 @@ Extracted from agent.py during Phase 2 architecture decoupling.
 
 import json
 from tain_agent.core.time_utils import now
+from tain_agent.utils.token_utils import estimate_tokens as _estimate_tokens
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -216,13 +217,8 @@ class ConversationManager:
 
     @staticmethod
     def _count_tokens(text: str) -> int:
-        """Count tokens in text, with tiktoken fallback."""
-        try:
-            import tiktoken
-            enc = tiktoken.get_encoding("cl100k_base")
-            return len(enc.encode(text))
-        except ImportError:
-            return max(1, len(text) // 2)
+        """Count tokens in text using the shared token utility."""
+        return _estimate_tokens(text)
 
     def needs_summarization(self) -> bool:
         """Check whether the conversation history should be summarized."""

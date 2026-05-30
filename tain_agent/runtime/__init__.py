@@ -1,5 +1,5 @@
 """
-Tao Agent Runtime — standalone execution kernel for exported agents.
+Tain Agent Runtime — standalone execution kernel for exported agents.
 
 This package is the "engine" that powers an evolved agent after it leaves
 the factory (tain_agent framework). It has zero internal dependencies on

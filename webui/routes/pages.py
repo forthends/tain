@@ -11,11 +11,14 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from jinja2 import Environment, FileSystemLoader
 
+from tain_agent import __version__
+
 from webui.data import (
     list_agents, get_agent, get_config, get_agent_goals,
     get_agent_decisions, get_agent_tools, get_agent_evolution,
     get_agent_metrics, get_agent_personality, get_agent_knowledge,
 )
+from webui.process import ProcessManager
 
 router = APIRouter()
 TEMPLATE_DIR = str(Path(__file__).resolve().parent.parent / "templates")
@@ -31,7 +34,7 @@ def _render(template_name: str, context: dict) -> HTMLResponse:
 async def dashboard(request: Request):
     agents = list_agents()
     cfg = get_config()
-    framework_version = cfg.get("framework", {}).get("version", "0.4.3")
+    framework_version = cfg.get("framework", {}).get("version", __version__)
     llm_provider = cfg.get("llm", {}).get("provider", "unknown")
     llm_model = cfg.get("llm", {}).get("model", "unknown")
     return _render("dashboard.html", {
@@ -56,7 +59,7 @@ async def agent_detail(request: Request, name: str):
         "agents": agents,
         "agent": agent,
         "tab": tab,
-        "framework_version": cfg.get("framework", {}).get("version", "0.4.3"),
+        "framework_version": cfg.get("framework", {}).get("version", __version__),
         "llm_provider": cfg.get("llm", {}).get("provider", "unknown"),
         "llm_model": cfg.get("llm", {}).get("model", "unknown"),
     })
@@ -70,7 +73,7 @@ async def settings_page(request: Request):
         "request": request,
         "agents": agents,
         "config": cfg,
-        "framework_version": cfg.get("framework", {}).get("version", "0.4.3"),
+        "framework_version": cfg.get("framework", {}).get("version", __version__),
         "llm_provider": cfg.get("llm", {}).get("provider", "unknown"),
         "llm_model": cfg.get("llm", {}).get("model", "unknown"),
     })
@@ -83,7 +86,7 @@ async def create_agent_page(request: Request):
     return _render("create.html", {
         "request": request,
         "agents": agents,
-        "framework_version": cfg.get("framework", {}).get("version", "0.4.3"),
+        "framework_version": cfg.get("framework", {}).get("version", __version__),
         "llm_provider": cfg.get("llm", {}).get("provider", "unknown"),
         "llm_model": cfg.get("llm", {}).get("model", "unknown"),
     })
@@ -187,12 +190,15 @@ async def agent_decisions_list(name: str, phase: str = "", type: str = "",
 async def agent_knowledge_render(name: str, path: str):
     from webui.data import get_agent_knowledge_content
     from webui.render import render_content
+
     fmt, content = get_agent_knowledge_content(name, path)
     html = render_content(content, fmt)
     filename = path.split("/")[-1]
-    return _render("components/knowledge_viewer.html", {
+    response = _render("components/knowledge_viewer.html", {
         "filename": filename, "format": fmt, "html": html,
     })
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return response
 
 
 @router.get("/sidebar/agents", response_class=HTMLResponse)
@@ -272,12 +278,7 @@ async def _tail_log_shared(path: Path):
 
 @router.post("/agent/{name}/controls/start", response_class=HTMLResponse)
 async def agent_control_start(request: Request, name: str):
-    import subprocess, sys
-    supervisor = str(Path(__file__).resolve().parent.parent.parent / "supervise_agent.py")
-    subprocess.run(
-        [sys.executable, supervisor, "--agent-name", name, "--daemon", "--"],
-        capture_output=True, text=True,
-    )
+    ProcessManager().start(name)
     import time
     time.sleep(0.5)
     agent = get_agent(name)
@@ -290,12 +291,7 @@ async def agent_control_start(request: Request, name: str):
 
 @router.post("/agent/{name}/controls/stop", response_class=HTMLResponse)
 async def agent_control_stop(request: Request, name: str):
-    import subprocess, sys
-    supervisor = str(Path(__file__).resolve().parent.parent.parent / "supervise_agent.py")
-    subprocess.run(
-        [sys.executable, supervisor, "--agent-name", name, "--stop"],
-        capture_output=True, text=True,
-    )
+    ProcessManager().stop(name)
     import time
     time.sleep(0.5)
     agent = get_agent(name)
@@ -308,19 +304,7 @@ async def agent_control_stop(request: Request, name: str):
 
 @router.post("/agent/{name}/controls/restart", response_class=HTMLResponse)
 async def agent_control_restart(request: Request, name: str):
-    import subprocess, sys
-    supervisor = str(Path(__file__).resolve().parent.parent.parent / "supervise_agent.py")
-    subprocess.run(
-        [sys.executable, supervisor, "--agent-name", name, "--stop"],
-        capture_output=True, text=True,
-    )
-    import time
-    time.sleep(1)
-    subprocess.run(
-        [sys.executable, supervisor, "--agent-name", name, "--daemon", "--"],
-        capture_output=True, text=True,
-    )
-    time.sleep(0.5)
+    ProcessManager().restart(name)
     agent = get_agent(name)
     resp = _render("components/agent_controls.html", {
         "request": request, "agent": agent or {"name": name, "status": "unknown"},

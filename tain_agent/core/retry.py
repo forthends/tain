@@ -173,3 +173,55 @@ def retry_stream(
             time.sleep(delay)
 
     raise RetryExhaustedError(last_exception, config.max_retries + 1)
+
+
+def llm_retry_call(
+    config: RetryConfig,
+    func: Callable,
+    *args,
+    on_rate_limit: Optional[Callable[[], bool]] = None,
+    on_trim: Optional[Callable[[], None]] = None,
+    **kwargs,
+):
+    """LLM-specific retry with rate-limit awareness and conversation-trimming fallback.
+
+    Differs from retry_call: on rate limit (429), calls on_rate_limit() which
+    should check _rate_limit_exit_code. On other retryable failures, calls
+    on_trim() to trim conversation before the last retry attempt.
+
+    Returns:
+        The return value of func on success, None on rate-limit exit.
+    """
+    if not config.enabled:
+        return func(*args, **kwargs)
+
+    last_exception = None
+    for attempt in range(config.max_retries + 1):
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:
+            last_exception = exc
+            err_str = str(exc)
+
+            if "429" in err_str or "rate_limit" in err_str.lower():
+                if on_rate_limit:
+                    should_exit = on_rate_limit()
+                    if should_exit:
+                        return None
+                delay = _calculate_delay(config, attempt) * 2
+                time.sleep(delay)
+                continue
+
+            if not _is_retryable(exc):
+                raise
+
+            if attempt >= config.max_retries:
+                raise RetryExhaustedError(last_exception, attempt + 1) from last_exception
+
+            if attempt == config.max_retries - 1 and on_trim:
+                on_trim()
+
+            delay = _calculate_delay(config, attempt)
+            time.sleep(delay)
+
+    return None

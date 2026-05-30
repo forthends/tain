@@ -3,7 +3,7 @@
 
 # ── Framework ──────────────────────────────────────────────────────────
 framework:
-  version: "0.4.3"
+  version: "0.5.0"
   min_agent_version: "0.0.1"
 
 # ── Agent defaults ─────────────────────────────────────────────────────
@@ -44,7 +44,7 @@ conversation:
   token_limit: 80000                # trigger summarization when estimated tokens exceed this
   model_context_window: 131072      # model's total context window (MiniMax-M2.7 = 131072)
 
-bootstrap:
+exploration:
   # Maximum cycles for the environment exploration phase
   max_exploration_cycles: 10
   # Maximum cycles for self-definition phase
@@ -106,28 +106,6 @@ metrics:
   auto_collect_on_report: true
   # Snapshot storage directory
   snapshot_dir: "tain_agent/state/metrics_snapshots"
-
-# ── Phase 2: External World ────────────────────────────────────────────
-# Breaks the closed self-referential system by connecting to external data.
-external_world:
-  enabled: true
-  apis:
-    - name: hackernews
-      type: rest
-      endpoint: "https://hacker-news.firebaseio.com/v0/topstories.json"
-      schedule: "0 */6 * * *"
-      description: "Hacker News top stories for tech trend awareness"
-      max_calls_per_hour: 10
-      max_calls_per_day: 100
-    - name: github_trending
-      type: rest
-      endpoint: "https://api.github.com/search/repositories"
-      schedule: "0 */6 * * *"
-      description: "GitHub trending repositories"
-      max_calls_per_hour: 10
-      max_calls_per_day: 100
-      headers:
-        Accept: "application/vnd.github.v3+json"
 
 safety:
   # Directories the agent cannot modify via self-modification

@@ -1,7 +1,7 @@
 """
 Primal Tools — 原始工具
 
-The first tools the Tao Agent is born with.
+The first tools the Tain Agent is born with.
 These are the "senses" it uses to explore the world.
 
 All file operations are scoped to the agent's isolated workspace.
@@ -171,14 +171,64 @@ def write_file(path: str, content: str) -> str:
         return f"写入失败 {path}: {e}"
 
 
+def _validate_url(url: str) -> str | None:
+    """Validate a URL for safe fetching. Returns error message or None if safe."""
+    from urllib.parse import urlparse
+    import ipaddress
+    import socket
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return f"Blocked URL scheme '{parsed.scheme}': only http/https allowed."
+
+    hostname = parsed.hostname
+    if not hostname:
+        return "Cannot determine hostname from URL."
+
+    hostname_lower = hostname.lower()
+    blocked_hosts = ("localhost", "127.0.0.1", "0.0.0.0", "::1", "metadata.google.internal")
+    if hostname_lower in blocked_hosts:
+        return f"Blocked internal host: {hostname}"
+
+    if hostname_lower.endswith(".local") or hostname_lower.endswith(".internal"):
+        return f"Blocked internal host suffix: {hostname}"
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
+            return f"Blocked IP address: {hostname}"
+    except ValueError:
+        try:
+            resolved = socket.getaddrinfo(hostname, None)
+            for _, _, _, _, sockaddr in resolved:
+                addr = sockaddr[0]
+                try:
+                    ip = ipaddress.ip_address(addr)
+                    if ip.is_loopback or ip.is_private or ip.is_link_local:
+                        return f"Blocked resolution to private/internal IP: {hostname} → {addr}"
+                except ValueError:
+                    pass
+        except socket.gaierror:
+            return f"Cannot resolve hostname: {hostname}"
+
+    return None
+
+
 def web_fetch(url: str) -> str:
     """Fetch content from a URL and return as text."""
     try:
         import requests
     except ImportError:
         return "Cannot fetch URL: 'requests' library not installed."
+    error = _validate_url(url)
+    if error:
+        return f"Cannot fetch URL: {error}"
     try:
-        resp = requests.get(url, timeout=15, headers={"User-Agent": "Tao-Agent/0.1"})
+        resp = requests.get(url, timeout=15, headers={"User-Agent": "Tao-Agent/0.1"}, allow_redirects=True)
+        # Validate the final URL after redirects
+        final_error = _validate_url(resp.url)
+        if final_error:
+            return f"Cannot fetch URL (redirect target): {final_error}"
         resp.raise_for_status()
         content = resp.text[:8000]
         return f"Fetched {url} (status {resp.status_code}, {len(resp.text)} bytes):\n\n{content}"

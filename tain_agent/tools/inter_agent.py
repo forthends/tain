@@ -6,55 +6,22 @@ within the same Tain Agent Framework instance.
 
 Architecture:
   agent_workspace/
-    _registry.json           # Shared agent registry (discovery)
-    _messages/               # Shared message bus directory
-      <from>_to_<to>_<ts>.json   # Individual message files
+    _registry.json        # Shared agent registry (discovery)
+    _message_bus.db       # SQLite WAL-mode message bus + conversation archive
     <agent>/
-      logs/conversations/
-        <peer>.jsonl         # Per-peer conversation history (append-only)
+      logs/conversations/ # (deprecated — now stored in _message_bus.db)
 
 Design:
-  - File-based messaging: no sockets, no external services
+  - SQLite-backed: WAL mode for concurrent read/write, atomic claims
   - Pull model: agents check inbox on their own cognitive cycle
-  - Persistent: all messages logged per-peer, reloadable on restart
-  - Safe: plain JSON files, no code execution vectors
+  - Persistent: all messages archived in conversations table
+  - Safe: no code execution vectors, no external services
 """
-
 import json
-import os
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _make_msg_id() -> str:
-    return f"msg_{uuid.uuid4().hex[:12]}"
-
-
-# ─── Conversation log rotation ────────────────────────────────────────
-
-MAX_CONVERSATION_MESSAGES = 1000
-KEEP_CONVERSATION_MESSAGES = 500
-
-
-def _rotate_conversation_log(filepath: Path,
-                              max_lines: int = MAX_CONVERSATION_MESSAGES,
-                              keep: int = KEEP_CONVERSATION_MESSAGES) -> None:
-    """Trim conversation log to the most recent messages to prevent unbounded growth."""
-    if not filepath.exists():
-        return
-    try:
-        text = filepath.read_text(encoding="utf-8")
-    except IOError:
-        return
-    lines = [l for l in text.strip().split("\n") if l.strip()]
-    if len(lines) > max_lines:
-        filepath.write_text("\n".join(lines[-keep:]) + "\n", encoding="utf-8")
+from tain_agent.core.message_bus import MessageBus
 
 
 # ─── Tool: discover_agents ────────────────────────────────────────────
@@ -110,10 +77,7 @@ def send_message(to_agent: str, content: str,
                  reply_to: str = "",
                  message_type: str = "chat",
                  workspace_root: str = "agent_workspace") -> dict:
-    """Send a message to another agent.
-
-    The message is written to the shared _messages/ directory and also
-    appended to the sender's conversation log with the recipient.
+    """Send a message to another agent via the SQLite message bus.
 
     Args:
         to_agent: Target agent name.
@@ -132,9 +96,8 @@ def send_message(to_agent: str, content: str,
     if not from_agent:
         return {"success": False, "error": "from_agent is required."}
 
+    # Verify recipient exists in registry
     root = Path(workspace_root)
-
-    # Verify recipient exists
     registry_path = root / "_registry.json"
     if registry_path.exists():
         try:
@@ -144,42 +107,11 @@ def send_message(to_agent: str, content: str,
         except (json.JSONDecodeError, IOError):
             pass
 
-    msg_id = _make_msg_id()
-    now_ts = _now_iso()
-
-    message = {
-        "message_id": msg_id,
-        "from_agent": from_agent,
-        "to_agent": to_agent,
-        "timestamp": now_ts,
-        "content": content,
-        "reply_to": reply_to,
-        "message_type": message_type,
-    }
-
-    # Write to shared message bus
-    messages_dir = root / "_messages"
-    messages_dir.mkdir(parents=True, exist_ok=True)
-    msg_file = messages_dir / f"{from_agent}_to_{to_agent}_{msg_id}.json"
-    msg_file.write_text(
-        json.dumps(message, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+    bus = MessageBus(workspace_root)
+    return bus.send_message(
+        from_agent=from_agent, to_agent=to_agent,
+        content=content, reply_to=reply_to, message_type=message_type,
     )
-
-    # Append to sender's conversation log
-    conv_dir = root / from_agent / "logs" / "conversations"
-    conv_dir.mkdir(parents=True, exist_ok=True)
-    conv_file = conv_dir / f"{to_agent}.jsonl"
-    with open(conv_file, "a", encoding="utf-8") as f:
-        f.write(json.dumps(message, ensure_ascii=False) + "\n")
-    _rotate_conversation_log(conv_file)
-
-    return {
-        "success": True,
-        "message_id": msg_id,
-        "to": to_agent,
-        "timestamp": now_ts,
-    }
 
 
 # ─── Tool: check_messages ─────────────────────────────────────────────
@@ -189,10 +121,8 @@ def check_messages(agent_name: str = "",
                    workspace_root: str = "agent_workspace") -> dict:
     """Check for new messages addressed to this agent.
 
-    Reads message files from _messages/ that are addressed to agent_name.
-    Uses atomic rename to claim each message, preventing duplicate processing
-    by concurrent agent instances. Processed messages are archived to the
-    conversation log and removed from the bus.
+    Uses atomic claim via SQLite BEGIN IMMEDIATE to prevent duplicate
+    delivery across concurrent agent instances.
 
     Args:
         agent_name: Name of the agent checking messages.
@@ -203,66 +133,21 @@ def check_messages(agent_name: str = "",
         dict with 'messages' list and 'count'.
     """
     if not agent_name:
-        return {"success": False, "error": "agent_name is required.", "messages": [], "count": 0}
+        return {"success": False, "error": "agent_name is required.",
+                "messages": [], "count": 0}
 
-    root = Path(workspace_root)
-    messages_dir = root / "_messages"
+    bus = MessageBus(workspace_root)
 
-    if not messages_dir.exists():
-        return {"messages": [], "count": 0, "message": "No messages directory."}
+    result = bus.check_messages(agent_name=agent_name, from_agent=from_agent)
 
-    # First pass: read all candidate messages, then sort by timestamp
-    candidates = []
-    for msg_file in messages_dir.glob("*.json"):
+    # Periodic rotation — trim old conversations if needed
+    if result["count"] > 0:
         try:
-            msg = json.loads(msg_file.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, IOError):
-            # Corrupt file — try to clean up
-            msg_file.unlink(missing_ok=True)
-            continue
+            bus.rotate_conversations()
+        except Exception:
+            pass
 
-        if msg.get("to_agent") != agent_name:
-            continue
-
-        if from_agent and msg.get("from_agent") != from_agent:
-            continue
-
-        candidates.append((msg.get("timestamp", ""), msg_file, msg))
-
-    # Sort by timestamp so messages are processed in chronological order
-    candidates.sort(key=lambda x: x[0])
-
-    new_messages = []
-
-    for _ts, msg_file, msg in candidates:
-        # Atomic claim: rename the file before processing.
-        # If another instance already claimed it, the rename fails
-        # and we skip — no duplicate delivery.
-        claimed = msg_file.with_name(msg_file.name + ".claimed")
-        try:
-            os.rename(msg_file, claimed)
-        except FileNotFoundError:
-            continue  # another instance claimed it first
-
-        try:
-            new_messages.append(msg)
-
-            # Archive to conversation log
-            sender = msg.get("from_agent", "unknown")
-            conv_dir = root / agent_name / "logs" / "conversations"
-            conv_dir.mkdir(parents=True, exist_ok=True)
-            conv_file = conv_dir / f"{sender}.jsonl"
-            with open(conv_file, "a", encoding="utf-8") as f:
-                f.write(json.dumps(msg, ensure_ascii=False) + "\n")
-            _rotate_conversation_log(conv_file)
-        finally:
-            claimed.unlink(missing_ok=True)
-
-    return {
-        "messages": new_messages,
-        "count": len(new_messages),
-        "message": f"You have {len(new_messages)} new message(s)." if new_messages else "No new messages.",
-    }
+    return result
 
 
 # ─── Tool: get_conversation_history ────────────────────────────────────
@@ -273,7 +158,7 @@ def get_conversation_history(with_agent: str, agent_name: str = "",
                              workspace_root: str = "agent_workspace") -> dict:
     """Load conversation history with a specific peer agent.
 
-    Reads from the agent's logs/conversations/<peer>.jsonl file.
+    Reads from the SQLite conversations table.
 
     Args:
         with_agent: Peer agent name to load conversation with.
@@ -286,56 +171,19 @@ def get_conversation_history(with_agent: str, agent_name: str = "",
         dict with 'messages' list, 'count', and 'total_stored'.
     """
     if not agent_name or not with_agent:
-        return {"success": False, "error": "agent_name and with_agent are required.", "messages": [], "count": 0}
+        return {"success": False, "error": "agent_name and with_agent are required.",
+                "messages": [], "count": 0}
 
-    root = Path(workspace_root)
-    conv_file = root / agent_name / "logs" / "conversations" / f"{with_agent}.jsonl"
+    bus = MessageBus(workspace_root)
+    result = bus.get_conversation_history(
+        agent_name=agent_name, with_agent=with_agent,
+        limit=limit, threaded=threaded,
+    )
 
-    if not conv_file.exists():
-        return {"messages": [], "count": 0, "total_stored": 0,
-                "message": f"No conversation history with '{with_agent}'."}
-
-    all_messages = []
-    try:
-        with open(conv_file, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    try:
-                        msg = json.loads(line)
-                        if isinstance(msg, dict) and "message_id" in msg:
-                            all_messages.append(msg)
-                    except json.JSONDecodeError:
-                        continue
-    except IOError:
-        return {"success": False, "error": "Failed to read conversation file.", "messages": [], "count": 0}
-
-    total = len(all_messages)
-
-    # Most recent first (default) or build threaded view
-    if threaded:
-        # Build index: message_id → message
-        by_id = {m["message_id"]: m for m in all_messages}
-        roots = []
-        for m in all_messages:
-            m["replies"] = []
-        for m in all_messages:
-            parent_id = m.get("reply_to", "")
-            if parent_id and parent_id in by_id:
-                by_id[parent_id].setdefault("replies", []).append(m)
-            else:
-                roots.append(m)
-        # Sort roots by timestamp, most recent first
-        roots.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-        # Return limited set of thread roots
-        result = roots[-limit:] if limit else roots
-        result = result[::-1] if limit else result
-    else:
-        result = all_messages[-limit:][::-1]
-
+    total = result.get("total_stored", 0)
     return {
-        "messages": result,
-        "count": len(result),
+        "messages": result["messages"],
+        "count": result["count"],
         "with_agent": with_agent,
         "total_stored": total,
     }
@@ -355,8 +203,6 @@ def register_inter_agent_tools(tool_registry, workspace_root: str = "agent_works
         workspace_root: Path to the agent workspace root.
         agent_name: This agent's name.
     """
-    import copy
-
     _ws = workspace_root
     _name = agent_name
 

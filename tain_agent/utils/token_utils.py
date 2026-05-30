@@ -6,24 +6,25 @@ head and tail content while inserting a clear truncation marker.
 """
 
 
-def estimate_tokens(text: str) -> int:
+def estimate_tokens(text: str, model: str = "cl100k_base") -> int:
     """Estimate token count for a string.
 
-    Tries tiktoken (cl100k_base), falls back to character-based
-    estimate (2 chars ≈ 1 token).
+    Tries tiktoken with the given model encoding, falls back to
+    character-based estimate (~2.5 chars per token).
 
     Args:
         text: Text to estimate token count for.
+        model: Tiktoken encoding name (default "cl100k_base").
 
     Returns:
         Estimated token count (minimum 1).
     """
     try:
         import tiktoken
-        enc = tiktoken.get_encoding("cl100k_base")
+        enc = tiktoken.get_encoding(model)
         return len(enc.encode(text))
-    except ImportError:
-        return max(1, len(text) // 2)
+    except (ImportError, Exception):
+        return max(1, len(text) * 2 // 5)
 
 
 def truncate_text_by_tokens(text: str, max_tokens: int = 32000,

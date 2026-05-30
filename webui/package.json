@@ -1,0 +1,12 @@
+{
+  "name": "tain-webui",
+  "version": "0.4.3",
+  "private": true,
+  "scripts": {
+    "build": "npx tailwindcss -i ./src/input.css -o ./static/tailwind.css --minify",
+    "watch": "npx tailwindcss -i ./src/input.css -o ./static/tailwind.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.0"
+  }
+}

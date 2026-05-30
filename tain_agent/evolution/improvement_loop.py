@@ -207,7 +207,8 @@ class ImprovementLoop:
         self._save_cycle_record(cycle_start, pipeline_result, real_improvement)
         self._safe_callback(self._on_cycle_complete, pipeline_result)
         self._log_cycle_decision(pipeline_result)
-        self._reinforce_personality()
+        # Personality reinforcement now done by Personality.auto_observe()
+        # based on actual behavioral patterns, not artificial inflation.
 
         return {
             "success": True,
@@ -237,14 +238,10 @@ class ImprovementLoop:
         if not spec:
             return pipeline_result
 
-        gen_code, gen_params = self._builtin_code_gen(spec)
-        if gen_code:
-            return self._pipeline.run_full_pipeline(code=gen_code, parameters=gen_params or {})
-
-        if self._code_generator:
-            forge_stage = self._find_forge_stage_needing_code(pipeline_result)
-            if forge_stage:
-                return self._try_external_code_generator(spec)
+        # Code generation is disabled — gaps are recorded in capability
+        # registry for human developers to address. No LLM or stub-generated
+        # code is auto-registered as a tool.
+        self._log_ungenerated_gap(spec)
 
         return pipeline_result
 
@@ -331,7 +328,8 @@ class ImprovementLoop:
         self._cycle_history.append(cycle_record)
         self._last_cycle_at = cycle_start.isoformat()
         self._save_state()
-        self._reinforce_personality()
+        # Personality reinforcement now done by Personality.auto_observe()
+        # based on actual behavioral patterns, not artificial inflation.
 
         if self._decision_log:
             self._decision_log.record(
@@ -798,82 +796,25 @@ class ImprovementLoop:
             "need_assessment": need_assessment,
         }
 
-    # ── Built-in Code Generator ───────────────────────────────────────
+    # ── Gap Logging ──────────────────────────────────────────────────
 
-    def _builtin_code_gen(self, spec) -> tuple:
+    def _log_ungenerated_gap(self, spec) -> None:
+        """Record a capability gap that requires human developer attention.
+
+        Auto-generation is disabled — gaps are logged for review, not
+        auto-filled with stub or LLM-generated code.
+        """
+        tool_name = getattr(spec, 'tool_name', '') or getattr(spec, 'capability_id', '') or 'unknown'
         desc = getattr(spec, 'description', '') or ''
-        notes = getattr(spec, 'design_notes', '') or ''
-        tool_name = getattr(spec, 'tool_name', '') or getattr(spec, 'capability_id', '') or ''
-        combined = f"{desc} {notes}".lower()
-
-        if any(kw in combined for kw in ('knowledge', 'search', 'retrieve', 'index', 'query')):
-            return self._gen_knowledge_tool(desc, tool_name)
-        if any(kw in combined for kw in ('test', 'validate', 'verify', 'check', 'audit')):
-            return self._gen_testing_tool(desc, tool_name)
-        if any(kw in combined for kw in ('metric', 'monitor', 'observe', 'collect', 'dashboard')):
-            return self._gen_metrics_tool(desc, tool_name)
-
-        return None, None
-
-    def _gen_knowledge_tool(self, desc: str, name: str) -> tuple:
-        code = f'''
-"""
-{desc}
-"""
-import json
-
-def query(q: str = "", limit: int = 10) -> dict:
-    """Query the knowledge system."""
-    return {{"query": q, "results": [], "status": "ok"}}
-
-def main(action: str = "query", **kwargs) -> dict:
-    return query(kwargs.get("q", ""), kwargs.get("limit", 10))
-'''
-        params = {"type": "object", "properties": {
-            "action": {"type": "string"},
-            "q": {"type": "string"},
-            "limit": {"type": "integer"}
-        }}
-        return code, params
-
-    def _gen_testing_tool(self, desc: str, name: str) -> tuple:
-        code = f'''
-"""
-{desc}
-"""
-import json
-
-def run(target: str = "") -> dict:
-    """Run validation checks."""
-    results = {{"target": target, "passed": [], "failed": []}}
-    return {{"status": "ok", "results": results}}
-
-def main(action: str = "run", **kwargs) -> dict:
-    return run(kwargs.get("target", ""))
-'''
-        params = {"type": "object", "properties": {
-            "action": {"type": "string"},
-            "target": {"type": "string"}
-        }}
-        return code, params
-
-    def _gen_metrics_tool(self, desc: str, name: str) -> tuple:
-        code = f'''
-"""
-{desc}
-"""
-import json
-from tain_agent.core.time_utils import now
-
-def collect() -> dict:
-    """Collect current metrics."""
-    return {{"collected_at": now().isoformat(), "metrics": {{}}}}
-
-def main(action: str = "collect", **kwargs) -> dict:
-    return collect()
-'''
-        params = {"type": "object", "properties": {"action": {"type": "string"}}}
-        return code, params
+        self._decision_log.record(
+            context={"action": "capability_gap_logged", "tool_name": tool_name},
+            decision_type="improvement_gap",
+            options_considered=[{"option": "log_gap", "tool_name": tool_name}],
+            chosen_option="log_gap",
+            reasoning=f"Capability gap for '{tool_name}': {desc}. Requires human developer.",
+            expected_outcome="Gap recorded for review.",
+            phase="work",
+        ) if self._decision_log else None
 
     # ── Status & State ───────────────────────────────────────────────
 
