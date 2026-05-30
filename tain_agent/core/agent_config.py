@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 
+from tain_agent import __version__
 from tain_agent.core.time_utils import set_timezone
 from tain_agent.core.agent_factory import AgentFactory
 
@@ -71,7 +72,7 @@ class AgentConfigMixin:
 
         # Framework version & AgentFactory for registry access
         fw_cfg = self.config.get("framework", {})
-        self.framework_version = fw_cfg.get("version", "0.4.3")
+        self.framework_version = fw_cfg.get("version", __version__)
         self._factory = AgentFactory(workspace_root=self.workspace_root)
 
         # ── Evolution mode & role ──────────────────────────────────
@@ -80,6 +81,16 @@ class AgentConfigMixin:
         self.role_description = ""
         self._workspace_version_path = self._workspace_path / "version.json"
         self._load_agent_identity()
+
+        # Validate config schema (non-fatal if pydantic not installed)
+        try:
+            from tain_agent.core.config_schema import AppConfig
+            AppConfig(**self.config)
+        except ImportError:
+            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Config validation warning: %s", e)
 
     def _load_agent_identity(self) -> None:
         """Load evolution mode and role from the agent's version.json, if it exists."""
