@@ -213,6 +213,10 @@ def main():
     parser.add_argument("--port", type=int, default=8000,
                         help="Port for Web UI (default: 8000)")
 
+    # Kernel mode
+    parser.add_argument("--new-kernel", action="store_true",
+                        help="Use new Core-Plugins AgentKernel (v0.6.0)")
+
     args = parser.parse_args()
 
     # ── Web UI ────────────────────────────────────────────────────────
@@ -316,7 +320,11 @@ def main():
         print("  The agent may need migration. Proceeding anyway...\n")
 
     # ── Wake the agent ──────────────────────────────────────────────
-    agent = TaoAgent(config_path=args.config, agent_name=agent_name)
+    if args.new_kernel:
+        from tain_agent.compat import TaoAgentCompat
+        agent = TaoAgentCompat(config_path=args.config, agent_name=agent_name)
+    else:
+        agent = TaoAgent(config_path=args.config, agent_name=agent_name)
 
     if args.state:
         agent.print_state()
