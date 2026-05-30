@@ -1,3 +1,4 @@
+# DEPRECATED since v0.6.0 — logic migrated to tain_agent/kernel/ and tain_agent/plugins/
 """
 AgentSubsystemsMixin — subsystem initialization and code generation wiring.
 """

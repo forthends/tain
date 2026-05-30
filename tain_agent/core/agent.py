@@ -28,6 +28,13 @@ Architecture (v0.5.0):
   lineage.py          — Evolution lineage tracking
 """
 
+import warnings
+warnings.warn(
+    "tain_agent.core.agent.TaoAgent is deprecated. "
+    "Use tain_agent.compat.TaoAgentCompat or tain_agent.kernel.AgentKernel directly.",
+    DeprecationWarning, stacklevel=2,
+)
+
 import logging
 import os
 import time
