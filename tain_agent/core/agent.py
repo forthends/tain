@@ -248,24 +248,37 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
 
     def _apply_action_contemplation_balance(self, tool_use_blocks, text_parts) -> None:
         """Track readonly/reflective tool usage and inject balance prompts."""
-        _readonly_tools = {
-            "read_file", "smart_read", "grep_code",
-            "web_search", "web_fetch", "api_fetch", "fetch_and_parse",
-            "observe_environment", "explore_directory",
-            "get_current_time",
-            "rag_tool", "knowledge_vector_search", "wikipedia",
-            "content_extractor", "knowledge_graph", "knowledge_health",
-            "knowledge_freshness", "knowledge_gap_finder",
-            "knowledge_linker", "knowledge_subgraph",
-            "coevolution_monitor", "emergent_topic_detector",
-            "capability_index", "agent_dashboard",
-            "code_stats", "self_audit", "impact_analyzer",
-            "lineage_query", "meta_learn", "session_digest",
-            "decision_log_health", "outcome_update",
-            "metrics_collector", "tool_fitness",
-            "version_diff", "knowledge_version_tracker",
-            "parse_url", "html_to_text", "json_query",
-        }
+        # Build readonly set declaratively from tool registry (P2-17)
+        _readonly_tools = set()
+        try:
+            tools_info = self.tools.list_tools()
+            _readonly_tools = {
+                name for name, info in tools_info.items()
+                if info.get("is_readonly", False)
+            }
+        except Exception:
+            pass
+
+        # Fallback: hardcoded set when declarative metadata is unavailable
+        if not _readonly_tools:
+            _readonly_tools = {
+                "read_file", "smart_read", "grep_code",
+                "web_search", "web_fetch", "api_fetch", "fetch_and_parse",
+                "observe_environment", "explore_directory",
+                "get_current_time",
+                "rag_tool", "knowledge_vector_search", "wikipedia",
+                "content_extractor", "knowledge_graph", "knowledge_health",
+                "knowledge_freshness", "knowledge_gap_finder",
+                "knowledge_linker", "knowledge_subgraph",
+                "coevolution_monitor", "emergent_topic_detector",
+                "capability_index", "agent_dashboard",
+                "code_stats", "self_audit", "impact_analyzer",
+                "lineage_query", "meta_learn", "session_digest",
+                "decision_log_health", "outcome_update",
+                "metrics_collector", "tool_fitness",
+                "version_diff", "knowledge_version_tracker",
+                "parse_url", "html_to_text", "json_query",
+            }
         _reflective_tools = {
             "personality_introspect", "personality_update",
             "record_decision", "set_goal", "complete_goal",

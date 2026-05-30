@@ -26,6 +26,7 @@ class Tool(ABC):
     name: str = ""
     description: str = ""
     parameters: dict = {}
+    is_readonly: bool = False  # True = no side effects, safe for readonly streak tracking
 
     @abstractmethod
     def execute(self, **kwargs) -> Any:
