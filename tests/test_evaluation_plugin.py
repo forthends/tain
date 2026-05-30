@@ -268,3 +268,65 @@ class TestProductionGate:
         assert template["task_name"] == "独立开发验收"
         general = gate.get_scenario_template("unknown_role")
         assert general["task_name"] == "综合能力验收"
+
+
+from tain_agent.plugins.evaluation import EvaluationPlugin
+from tain_agent.kernel.protocol import AgentContext, PluginProtocol
+import tempfile
+from pathlib import Path
+
+
+class TestEvaluationPluginIntegration:
+    def _make_ctx(self, tmpdir):
+        return AgentContext("test", "a1", "specified", Path(tmpdir), {}, "0.6.0")
+
+    def test_satisfies_protocol(self):
+        assert isinstance(EvaluationPlugin(), PluginProtocol)
+
+    def test_initialize_creates_storage(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin = EvaluationPlugin()
+            plugin.initialize(self._make_ctx(tmpdir))
+            assert plugin._engine is not None
+            assert plugin._reporter is not None
+            assert plugin._gate is not None
+
+    def test_routine_evaluate_produces_report(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin = EvaluationPlugin()
+            plugin.initialize(self._make_ctx(tmpdir))
+            metrics = {
+                "identity": {"expertise_count": 3, "values_count": 5, "autonomy_level": 3, "traits_median_confidence": 0.7},
+                "memory": {"episodic_count": 40, "semantic_entities": 20, "median_strength": 0.7},
+                "skill": {"total_skills": 5, "expert_skills": 2, "master_skills": 1, "avg_success_rate": 0.85, "composed_count": 1},
+                "tool": {"total_tools": 10, "forged_tools": 3, "call_success_rate": 0.9, "forge_cycle_success_rate": 0.8},
+                "knowledge": {"entity_count": 30, "relation_density": 0.5, "freshness_ratio": 0.8},
+                "workflow": {"completed_count": 10, "success_rate": 0.8, "avg_steps": 4},
+                "collaboration": {"collab_count": 2, "team_count": 1, "reputation": 50, "teach_count": 0},
+            }
+            report = plugin.evaluate(metrics, mode="routine")
+            assert report is not None
+            assert len(report.dimensions) == 7
+            assert report.report_id != ""
+
+    def test_health_check_reports_metrics(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin = EvaluationPlugin()
+            plugin.initialize(self._make_ctx(tmpdir))
+            health = plugin.health_check()
+            assert health.status in ("ok", "warning")
+            assert "evaluations_run" in health.metrics
+
+    def test_report_history_limited(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin = EvaluationPlugin()
+            plugin.initialize(self._make_ctx(tmpdir))
+            history = plugin.get_history(n=5)
+            assert len(history) <= 5
+
+    def test_production_readiness_default(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin = EvaluationPlugin()
+            plugin.initialize(self._make_ctx(tmpdir))
+            readiness = plugin.get_production_readiness()
+            assert readiness["status"] == "not_ready"

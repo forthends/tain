@@ -44,6 +44,10 @@ class AgentKernel:
         cp = self.lifecycle.get("collaboration")
         if cp and hasattr(cp, "send"):
             routes["collaboration.send"] = cp.send
+        ep = self.lifecycle.get("evaluation")
+        if ep:
+            routes["evaluation.get_readiness"] = ep.get_production_readiness
+            routes["evaluation.get_report"] = ep.get_latest_report
         return routes
 
     def run(self, llm_backend, conversation, drive_system, system_prompt: str,
