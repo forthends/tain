@@ -57,7 +57,7 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
     """
 
     PHASES = ("explore", "work")
-    MAX_CYCLES = {"explore": 10, "work": 999999}
+    MAX_CYCLES = {"explore": 10, "work": float("inf")}
 
     def __init__(self, config_path: str = "config.yaml", agent_name: str = None):
         self.agent_name = agent_name  # Set before _load_config
