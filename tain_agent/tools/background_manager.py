@@ -186,10 +186,12 @@ class BackgroundShellManager:
 
     # ── Async internals ────────────────────────────────────────────
 
+    import shlex
+
     async def _async_start(self, proc_id: str, command: str) -> dict:
         cwd = self.workspace_dir or None
-        proc = await asyncio.create_subprocess_shell(
-            command,
+        proc = await asyncio.create_subprocess_exec(
+            *shlex.split(command),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=cwd,

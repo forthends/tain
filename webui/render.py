@@ -82,7 +82,7 @@ def render_markdown(text: str) -> str:
 
     def _inline_render(text: str) -> str:
         """Render inline Markdown within a single line."""
-        t = text
+        t = escape(text)
         # Images (must be before links)
         t = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", r'<img src="\2" alt="\1">', t)
         # Links
