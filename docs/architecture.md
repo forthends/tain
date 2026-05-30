@@ -1,6 +1,6 @@
 # Tain Agent Framework — Architecture Design
 
-**Version**: 0.4.0
+**Version**: 0.5.0
 **Date**: 2026-05-24
 
 ---
@@ -12,9 +12,9 @@ The Tain Agent Framework is a platform for building and running self-evolving AI
 ### Design Philosophy
 
 ```
-道生一  →  Framework provides the empty vessel (Bootstrap)
-一生二  →  Agent discovers its identity through action (Self-Define)
-二生三  →  Agent creates tools, knowledge, and goals (Evolve)
+道生一  →  Framework provides the empty vessel
+一生二  →  Agent explores its environment and identity (explore phase)
+二生三  →  Agent works: forges tools, builds knowledge, evolves (work phase)
 三生万物 →  Multi-agent collaboration, export, infinite evolution
 ```
 
@@ -56,32 +56,38 @@ The Tain Agent Framework is a platform for building and running self-evolving AI
 
 ```
 tain_agent/                        # Framework package
-  __init__.py                      # __version__ = "0.4.0"
+  __init__.py                      # __version__ = "0.5.0"
   decision_log.py                  # Append-only JSONL decision log
 
   core/                            # Central nervous system
     agent.py                       # TaoAgent class — main orchestrator
-    agent_factory.py               # Agent lifecycle management (v0.4.0)
+    agent_cache.py                 # Agent metadata/index cache
+    agent_factory.py               # Agent lifecycle management (v0.5.0)
+    agent_protocols.py             # Mixin interface contracts
     bootstrap.py                   # Tool registration + system prompts
+    chat.py                        # Shared chat engine (LLM orchestration, XML parsing)
     cognitive_loop.py              # PRAL cognitive loop state machine
-    pral_bridge.py                 # CognitiveBridge: wraps agent.run()
-    dialogue.py                    # DialogueBridge: interactive REPL
-    personality.py                 # Emergent personality (7 categories)
-    drives.py                      # Drive system (4 intrinsic drives)
-    trials.py                      # Trial scheduler (5 formative trials)
-    memory.py                      # Dual-tier memory (working + long-term)
-    conversation.py                # Conversation manager (checkpointed)
-    llm.py                         # LLM backend abstraction (4 providers)
-    environment.py                 # Environment scanner + diversity engine
-    time_utils.py                  # Timezone-aware utilities
-    session_memory.py              # Cross-session user recognition
     companion_shrine.py            # Non-code presence marker
+    config_schema.py               # Pydantic config validation
+    conversation.py                # Conversation manager (checkpointed)
+    conversation_store.py          # Persistent conversation storage
+    dialogue.py                    # DialogueBridge: interactive REPL
+    drives.py                      # Drive system (4 intrinsic drives)
+    environment.py                 # Environment scanner + diversity engine
+    llm.py                         # LLM backend abstraction (4 providers)
+    memory.py                      # Dual-tier memory (working + long-term)
+    persist.py                     # Unified persistence with atomic writes
+    personality.py                 # Emergent personality (7 categories)
+    process.py                     # Process lifecycle management
+    session_memory.py              # Cross-session user recognition
+    streaming.py                   # Streaming response support
+    time_utils.py                  # Timezone-aware utilities
 
   tools/                           # Extensible tool system
     registry.py                    # ToolRegistry (thread-pool timeout exec)
     forge.py                       # ToolForge (6-stage safe pipeline)
     primal.py                      # 10 primal tools (read/write/search/execute)
-    inter_agent.py                 # Inter-agent communication tools (v0.4.0)
+    inter_agent.py                 # Inter-agent communication tools (v0.5.0)
 
   evolution/                       # Self-evolution subsystem
     goal.py                        # Goal system with lifecycle management
@@ -148,7 +154,7 @@ Two evolution modes:
 | **Chaos** | Empty — agent self-awakens | Standard bootstrap | Exploration, emergent identity |
 | **Specified** | Seeded from role + description | Role-aware bootstrap | Task-specific agents |
 
-### 5.2 Bootstrap Phase
+### 5.2 Explore Phase
 
 ```
 Agent Created
@@ -159,10 +165,10 @@ Agent Created
 │ workspace │    │ use tools│    │ patterns │
 └──────────┘    └──────────┘    └──────────┘
      │                               │
-     └─── trials (5 types) ──────────┘
+     └───────────────────────────────┘
                      │
                      ▼
-              Self-Define Phase
+                Work Phase
 ```
 
 ### 5.3 PRAL Cognitive Cycle
@@ -239,7 +245,7 @@ Each agent's `version.json` records the `framework_version` it was created with.
 
 | File | Purpose |
 |------|---------|
-| `tain_agent/__init__.py` | Framework version (`__version__ = "0.4.0"`) |
+| `tain_agent/__init__.py` | Framework version (`__version__ = "0.5.0"`) |
 | `agent_workspace/<name>/version.json` | Agent workspace version + framework binding |
 | `config.yaml` → `framework.version` | Configured framework version |
 
