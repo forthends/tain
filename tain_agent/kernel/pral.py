@@ -18,7 +18,7 @@ class PRALLoop:
         self.cycle_count = 0
 
     def run(self, llm_backend, conversation, drive_system, system_prompt_template: str,
-            max_cycles: int = float("inf"), stop_signal: callable = None) -> int:
+            max_cycles: int | float = float("inf"), stop_signal: callable = None) -> int:
         """Execute PRAL cycles until stop."""
         self._running = True
         while self._running:
@@ -35,7 +35,7 @@ class PRALLoop:
             context = self._perceive()
 
             # 2. REASON
-            system_prompt = self._build_prompt(system_prompt_template)
+            system_prompt = self._build_prompt(system_prompt_template, context)
             response = llm_backend.create_message(
                 system_prompt=system_prompt,
                 messages=conversation.to_claude_messages(),
@@ -52,7 +52,10 @@ class PRALLoop:
             self._learn(response, conversation)
             self._notify_plugins("on_cycle_end", self.cycle_count)
 
-            conversation.trim_to_token_budget(keep_last=40)
+            try:
+                conversation.trim_to_token_budget(keep_last=40)
+            except AttributeError:
+                logger.debug("Conversation object does not support token budget trimming; skipping")
 
         return 0
 
@@ -72,8 +75,21 @@ class PRALLoop:
             ctx["active_workflows"] = wf.status_all()
         return ctx
 
-    def _build_prompt(self, base: str) -> str:
+    def _build_prompt(self, base: str, context: dict | None = None) -> str:
         prompt = base
+        if context:
+            extra: list[str] = []
+            for key, label, fmt in [
+                ("memories", "Recent Memories", lambda v: "\n".join(f"- {m}" for m in v)),
+                ("active_workflows", "Active Workflows", lambda v: "\n".join(f"- {w}" for w in v)),
+                ("inbox", "Collaboration Inbox", lambda v: "\n".join(f"- {m}" for m in v)),
+                ("knowledge", "Relevant Knowledge", lambda v: str(v)),
+            ]:
+                value = context.get(key)
+                if value:
+                    extra.append(f"[{label}]\n{fmt(value)}")
+            if extra:
+                prompt = prompt + "\n\n" + "\n\n".join(extra)
         for name in ["identity", "memory", "knowledge", "skill"]:
             plugin = self._lm.get(name)
             if plugin:
@@ -100,7 +116,12 @@ class PRALLoop:
         if tool_calls:
             for tc in tool_calls:
                 result = self._dispatch.call("tool.call", tc.name, **tc.input)
-                content = result if isinstance(result, str) else str(result)
+                if result is None:
+                    content = f"Tool '{tc.name}' returned no result (possibly unhandled or failed)"
+                elif isinstance(result, str):
+                    content = result
+                else:
+                    content = str(result)
                 conversation.append("user", [{"type": "tool_result", "tool_use_id": tc.id, "content": content}])
 
     def _learn(self, response, conversation) -> None:
