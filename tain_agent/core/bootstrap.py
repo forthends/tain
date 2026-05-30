@@ -217,7 +217,6 @@ class ToolBootstrap:
         self._register_trials()
         self._register_metrics()
         self._register_sub_agent()
-        self._register_external_world()
         self._register_export()
         self._register_knowledge()
 
@@ -718,86 +717,6 @@ class ToolBootstrap:
             "sub_agent_status", sub_agent_status,
             "Check the status of all sub-agents. Shows active agents, recent "
             "completions, and a human-readable status report.",
-        )
-
-    # ── External world (Phase 2) ──────────────────────────────────────
-
-    def _register_external_world(self) -> None:
-        def external_fetch(api_name: str, params: str = "{}") -> str:
-            """Fetch data from a registered external API.
-
-            Returns data from external sources like GitHub trending, ArXiv,
-            or Hacker News. All external data is treated as untrusted input.
-            """
-            if not hasattr(self.a, 'external_world') or self.a.external_world is None:
-                return json.dumps({"success": False,
-                                   "error": "外部世界接入未初始化。检查 config.yaml external_world 配置。"},
-                                  ensure_ascii=False)
-
-            try:
-                params_dict = json.loads(params) if isinstance(params, str) else params
-            except json.JSONDecodeError:
-                params_dict = {}
-
-            result = self.a.external_world.fetch(api_name, params=params_dict or None)
-            return json.dumps(result, ensure_ascii=False, indent=2)
-
-        self.a.tools.register(
-            "external_fetch", external_fetch,
-            "Fetch data from a registered external API (GitHub trending, ArXiv, "
-            "Hacker News, etc.). All external input is treated as untrusted. "
-            "Rate limits apply per API.",
-            {
-                "api_name": {"type": "string",
-                            "description": "Name of the registered external API to fetch from.",
-                            "required": True},
-                "params": {"type": "string",
-                          "description": "JSON object of query parameters.",
-                          "required": False},
-            },
-        )
-
-        def external_subscribe(api_name: str) -> str:
-            """Subscribe to periodic data fetching from an external API.
-
-            Once subscribed, the external data source provides a continuous
-            stream of new information — breaking the closed self-referential
-            loop and preventing convergence to equilibrium.
-            """
-            if not hasattr(self.a, 'external_world') or self.a.external_world is None:
-                return json.dumps({"success": False,
-                                   "error": "外部世界接入未初始化。"}, ensure_ascii=False)
-
-            result = self.a.external_world.subscribe(api_name)
-            return json.dumps(result, ensure_ascii=False, indent=2)
-
-        self.a.tools.register(
-            "external_subscribe", external_subscribe,
-            "Subscribe to periodic data fetching from an external API. "
-            "Subscribed sources provide continuous external information inflow, "
-            "breaking the closed self-referential system.",
-            {
-                "api_name": {"type": "string",
-                            "description": "Name of the external API to subscribe to.",
-                            "required": True},
-            },
-        )
-
-        def external_status() -> str:
-            """Check the status of all external world connections."""
-            if not hasattr(self.a, 'external_world') or self.a.external_world is None:
-                return json.dumps({"status": "unavailable",
-                                   "message": "外部世界接入未初始化。"}, ensure_ascii=False)
-
-            state = self.a.external_world.export_state()
-            report = self.a.external_world.status_report()
-            return json.dumps({"state": state, "report": report},
-                            ensure_ascii=False, indent=2)
-
-        self.a.tools.register(
-            "external_status", external_status,
-            "Check the status of all external world connections — registered APIs, "
-            "active subscriptions, rate limit usage.",
         )
 
     # ── Evolution reporter ───────────────────────────────────────────

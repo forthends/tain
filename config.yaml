@@ -107,28 +107,6 @@ metrics:
   # Snapshot storage directory
   snapshot_dir: "tain_agent/state/metrics_snapshots"
 
-# ── Phase 2: External World ────────────────────────────────────────────
-# Breaks the closed self-referential system by connecting to external data.
-external_world:
-  enabled: true
-  apis:
-    - name: hackernews
-      type: rest
-      endpoint: "https://hacker-news.firebaseio.com/v0/topstories.json"
-      schedule: "0 */6 * * *"
-      description: "Hacker News top stories for tech trend awareness"
-      max_calls_per_hour: 10
-      max_calls_per_day: 100
-    - name: github_trending
-      type: rest
-      endpoint: "https://api.github.com/search/repositories"
-      schedule: "0 */6 * * *"
-      description: "GitHub trending repositories"
-      max_calls_per_hour: 10
-      max_calls_per_day: 100
-      headers:
-        Accept: "application/vnd.github.v3+json"
-
 safety:
   # Directories the agent cannot modify via self-modification
   protected_paths:
