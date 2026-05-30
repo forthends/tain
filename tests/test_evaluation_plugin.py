@@ -6,6 +6,7 @@ from tain_agent.plugins.evaluation.models import (
     ProductionStatus, ProductionReadiness, ScenarioResult,
 )
 from tain_agent.plugins.evaluation.engine import MaturityEngine
+from tain_agent.plugins.evaluation.triggers import TriggerManager
 
 
 class TestMaturityTier:
@@ -125,3 +126,41 @@ class TestMaturityEngine:
         assert snap.overall_score > 0
         for dim in ["identity", "memory", "skill", "tool", "knowledge", "workflow", "collaboration"]:
             assert dim in snap.dimensions
+
+
+class TestTriggerManager:
+    def test_first_cycle_no_trigger(self):
+        tm = TriggerManager(routine_interval=50, deep_interval=200)
+        tm.on_cycle(1)
+        assert tm.should_run_routine is False
+        assert tm.should_run_deep is False
+
+    def test_routine_trigger_at_interval(self):
+        tm = TriggerManager(routine_interval=50, deep_interval=200)
+        tm.on_cycle(50)
+        assert tm.should_run_routine is True
+        assert tm.should_run_deep is False
+
+    def test_deep_trigger_at_interval(self):
+        tm = TriggerManager(routine_interval=50, deep_interval=200)
+        tm.on_cycle(200)
+        assert tm.should_run_routine is True
+        assert tm.should_run_deep is True
+
+    def test_event_triggers_key_events(self):
+        tm = TriggerManager()
+        assert tm.is_event_trigger("tool.forge.failure", 3) is True
+        assert tm.is_event_trigger("skill.maturity.upgrade", 1) is True
+        assert tm.is_event_trigger("collaboration.teach.complete", 1) is True
+
+    def test_event_not_triggered_below_threshold(self):
+        tm = TriggerManager()
+        assert tm.is_event_trigger("tool.forge.failure", 1) is False
+
+    def test_reset_after_trigger(self):
+        tm = TriggerManager(routine_interval=50, deep_interval=200)
+        tm.on_cycle(50)
+        assert tm.should_run_routine is True
+        reset = tm.consume()
+        assert reset["routine"] is True
+        assert tm.should_run_routine is False
