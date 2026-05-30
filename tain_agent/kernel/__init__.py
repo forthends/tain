@@ -25,22 +25,24 @@ class AgentKernel:
         routes = {}
         tp = self.lifecycle.get("tool")
         if tp:
-            routes["tool.call"] = tp.call
-            routes["tool.forge"] = tp.forge
+            if hasattr(tp, "call"):
+                routes["tool.call"] = tp.call
+            if hasattr(tp, "forge"):
+                routes["tool.forge"] = tp.forge
         sp = self.lifecycle.get("skill")
-        if sp:
+        if sp and hasattr(sp, "execute"):
             routes["skill.execute"] = sp.execute
         kp = self.lifecycle.get("knowledge")
-        if kp:
+        if kp and hasattr(kp, "query"):
             routes["knowledge.query"] = kp.query
         mp = self.lifecycle.get("memory")
-        if mp:
+        if mp and hasattr(mp, "recall"):
             routes["memory.recall"] = mp.recall
         wp = self.lifecycle.get("workflow")
-        if wp:
+        if wp and hasattr(wp, "advance"):
             routes["workflow.advance"] = wp.advance
         cp = self.lifecycle.get("collaboration")
-        if cp:
+        if cp and hasattr(cp, "send"):
             routes["collaboration.send"] = cp.send
         return routes
 
