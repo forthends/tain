@@ -13,6 +13,7 @@ Harness Engineering principles — progressively compress context against
 import json
 import re
 from tain_agent.core.time_utils import now
+from tain_agent.utils.token_utils import estimate_tokens as _estimate_tokens
 from pathlib import Path
 from typing import Optional, Callable
 
@@ -84,8 +85,8 @@ class ContextCompressor:
         self.total_compressions = 0
     
     def estimate_tokens(self, text: str) -> int:
-        """Rough token estimate: ~4 chars per token."""
-        return len(text) // 4
+        """Estimate token count using the shared token utility."""
+        return _estimate_tokens(text)
     
     def get_stage(self, text: str) -> int:
         """Determine which compression stage is needed."""

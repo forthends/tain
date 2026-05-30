@@ -12,6 +12,8 @@ import traceback
 from pathlib import Path
 from typing import Optional
 
+from tain_agent.utils.token_utils import estimate_tokens
+
 
 def resolve_path(workspace_dir: str, path: str, for_write: bool = False) -> Optional[Path]:
     """Resolve a user-supplied path safely within the workspace.
@@ -112,6 +114,7 @@ def run_shell(command: str, timeout: float = 30.0,
     Returns:
         dict with stdout, stderr, exit_code, success, and duration_ms.
     """
+    import shlex
     import time as _time
 
     cwd = str(workspace_dir) if workspace_dir else None
@@ -119,13 +122,12 @@ def run_shell(command: str, timeout: float = 30.0,
 
     try:
         result = subprocess.run(
-            command,
-            shell=True,
+            shlex.split(command),
+            shell=False,
             capture_output=True,
             text=True,
             timeout=timeout,
             cwd=cwd,
-            executable="/bin/bash",
         )
         elapsed_ms = (_time.monotonic() - t0) * 1000
         return {
@@ -175,20 +177,3 @@ def format_error(message: str, exception: Optional[Exception] = None) -> dict:
     return result
 
 
-def estimate_tokens(text: str) -> int:
-    """Estimate token count for a string.
-
-    Tries tiktoken (cl100k_base), falls back to character-based estimate.
-
-    Args:
-        text: Text to estimate token count for.
-
-    Returns:
-        Estimated token count.
-    """
-    try:
-        import tiktoken
-        enc = tiktoken.get_encoding("cl100k_base")
-        return len(enc.encode(text))
-    except ImportError:
-        return max(1, len(text) // 2)
