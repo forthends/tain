@@ -3,18 +3,19 @@ Tain Agent — 道
 
 The core Agent class. This is "道" — the source from which everything emerges.
 
-Each agent has three phases:
-  0. BOOTSTRAP  — 道生一: explore environment, understand capabilities
-  1. SELF_DEFINE — 一生二: define purpose, set initial goals
-  2. EVOLVE      — 二生三，三生万物: pursue goals, create tools, modify self
+Each agent has two phases:
+  0. EXPLORE — 道生一: explore environment, understand capabilities
+  1. WORK    — 一生二: pursue goals, create tools, modify self
 
 Hard rule: every decision is logged with context, options, reasoning, and outcome.
 
-v0.4.0 — Multi-agent support: each agent has its own workspace directory
+v0.5.0 — Honest evolution: two-phase lifecycle (explore/work), framework-measured evaluation.
+
+Multi-agent support: each agent has its own workspace directory
 under agent_workspace/<name>/. Agents can discover and communicate with
 each other via the shared message bus.
 
-Architecture (v0.4.3):
+Architecture (v0.5.0):
   agent.py            — Core orchestration: __init__, run(), lifecycle (~400 lines)
   agent_config.py     — Configuration loading, identity, phase persistence
   agent_subsystems.py — Subsystem initialization, code generation wiring
@@ -38,7 +39,6 @@ from tain_agent.core.agent_tools import AgentToolsMixin
 from tain_agent.core.environment import print_diversity_profile
 from tain_agent.core.bootstrap import BOOTSTRAP_SYSTEM_PROMPT, \
     SPECIFIED_BOOTSTRAP_SYSTEM_PROMPT, \
-    SELF_DEFINE_SYSTEM_PROMPT, SPECIFIED_SELF_DEFINE_SYSTEM_PROMPT, \
     EVOLVE_SYSTEM_PROMPT
 from tain_agent.core.cognitive_loop import CognitivePhase
 
@@ -262,7 +262,7 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
             # Execute tool calls and append results
             if tool_use_blocks:
                 # Track action categories during bootstrap for identity emergence
-                if self.phase == "bootstrap":
+                if self.phase == "explore":
                     for tc in tool_use_blocks:
                         self._track_action_category(tc.name)
 

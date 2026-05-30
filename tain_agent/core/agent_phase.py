@@ -91,9 +91,6 @@ class AgentPhaseMixin:
 
     # ── Phase Transitions ──────────────────────────────────────────
 
-    def _should_advance_from_self_define(self, text_parts: list[str]) -> bool:
-        return len(self.goals.list_active()) > 0
-
     def _advance_phase(self) -> None:
         phases = list(self.PHASES)
         current_idx = phases.index(self.phase) if self.phase in phases else 0
