@@ -5,6 +5,7 @@ from tain_agent.plugins.evaluation.models import (
     EvaluationSnapshot, EvaluationReport, Risk, ActionItem,
     ProductionStatus, ProductionReadiness, ScenarioResult,
 )
+from tain_agent.plugins.evaluation.engine import MaturityEngine
 
 
 class TestMaturityTier:
@@ -69,3 +70,58 @@ class TestProductionReadiness:
             scenario_results=[ScenarioResult(task_name="test", passed=True)],
         )
         assert pr.status == ProductionStatus.PRODUCTION_READY
+
+
+class TestMaturityEngine:
+    def _make_engine(self):
+        return MaturityEngine()
+
+    def test_compute_dimension_from_health_metrics(self):
+        engine = self._make_engine()
+        dm = engine._compute_dimension("skill", {
+            "total_skills": 8, "expert_skills": 2, "master_skills": 1,
+            "avg_success_rate": 0.85, "composed_count": 3,
+        })
+        assert dm.score > 0.5
+        assert dm.level in (MaturityTier.CAPABLE, MaturityTier.MATURE, MaturityTier.EXCELLENT)
+
+    def test_compute_dimension_with_empty_data(self):
+        engine = self._make_engine()
+        dm = engine._compute_dimension("tool", {})
+        assert dm.score == 0.0
+        assert dm.level == MaturityTier.NASCENT
+
+    def test_detect_trend_improving(self):
+        engine = self._make_engine()
+        engine._score_history = {"skill": [0.5, 0.52, 0.65]}
+        trend = engine._detect_trend("skill", 0.65)
+        assert trend == TrendDirection.IMPROVING
+
+    def test_detect_trend_declining(self):
+        engine = self._make_engine()
+        engine._score_history = {"tool": [0.8, 0.75, 0.60]}
+        trend = engine._detect_trend("tool", 0.60)
+        assert trend == TrendDirection.DECLINING
+
+    def test_detect_trend_stable_first_eval(self):
+        engine = self._make_engine()
+        trend = engine._detect_trend("knowledge", 0.55)
+        assert trend == TrendDirection.STABLE
+
+    def test_full_evaluate_produces_snapshot(self):
+        engine = self._make_engine()
+        plugin_metrics = {
+            "identity": {"expertise_count": 3, "values_count": 5, "autonomy_level": 2, "traits_median_confidence": 0.6},
+            "memory": {"episodic_count": 30, "semantic_entities": 15, "median_strength": 0.7},
+            "skill": {"total_skills": 5, "expert_skills": 1, "master_skills": 0, "avg_success_rate": 0.7, "composed_count": 1},
+            "tool": {"total_tools": 15, "forged_tools": 3, "call_success_rate": 0.9, "forge_cycle_success_rate": 0.7},
+            "knowledge": {"entity_count": 25, "relation_density": 0.5, "freshness_ratio": 0.8},
+            "workflow": {"completed_count": 10, "success_rate": 0.85, "avg_steps": 4},
+            "collaboration": {"collab_count": 3, "team_count": 1, "reputation": 60, "teach_count": 0},
+        }
+        snap = engine.evaluate("agent-1", plugin_metrics)
+        assert snap.agent_id == "agent-1"
+        assert len(snap.dimensions) == 7
+        assert snap.overall_score > 0
+        for dim in ["identity", "memory", "skill", "tool", "knowledge", "workflow", "collaboration"]:
+            assert dim in snap.dimensions
