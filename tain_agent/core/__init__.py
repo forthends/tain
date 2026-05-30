@@ -1,6 +1,6 @@
 """Core module — Tain Agent's central nervous system.
 
-Architecture (v0.4.3 — PRAL cognitive loop + mixin decomposition):
+Architecture (PRAL cognitive loop + mixin decomposition):
   agent.py            — Core orchestration: __init__, run(), lifecycle
   agent_config.py     — Configuration loading, identity, phase persistence
   agent_subsystems.py — Subsystem initialization, code generation wiring

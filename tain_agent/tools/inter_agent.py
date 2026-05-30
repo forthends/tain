@@ -4,7 +4,7 @@ Inter-Agent Communication — Agent间通信
 Tools for agent discovery, messaging, and conversation between agents
 within the same Tain Agent Framework instance.
 
-Architecture (v0.4.3):
+Architecture:
   agent_workspace/
     _registry.json        # Shared agent registry (discovery)
     _message_bus.db       # SQLite WAL-mode message bus + conversation archive

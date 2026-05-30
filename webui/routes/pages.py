@@ -11,6 +11,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from jinja2 import Environment, FileSystemLoader
 
+from tain_agent import __version__
+
 from webui.data import (
     list_agents, get_agent, get_config, get_agent_goals,
     get_agent_decisions, get_agent_tools, get_agent_evolution,
@@ -31,7 +33,7 @@ def _render(template_name: str, context: dict) -> HTMLResponse:
 async def dashboard(request: Request):
     agents = list_agents()
     cfg = get_config()
-    framework_version = cfg.get("framework", {}).get("version", "0.4.3")
+    framework_version = cfg.get("framework", {}).get("version", __version__)
     llm_provider = cfg.get("llm", {}).get("provider", "unknown")
     llm_model = cfg.get("llm", {}).get("model", "unknown")
     return _render("dashboard.html", {
@@ -56,7 +58,7 @@ async def agent_detail(request: Request, name: str):
         "agents": agents,
         "agent": agent,
         "tab": tab,
-        "framework_version": cfg.get("framework", {}).get("version", "0.4.3"),
+        "framework_version": cfg.get("framework", {}).get("version", __version__),
         "llm_provider": cfg.get("llm", {}).get("provider", "unknown"),
         "llm_model": cfg.get("llm", {}).get("model", "unknown"),
     })
@@ -70,7 +72,7 @@ async def settings_page(request: Request):
         "request": request,
         "agents": agents,
         "config": cfg,
-        "framework_version": cfg.get("framework", {}).get("version", "0.4.3"),
+        "framework_version": cfg.get("framework", {}).get("version", __version__),
         "llm_provider": cfg.get("llm", {}).get("provider", "unknown"),
         "llm_model": cfg.get("llm", {}).get("model", "unknown"),
     })
@@ -83,7 +85,7 @@ async def create_agent_page(request: Request):
     return _render("create.html", {
         "request": request,
         "agents": agents,
-        "framework_version": cfg.get("framework", {}).get("version", "0.4.3"),
+        "framework_version": cfg.get("framework", {}).get("version", __version__),
         "llm_provider": cfg.get("llm", {}).get("provider", "unknown"),
         "llm_model": cfg.get("llm", {}).get("model", "unknown"),
     })

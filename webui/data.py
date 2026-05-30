@@ -6,6 +6,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from tain_agent import __version__
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE_ROOT = PROJECT_ROOT / "agent_workspace"
 PID_DIR = WORKSPACE_ROOT  # .agent_daemon_{name}.pid files live here
@@ -110,7 +112,7 @@ def list_agents() -> list[dict]:
             "name": name,
             "role": info.get("role"),
             "evolution_mode": info.get("evolution_mode", "chaos"),
-            "version": version.get("version", info.get("framework_version", "0.4.3")) if version else info.get("framework_version", "0.4.3"),
+            "version": version.get("version", info.get("framework_version", __version__)) if version else info.get("framework_version", __version__),
             "status": "running" if running else "stopped",
             "phase": phase,
             "cycle_count": cycle_count,
@@ -228,7 +230,10 @@ def get_agent_knowledge(name: str) -> list[dict]:
 
 
 def get_agent_knowledge_content(name: str, rel_path: str) -> tuple[str, str]:
-    full_path = WORKSPACE_ROOT / name / rel_path
+    full_path = (WORKSPACE_ROOT / name / rel_path).resolve()
+    allowed_root = (WORKSPACE_ROOT / name).resolve()
+    if not str(full_path).startswith(str(allowed_root) + "/") and full_path != allowed_root:
+        return "", "Access denied."
     if not full_path.exists():
         return "", "File not found."
     try:
