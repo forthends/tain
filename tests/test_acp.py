@@ -99,39 +99,54 @@ class TestACPCloseSession:
         assert result["result"]["closed"] is False
 
 
-class TestACPEventConversion:
-    def test_text_delta_event(self):
-        server = ACPServer()
-        sse = {"text": "hello"}
-        acp = server._convert_to_acp_event(sse)
-        assert acp["type"] == "text_delta"
-        assert acp["text"] == "hello"
+class TestACPPrompt:
+    @pytest.mark.asyncio
+    async def test_prompt_uses_chat_engine(self, monkeypatch):
+        """Verify _handle_prompt uses ChatEngine (not webui.dialogue)."""
+        from tain_agent.core.chat import ChatTurn
+        from tain_agent.core.llm import ToolCall
 
-    def test_tool_start_event(self):
-        server = ACPServer()
-        sse = {"tool_start": {"name": "read_file", "input_preview": "{}"}}
-        acp = server._convert_to_acp_event(sse)
-        assert acp["type"] == "tool_call"
-        assert acp["tool"]["name"] == "read_file"
+        fake_turn = ChatTurn(
+            text="Hello from ChatEngine",
+            tool_calls=[ToolCall(id="tc_1", name="read_file", input={"path": "x"})],
+            tool_results=[{"tool_use_id": "tc_1", "content": "contents"}],
+        )
 
-    def test_done_event(self):
-        server = ACPServer()
-        sse = {"done": True, "message_id": "msg_123"}
-        acp = server._convert_to_acp_event(sse)
-        assert acp["type"] == "done"
-        assert acp["message_id"] == "msg_123"
+        # Capture events written to stdout
+        events_sent: list[dict] = []
+        orig_send = ACPServer._send_event
 
-    def test_thinking_event(self):
-        server = ACPServer()
-        sse = {"status": "thinking"}
-        acp = server._convert_to_acp_event(sse)
-        assert acp["type"] == "thinking"
+        def capture_send(self, session_id, event):
+            event["session_id"] = session_id
+            events_sent.append(dict(event))
 
-    def test_cancelled_event(self):
+        monkeypatch.setattr(ACPServer, "_send_event", capture_send)
+
+        async def fake_run_turn(self, messages, cancel_event):
+            return fake_turn
+
+        monkeypatch.setattr("tain_agent.core.chat.ChatEngine.run_turn", fake_run_turn)
+
         server = ACPServer()
-        sse = {"cancelled": True}
-        acp = server._convert_to_acp_event(sse)
-        assert acp["type"] == "cancelled"
+        session_result = await server._handle_new_session({}, 1)
+        sid = session_result["result"]["session_id"]
+
+        await server._handle_prompt({"session_id": sid, "text": "hi"}, 99)
+
+        text_events = [e for e in events_sent if e["type"] == "text"]
+        tool_events = [e for e in events_sent if e["type"] == "tool_call"]
+
+        assert len(text_events) >= 1
+        assert "Hello from ChatEngine" in text_events[0]["text"]
+        assert len(tool_events) >= 1
+        assert tool_events[0]["name"] == "read_file"
+
+    @pytest.mark.asyncio
+    async def test_prompt_unknown_session(self):
+        server = ACPServer()
+        result = await server._handle_prompt({"session_id": "no_such_session", "text": "hi"}, 1)
+        assert "error" in result
+        assert result["error"]["code"] == -32000
 
 
 class TestACPMethodRouting:
