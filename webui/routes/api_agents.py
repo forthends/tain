@@ -4,6 +4,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from webui.agent_cache import invalidate_agent
+
 from webui.data import (
     list_agents, get_agent, get_agent_decisions,
     get_agent_tools, get_agent_tool_detail, get_agent_evolution,
@@ -120,6 +122,18 @@ async def api_agent_restart(name: str):
         "success": start_result.returncode == 0,
         "stop_output": stop_result.stdout.strip(),
         "start_output": start_result.stdout.strip(),
+    }
+
+
+@router.post("/agent/{name}/reload")
+async def reload_agent(name: str):
+    """Force reload a cached agent instance."""
+    was_cached = invalidate_agent(name)
+    return {
+        "success": True,
+        "agent": name,
+        "was_cached": was_cached,
+        "message": "Agent cache cleared" if was_cached else "Agent was not in cache",
     }
 
 

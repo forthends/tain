@@ -221,12 +221,12 @@ async def process_chat_message(agent_name: str, user_content: str,
         {"done": True, "message_id": "..."} — complete response ready
         {"cancelled": True}             — request was cancelled by user
     """
-    from tain_agent.core.agent import TaoAgent
+    from webui.agent_cache import get_agent
 
     msg_id = _make_msg_id()
     now_ts = _now_iso()
 
-    agent = TaoAgent(config_path=str(PROJECT_ROOT / "config.yaml"), agent_name=agent_name)
+    agent = get_agent(agent_name, config_path=str(PROJECT_ROOT / "config.yaml"))
 
     if not agent.backend:
         yield {"text": "[Agent has no LLM backend configured. Check your API key.]"}
