@@ -13,6 +13,12 @@ TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 def create_app() -> FastAPI:
     app = FastAPI(title="Tain Agent Framework — Web UI", version=__version__)
 
+    # Security middleware
+    from webui.auth import APIKeyMiddleware
+    from webui.rate_limit import rate_limit_middleware
+    app.add_middleware(APIKeyMiddleware)
+    app.middleware("http")(rate_limit_middleware)
+
     static_dir = Path(__file__).resolve().parent / "static"
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
