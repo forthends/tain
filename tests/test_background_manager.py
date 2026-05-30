@@ -32,7 +32,7 @@ class TestBackgroundShellManager:
     def test_start_command_with_output(self):
         mgr = BackgroundShellManager()
         try:
-            result = mgr.start("echo line1 && sleep 0.3 && echo line2")
+            result = mgr.start("bash -c 'echo line1 && sleep 0.3 && echo line2'")
             assert result["success"]
             pid = result["process_id"]
 
@@ -47,7 +47,7 @@ class TestBackgroundShellManager:
     def test_get_output(self):
         mgr = BackgroundShellManager()
         try:
-            result = mgr.start("echo output_line_1 && sleep 0.3 && echo output_line_2")
+            result = mgr.start("bash -c 'echo output_line_1 && sleep 0.3 && echo output_line_2'")
             pid = result["process_id"]
             time.sleep(0.5)
             out = mgr.get_output(pid)

@@ -76,7 +76,7 @@ class TestRunShell:
         assert "hello" in result["stdout"]
 
     def test_failing_command(self):
-        result = run_shell("exit 1")
+        result = run_shell("bash -c 'exit 1'")
         assert result["success"] is False
         assert result["exit_code"] == 1
 
