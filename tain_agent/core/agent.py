@@ -146,42 +146,31 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
 
     def _reason(self):
         """PRAL Reason: call LLM, return parsed response or None on failure/rate-limit."""
+        from tain_agent.core.retry import RetryConfig, llm_retry_call, RetryExhaustedError
+
+        retry_cfg = RetryConfig.from_config(self.config.get("llm", {}))
+        system_prompt = self._get_system_prompt_with_cognition()
+        tool_defs = self.tools.get_claude_tool_definitions()
+
+        def _call():
+            return self.backend.create_message(
+                system_prompt=system_prompt,
+                messages=self.conversation.to_claude_messages(),
+                tools=tool_defs,
+            )
+
+        def _on_rate_limit():
+            self._detect_rate_limit_type("rate_limit")
+            return bool(self._rate_limit_exit_code)
+
+        def _on_trim():
+            self.conversation.trim_to_token_budget(keep_last=8)
+
         try:
-            system_prompt = self._get_system_prompt_with_cognition()
-            messages = self.conversation.to_claude_messages()
-            tool_defs = self.tools.get_claude_tool_definitions()
-            llm_response = self.backend.create_message(
-                system_prompt=system_prompt, messages=messages, tools=tool_defs)
-            return llm_response
-        except Exception as e:
-            err_str = str(e)
-            if "429" in err_str or "rate_limit" in err_str:
-                self._detect_rate_limit_type(err_str)
-                if self._rate_limit_exit_code:
-                    return None
-            logger.warning("LLM call exception: %s", e)
-            if self.conversation.len() > 16:
-                logger.info("Trimming conversation and retrying...")
-                self.conversation.trim_to_token_budget(keep_last=8)
-                try:
-                    messages = self.conversation.to_claude_messages()
-                    llm_response = self.backend.create_message(
-                        system_prompt=system_prompt, messages=messages, tools=tool_defs)
-                    logger.info("Retry succeeded")
-                    return llm_response
-                except Exception as e2:
-                    err_str2 = str(e2)
-                    if "429" in err_str2 or "rate_limit" in err_str2:
-                        self._detect_rate_limit_type(err_str2)
-                        if self._rate_limit_exit_code:
-                            return None
-                    logger.warning("Retry also failed: %s", e2)
-                    time.sleep(3)
-                    return None
-            else:
-                logger.info("Brief wait before next cycle retry...")
-                time.sleep(2)
-                return None
+            return llm_retry_call(retry_cfg, _call, on_rate_limit=_on_rate_limit, on_trim=_on_trim)
+        except RetryExhaustedError as e:
+            logger.warning("LLM call exhausted after %s attempts: %s", e.attempts, e.last_exception)
+            return None
 
     def _act(self, llm_response) -> None:
         """PRAL Act: execute tool calls, append results, track actions."""
