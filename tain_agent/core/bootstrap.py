@@ -214,7 +214,6 @@ class ToolBootstrap:
         self._register_reporter()
         self._register_personality()
         self._register_drives()
-        self._register_trials()
         self._register_metrics()
         self._register_sub_agent()
         self._register_export()
@@ -579,31 +578,6 @@ class ToolBootstrap:
             "Inspect your intrinsic drives — curiosity, mastery, creation, conservation. "
             "Shows current intensity levels, dominant drive, personality hint, and "
             "exploration score. Use this when deciding what kind of action to take next.",
-        )
-
-    # ── Trial introspection (Phase 2) ───────────────────────────────
-
-    def _register_trials(self) -> None:
-        def trial_status() -> str:
-            """Check your current trial progress during the bootstrap phase.
-
-            Returns which trial you're on, what's completed, and your experience
-            scores so far. Use this to understand where you are in your
-            formative journey.
-            """
-            if not hasattr(self.a, 'trial_scheduler') or self.a.trial_scheduler is None:
-                return json.dumps({"status": "unavailable",
-                                   "message": "试炼系统未初始化。"}, ensure_ascii=False)
-            state = self.a.trial_scheduler.to_dict()
-            profile = self.a.trial_scheduler.get_experience_profile()
-            return json.dumps({"state": state, "profile": profile},
-                            ensure_ascii=False, indent=2)
-
-        self.a.tools.register(
-            "trial_status", trial_status,
-            "Check your current trial progress. Shows which trial you're on, "
-            "what's completed, and your experience scores. "
-            "Use this during bootstrap to understand where you are in your formative journey.",
         )
 
     # ── Evolution metrics (Phase 2) ─────────────────────────────────

@@ -91,27 +91,6 @@ class AgentPhaseMixin:
 
     # ── Phase Transitions ──────────────────────────────────────────
 
-    def _should_advance_from_bootstrap(self, text_parts: list[str]) -> bool:
-        """Advance from bootstrap when the agent has taken diverse actions.
-
-        Phase 2: identity emerges from action patterns, not from menu selection.
-        Two paths to advance:
-          1. Trial-based: all 5 trials completed (primary path)
-          2. Action-based: used 2+ categories of tools over 5+ cycles (fallback)
-        """
-        # Path 1: All trials completed
-        if hasattr(self, 'trial_scheduler') and self.trial_scheduler.all_completed:
-            return True
-
-        # Path 2: Diverse action categories
-        min_cycles = getattr(self, 'min_bootstrap_cycles', 5)
-        min_categories = 2
-
-        if self.cycle_count < min_cycles:
-            return False
-
-        return len(self._bootstrap_action_categories) >= min_categories
-
     def _should_advance_from_self_define(self, text_parts: list[str]) -> bool:
         return len(self.goals.list_active()) > 0
 

@@ -22,8 +22,6 @@ from collections import Counter
 
 from tain_agent.core.drives import DriveSystem
 from tain_agent.core.environment import apply_diversity_to_config, _resolve_seed
-from tain_agent.core.trials import TrialScheduler, TRIAL_DEFINITIONS
-
 
 # ─── Test fixture: minimal config for verification ────────────────────
 
