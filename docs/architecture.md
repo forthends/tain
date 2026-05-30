@@ -73,7 +73,6 @@ tain_agent/                        # Framework package
     conversation.py                # Conversation manager (checkpointed)
     llm.py                         # LLM backend abstraction (4 providers)
     environment.py                 # Environment scanner + diversity engine
-    external_world.py              # External API subscriptions
     time_utils.py                  # Timezone-aware utilities
     session_memory.py              # Cross-session user recognition
     companion_shrine.py            # Non-code presence marker
