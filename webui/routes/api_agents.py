@@ -12,6 +12,7 @@ from webui.data import (
     get_agent_metrics, get_agent_personality, get_agent_knowledge,
     get_agent_knowledge_content, get_agent_goals, is_agent_running,
 )
+from webui.process import ProcessManager
 
 router = APIRouter()
 
@@ -82,46 +83,24 @@ async def api_agent_knowledge_content(name: str, path: str):
 
 @router.post("/agent/{name}/start")
 async def api_agent_start(name: str):
-    import subprocess, sys
-    supervisor = str(__import__("pathlib").Path(__file__).resolve().parent.parent.parent / "supervise_agent.py")
-    result = subprocess.run(
-        [sys.executable, supervisor, "--agent-name", name, "--daemon", "--"],
-        capture_output=True, text=True,
-    )
-    return {"success": result.returncode == 0, "output": result.stdout.strip(), "error": result.stderr.strip()}
+    result = ProcessManager().start(name)
+    return {"success": result.success, "output": result.stdout, "error": result.stderr}
 
 
 @router.post("/agent/{name}/stop")
 async def api_agent_stop(name: str):
-    import subprocess, sys
-    supervisor = str(__import__("pathlib").Path(__file__).resolve().parent.parent.parent / "supervise_agent.py")
-    result = subprocess.run(
-        [sys.executable, supervisor, "--agent-name", name, "--stop"],
-        capture_output=True, text=True,
-    )
-    return {"success": result.returncode == 0, "output": result.stdout.strip(), "error": result.stderr.strip()}
+    result = ProcessManager().stop(name)
+    return {"success": result.success, "output": result.stdout, "error": result.stderr}
 
 
 @router.post("/agent/{name}/restart")
 async def api_agent_restart(name: str):
-    import subprocess, sys
-    supervisor = str(__import__("pathlib").Path(__file__).resolve().parent.parent.parent / "supervise_agent.py")
-    # Stop first
-    stop_result = subprocess.run(
-        [sys.executable, supervisor, "--agent-name", name, "--stop"],
-        capture_output=True, text=True,
-    )
-    import time
-    time.sleep(1)
-    # Then start
-    start_result = subprocess.run(
-        [sys.executable, supervisor, "--agent-name", name, "--daemon", "--"],
-        capture_output=True, text=True,
-    )
+    stop_result, start_result = ProcessManager().restart(name)
     return {
-        "success": start_result.returncode == 0,
-        "stop_output": stop_result.stdout.strip(),
-        "start_output": start_result.stdout.strip(),
+        "success": start_result.success,
+        "stop_output": stop_result.stdout,
+        "output": start_result.stdout,
+        "error": start_result.stderr,
     }
 
 
