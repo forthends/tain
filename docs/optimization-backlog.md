@@ -1,6 +1,6 @@
 # Optimization Backlog
 
-> Generated: 2026-05-27 | Scope: Tain Agent Framework v0.4.3
+> Generated: 2026-05-27 | Updated: 2026-05-30 | Scope: Tain Agent Framework v0.5.0
 
 ## Status Legend
 - [ ] Pending
@@ -36,21 +36,32 @@
 ## 5. Agent Capabilities
 
 - [ ] **5.1 Knowledge vectorization** — Semantic search over agent knowledge files
-- [ ] **5.2 Web search tool** — Internet access capability for agents
+- [x] **5.2 Web search tool** — Internet access capability for agents (web_search/web_fetch in primal tools)
 - [ ] **5.3 MCP integration deepening** — Richer external tool ecosystem
 
 ## 6. Reliability
 
 - [ ] **6.1 Agent state recovery** — Crash recovery with consistent state restoration
-- [ ] **6.2 LLM call retry** — Automatic retry with backoff for transient failures
-- [ ] **6.3 Graceful degradation** — Subsystem failures should not crash the agent
+- [x] **6.2 LLM call retry** — Automatic retry with backoff for transient failures (llm_retry_call in retry.py)
+- [x] **6.3 Graceful degradation** — Subsystem failures should not crash the agent (logging + narrowed exceptions)
 
 ## 7. Security
 
-- [ ] **7.1 Web UI authentication** — Basic auth or API key protection
-- [ ] **7.2 API rate limiting** — Per-endpoint rate limits
+- [x] **7.1 Web UI authentication** — Basic auth or API key protection (APIKeyMiddleware)
+- [x] **7.2 API rate limiting** — Per-endpoint rate limits (TokenBucket per IP, 60 req/min)
 
 ## 8. Testing
 
 - [ ] **8.1 E2E tests** — Browser-based UI testing
 - [ ] **8.2 Coverage reporting** — Measure and track test coverage
+
+## 9. Deployment
+
+- [x] **9.1 Containerization** — Docker multi-stage build + docker-compose
+- [x] **9.2 API stability** — Version unification (single source: tain_agent.__version__)
+
+## 10. Architecture Cleanup
+
+- [x] **10.1 Dead code removal** — Removed external_world, trial_scheduler, SELF_DEFINE, config.py, agent_runner/context
+- [x] **10.2 Circular dependency fix** — ACP → webui dependency broken via ChatEngine extraction
+- [x] **10.3 God file split** — dialogue.py (553 lines) → chat.py + streaming.py + conversation_store.py
