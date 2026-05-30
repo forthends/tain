@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 PLUGIN_LAYOUT = {
     "specified": ["identity", "memory", "skill", "tool", "knowledge", "workflow", "collaboration"],
     "chaos": ["identity", "memory", "tool"],
+    "ide": ["identity", "tool", "skill", "knowledge", "memory"],
 }
 
 
