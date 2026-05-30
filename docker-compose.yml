@@ -1,0 +1,12 @@
+services:
+  tain:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - TAIN_API_KEY=${TAIN_API_KEY:-}
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
+    volumes:
+      - ./agent_workspace:/app/agent_workspace
+      - ./config.yaml:/app/config.yaml:ro
+    restart: unless-stopped
