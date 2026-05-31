@@ -232,7 +232,7 @@ class AgentCognitionMixin:
             'max_cycles': self.MAX_CYCLES.get(self.phase, 50),
             'conversation_length': self.conversation.len(),
             'active_goals': len(self.goals.list_active()),
-            'tools_forged': len(self.lineage.query('tools') if hasattr(self, 'lineage') else []),
+            'tools_forged': len(self.lineage.all_tools() if hasattr(self, 'lineage') else []),
             'readonly_streak': getattr(self, '_readonly_streak', 0),
             'available_tools': list(self.tools._tools.keys()) if hasattr(self.tools, '_tools') else [],
         }
