@@ -43,22 +43,28 @@ See [Quick Start Guide](docs/quickstart.md) for detailed instructions.
 ## Core Features
 
 ### Behavioral Evolution Tracking
+
 Agents operate through the PRAL cognitive cycle (**P**erceive → **R**eason → **A**ct → **L**earn). The framework measures real behavioral metrics — tool success rates, action diversity, drive intensities — rather than relying on LLM self-evaluation. Personality traits emerge from observed behavior patterns, not prompted introspection.
 
 ### Dual Creation Modes
+
 - **Chaos Mode (混沌模式)**: The agent starts with an empty personality, developing identity through tool usage patterns.
 - **Specified Mode (指定人格模式)**: The agent starts with a predefined role, which still adapts through experience.
 
 ### Multi-Agent Architecture
+
 Run multiple agents simultaneously, each in its own isolated workspace (`agent_workspace/<name>/`). Agents register in a shared registry and can discover each other.
 
 ### Inter-Agent Communication
+
 Agents can discover peers, send messages, check their inbox, and maintain persistent conversation histories. Communication uses a file-based message bus — no sockets or external services required.
 
 ### Safe Tool Forging
+
 Tools are created through a **7-stage safety pipeline**: NameCheck → AST Import Whitelist → AST Call Blacklist → PathValidation → Compile → Subprocess Smoke Test → Register. All forged tools run in subprocess isolation with a 10-second timeout. See [Safety Model](docs/SAFETY.md).
 
 ### Web UI
+
 Real-time SSE-streamed chat with agents, tabbed dashboards for decision logs and knowledge, agent lifecycle controls, and multi-agent management. See [Web UI](#web-ui) section.
 
 ### Safety & Isolation
@@ -116,7 +122,7 @@ Full changelog: [docs/changelog/v0.5.0.md](docs/changelog/v0.5.0.md)
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                     main.py (CLI)                        │
 │  --agent · --list-agents · --create-agent · --dialogue  │
@@ -158,7 +164,7 @@ Full architecture: [docs/architecture.md](docs/architecture.md)
 
 ## Project Structure
 
-```
+```plaintext
 tain_agent/                  # Framework package
   core/                      # Agent core
     agent.py                 # TaoAgent — main agent class (5 Mixins, PRAL loop)
@@ -235,17 +241,17 @@ tests/                       # Test suite (326 tests, 25 files)
 
 ## CLI Reference
 
-| Command | Description |
-|---------|-------------|
-| `python main.py --agent <name>` | Start an agent (creates if new) |
-| `python main.py --list-agents` | List all registered agents |
-| `python main.py --create-agent` | Interactive creation wizard |
-| `python main.py --agent <name> --state` | Print agent state report |
-| `python main.py --agent <name> --log` | View agent decision log |
-| `python main.py --agent <name> --daemon` | Run as background daemon |
-| `python main.py --daemon --stop` | Stop the daemon |
-| `python main.py --daemon --status` | Check daemon status |
-| `uvicorn webui.app:create_app --factory` | Start Web UI on port 8000 |
+| Command                                  | Description                     |
+|------------------------------------------|---------------------------------|
+| `python main.py --agent <name>`          | Start an agent (creates if new) |
+| `python main.py --list-agents`           | List all registered agents      |
+| `python main.py --create-agent`          | Interactive creation wizard     |
+| `python main.py --agent <name> --state`  | Print agent state report        |
+| `python main.py --agent <name> --log`    | View agent decision log         |
+| `python main.py --agent <name> --daemon` | Run as background daemon        |
+| `python main.py --daemon --stop`         | Stop the daemon                 |
+| `python main.py --daemon --status`       | Check daemon status             |
+| `uvicorn webui.app:create_app --factory` | Start Web UI on port 8000       |
 
 ---
 
