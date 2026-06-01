@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Tain launcher — minimal skeleton (Task 1)
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+print_help() {
+    cat <<'EOF'
+Tain — Tain Agent Framework 启动脚本
+
+用法:
+  tain run <name>...        启动 agent（多 agent 用空格分隔）
+  tain new                  交互式创建 agent
+  tain list                 列出所有 agent
+  tain state <name>         打印 agent 状态
+  tain log <name>           查看决策日志
+  tain export <name>        导出为独立包
+  tain dialogue <name>      REPL 对话模式
+  tain webui [port]         启动 Web UI（默认 8000，自动开浏览器）
+  tain daemon <op> [name]   守护进程：op = start|stop|status
+  tain reset                删除 .venv（下次启动自动重新同步）
+  tain help                 显示本帮助
+
+也支持旧式调用: tain --agent <name> 等，会直接透传给 python main.py。
+EOF
+}
+
+cmd="${1:-help}"
+[ $# -gt 0 ] && shift
+
+case "$cmd" in
+    help|-h|--help) print_help ;;
+    *)              print_help ;;
+esac
