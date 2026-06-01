@@ -88,9 +88,9 @@ tain/
 | `tain export <name>` | `uv run python main.py --agent <name> --export` | 导出为独立包 |
 | `tain dialogue <name>` | `uv run python main.py --agent <name> --dialogue` | REPL 对话模式 |
 | `tain webui [port]` | `uv run python main.py --webui --port <port>` | 启动 Web UI（默认 8000）+ 1.5s 后自动开浏览器 |
-| `tain daemon start <name>` | `uv run python main.py --agent <name> --daemon` | 启动守护进程 |
-| `tain daemon stop` | `uv run python main.py --daemon --stop` | 停止守护进程 |
-| `tain daemon status` | `uv run python main.py --daemon --status` | 查看守护进程状态 |
+| `tain daemon start <name>` | `uv run python main.py --daemon start --agent <name>` | 启动守护进程（要求 name） |
+| `tain daemon stop` | `uv run python main.py --daemon stop` | 停止守护进程 |
+| `tain daemon status` | `uv run python main.py --daemon status` | 查看守护进程状态 |
 | `tain reset` | `rm -rf .venv` | 删除 .venv（下次启动自动重 sync） |
 | `tain --agent <name>` ... | 透传给 main.py | 未识别子命令且像 main.py flag 时透传 |
 | 其他 | — | 打印错误 + 提示 `tain help` |
@@ -170,9 +170,9 @@ case "$cmd" in
     daemon)
         op="${1:?usage: tain daemon <start|stop|status> [name]}"
         case "$op" in
-            start)   name="${2:?missing agent name}"; exec uv run python main.py --agent "$name" --daemon ;;
-            stop)    exec uv run python main.py --daemon --stop ;;
-            status)  exec uv run python main.py --daemon --status ;;
+            start)   name="${2:?missing agent name}"; exec uv run python main.py --daemon start --agent "$name" ;;
+            stop)    exec uv run python main.py --daemon stop ;;
+            status)  exec uv run python main.py --daemon status ;;
             *)       echo "✗ 未知 daemon 子命令：$op" >&2; exit 1 ;;
         esac ;;
     reset)      rm -rf .venv && echo "✓ 已重置 .venv" ;;
