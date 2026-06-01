@@ -71,7 +71,7 @@ tain/
 **幂等保证**：
 - `uv sync --frozen` 严格遵守 `uv.lock`，不修改任何依赖
 - `.venv/.synced` 时间戳只在 sync 成功后更新
-- 二次启动跳过 sync，`uv run` 走已就绪的 `.venv`，~200ms 启动
+- 二次启动跳过 sync，`uv run` 走已就绪的 `.venv`（目标 ~200ms 启动，基线待实施时实测）
 
 ---
 
@@ -88,7 +88,9 @@ tain/
 | `tain export <name>` | `uv run python main.py --agent <name> --export` | 导出为独立包 |
 | `tain dialogue <name>` | `uv run python main.py --agent <name> --dialogue` | REPL 对话模式 |
 | `tain webui [port]` | `uv run python main.py --webui --port <port>` | 启动 Web UI（默认 8000）+ 1.5s 后自动开浏览器 |
-| `tain daemon <op> <name>` | `uv run python main.py --daemon --<op> --agent <name>` | 守护进程管理（op: start/stop/status） |
+| `tain daemon start <name>` | `uv run python main.py --agent <name> --daemon` | 启动守护进程 |
+| `tain daemon stop` | `uv run python main.py --daemon --stop` | 停止守护进程 |
+| `tain daemon status` | `uv run python main.py --daemon --status` | 查看守护进程状态 |
 | `tain reset` | `rm -rf .venv` | 删除 .venv（下次启动自动重 sync） |
 | `tain --agent <name>` ... | 透传给 main.py | 未识别子命令且像 main.py flag 时透传 |
 | 其他 | — | 打印错误 + 提示 `tain help` |
@@ -166,11 +168,17 @@ case "$cmd" in
                        xdg-open "http://localhost:${port}" 2>/dev/null || true) &
         exec uv run python main.py --webui --port "$port" ;;
     daemon)
-        op="${1:?usage: tain daemon <start|stop|status> <name>}"
-        name="${2:?missing agent name}"
-        exec uv run python main.py --daemon "--${op}" --agent "$name" ;;
+        op="${1:?usage: tain daemon <start|stop|status> [name]}"
+        case "$op" in
+            start)   name="${2:?missing agent name}"; exec uv run python main.py --agent "$name" --daemon ;;
+            stop)    exec uv run python main.py --daemon --stop ;;
+            status)  exec uv run python main.py --daemon --status ;;
+            *)       echo "✗ 未知 daemon 子命令：$op" >&2; exit 1 ;;
+        esac ;;
     reset)      rm -rf .venv && echo "✓ 已重置 .venv" ;;
-    help|-h|--help) print_help ;;
+    help|-h|--help) print_help ;;  # print_help 是同脚本内定义的 heredoc 输出函数
+
+
     --agent|--create-agent|--list-agents|--webui|--daemon|--state|--log|--export)
         exec uv run python main.py "$cmd" "$@" ;;
     *)
@@ -283,7 +291,7 @@ def test_tain_passthrough_to_main():
 | Windows cmd 脚本的引号转义陷阱 | cmd 脚本独立测试，subcommand 透传用 `%*` 而不是逐参 |
 | 用户在子目录执行 `./tain` | 用 `BASH_SOURCE` / `%~dp0` 定位脚本所在目录，强制 cd |
 | Makefile 的 `tain-%` 模式吃掉 `tain-run` 等真实目标 | Makefile 模式只匹配字面 `tain` 和 `tain-<word>`，不会冲突 |
-| `uv run` 性能开销 | 实测 200ms 以内，可接受；如需更极致可缓存 `PYTHONPATH` 环境变量（不必要） |
+| `uv run` 性能开销 | 二次启动预期 ~200ms（基线需实施时实测）；如远超 500ms 再考虑缓存 `PYTHONPATH` 环境变量 |
 
 ---
 
