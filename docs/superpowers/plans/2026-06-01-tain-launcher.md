@@ -32,7 +32,7 @@
 - Create: `tests/test_tain_script.py`
 - Create: `tain` (minimal version)
 
-- [ ] **Step 1.1: Write the test harness**
+- [x] **Step 1.1: Write the test harness**
 
 Create `tests/test_tain_script.py`:
 
@@ -137,12 +137,12 @@ def test_tain_passthrough_for_main_py_flag(stub_uv):
 
 Note: `reset` is **not** auto-tested because the script does `cd "$SCRIPT_DIR"` to the real repo root, so `tain reset` would `rm -rf` the real `.venv`. `reset` is verified manually in Task 9.3.
 
-- [ ] **Step 1.2: Run the test to confirm it fails (no tain script yet)**
+- [x] **Step 1.2: Run the test to confirm it fails (no tain script yet)**
 
 Run: `python -m pytest tests/test_tain_script.py -v 2>&1 | head -20`
 Expected: collection error or all tests fail because `tain` doesn't exist.
 
-- [ ] **Step 1.3: Write the minimal `tain` skeleton**
+- [x] **Step 1.3: Write the minimal `tain` skeleton**
 
 Create `tain`:
 
@@ -184,17 +184,17 @@ case "$cmd" in
 esac
 ```
 
-- [ ] **Step 1.4: Make `tain` executable**
+- [x] **Step 1.4: Make `tain` executable**
 
 Run: `chmod +x tain`
 Expected: `ls -l tain` shows `-rwxr-xr-x`.
 
-- [ ] **Step 1.5: Run the help tests to verify skeleton**
+- [x] **Step 1.5: Run the help tests to verify skeleton**
 
 Run: `python -m pytest tests/test_tain_script.py::test_tain_help_exits_zero tests/test_tain_script.py::test_tain_no_args_shows_help -v`
 Expected: PASS for both (the skeleton returns help for both no-args and `help`).
 
-- [ ] **Step 1.6: Commit**
+- [x] **Step 1.6: Commit**
 
 ```bash
 git add tests/test_tain_script.py tain
@@ -208,7 +208,7 @@ git commit -m "feat: add tain launcher skeleton with help text and test harness"
 **Files:**
 - Modify: `tain`
 
-- [ ] **Step 2.1: Replace the case statement with uv check + help behavior**
+- [x] **Step 2.1: Replace the case statement with uv check + help behavior**
 
 Replace the entire content of `tain` with:
 
@@ -258,27 +258,27 @@ case "$cmd" in
 esac
 ```
 
-- [ ] **Step 2.2: Verify uv is still required (sanity)**
+- [x] **Step 2.2: Verify uv is still required (sanity)**
 
 Run: `command -v uv`
 Expected: prints path to `uv` (you have it installed).
 
-- [ ] **Step 2.3: Verify help still works with real uv**
+- [x] **Step 2.3: Verify help still works with real uv**
 
 Run: `./tain help`
 Expected: prints help text, exits 0.
 
-- [ ] **Step 2.4: Verify uv-missing path manually (not in test)**
+- [x] **Step 2.4: Verify uv-missing path manually (not in test)**
 
 Run: `PATH=/nonexistent ./tain help`
 Expected: prints "✗ 未找到 uv" + install instructions, exits 127.
 
-- [ ] **Step 2.5: Run all tests**
+- [x] **Step 2.5: Run all tests**
 
 Run: `python -m pytest tests/test_tain_script.py -v`
 Expected: `test_tain_help_exits_zero` and `test_tain_no_args_shows_help` PASS. `test_tain_unknown_subcommand_exits_nonzero` will FAIL (the unknown-subcommand error path is added in Task 5 — this is expected TDD state).
 
-- [ ] **Step 2.6: Commit**
+- [x] **Step 2.6: Commit**
 
 ```bash
 git add tain
@@ -292,7 +292,7 @@ git commit -m "feat: add uv detection to tain launcher"
 **Files:**
 - Modify: `tain`
 
-- [ ] **Step 3.1: Add `needs_sync` and sync block before subcommand dispatch**
+- [x] **Step 3.1: Add `needs_sync` and sync block before subcommand dispatch**
 
 Replace the `tain` file with this (adds sync block between uv check and case statement):
 
@@ -355,7 +355,7 @@ case "$cmd" in
 esac
 ```
 
-- [ ] **Step 3.2: Verify `needs_sync` logic manually**
+- [x] **Step 3.2: Verify `needs_sync` logic manually**
 
 First, ensure `.venv` is in place and `.venv/.synced` is current:
 
@@ -365,7 +365,7 @@ ls -la .venv/.synced 2>/dev/null && echo "FRESH" || echo "STALE_OR_MISSING"
 ```
 Expected: should show FRESH (your environment has a synced venv).
 
-- [ ] **Step 3.3: Force stale state and re-run**
+- [x] **Step 3.3: Force stale state and re-run**
 
 ```bash
 mv .venv .venv.bak
@@ -374,7 +374,7 @@ echo "exit=$?"
 ```
 Expected: prints "→ 首次启动或 lockfile 变更，同步依赖", runs `uv sync --frozen`, then prints help.
 
-- [ ] **Step 3.4: Restore real .venv**
+- [x] **Step 3.4: Restore real .venv**
 
 ```bash
 [ -d .venv.bak ] && rm -rf .venv && mv .venv.bak .venv
@@ -382,12 +382,12 @@ ls -la .venv/.synced
 ```
 Expected: `.venv` is back, with `.synced` marker.
 
-- [ ] **Step 3.5: Run the help test to confirm no regression**
+- [x] **Step 3.5: Run the help test to confirm no regression**
 
 Run: `python -m pytest tests/test_tain_script.py::test_tain_help_exits_zero -v`
 Expected: PASS (sync is a no-op when `.venv/.synced` is fresh, so the help prints normally).
 
-- [ ] **Step 3.6: Commit**
+- [x] **Step 3.6: Commit**
 
 ```bash
 git add tain
@@ -401,7 +401,7 @@ git commit -m "feat: add uv sync bootstrap to tain launcher"
 **Files:**
 - Modify: `tain`
 
-- [ ] **Step 4.1: Add the read-only + new + run cases to the case statement**
+- [x] **Step 4.1: Add the read-only + new + run cases to the case statement**
 
 Replace the `case "$cmd" in ... esac` block (the final block in `tain`) with:
 
@@ -422,13 +422,13 @@ case "$cmd" in
 esac
 ```
 
-- [ ] **Step 4.2: Run the parameterized translation tests for these subcommands**
+- [x] **Step 4.2: Run the parameterized translation tests for these subcommands**
 
 Run: `python -m pytest tests/test_tain_script.py -v -k "subcommand_translation"`
 Expected: 7 of the 13 parametrized cases pass:
 - `list`, `state poet`, `log poet`, `export poet`, `dialogue poet`, `new`, `run poet`, `run a b`
 
-- [ ] **Step 4.3: Manual sanity check (single agent)**
+- [x] **Step 4.3: Manual sanity check (single agent)**
 
 ```bash
 # Use real uv, real main.py --list-agents (no LLM calls)
@@ -436,7 +436,7 @@ Expected: 7 of the 13 parametrized cases pass:
 ```
 Expected: prints a table of agents (probably empty if no agents yet), exits 0.
 
-- [ ] **Step 4.4: Commit**
+- [x] **Step 4.4: Commit**
 
 ```bash
 git add tain
@@ -450,7 +450,7 @@ git commit -m "feat: add read-only, new, and run subcommand translation"
 **Files:**
 - Modify: `tain`
 
-- [ ] **Step 5.1: Add the remaining cases to the case statement**
+- [x] **Step 5.1: Add the remaining cases to the case statement**
 
 Replace the case block with the complete version:
 
@@ -491,24 +491,24 @@ case "$cmd" in
 esac
 ```
 
-- [ ] **Step 5.2: Run all translation tests**
+- [x] **Step 5.2: Run all translation tests**
 
 Run: `python -m pytest tests/test_tain_script.py -v -k "subcommand_translation or passthrough or unknown"`
 Expected: all 13 parametrized cases pass, plus `test_tain_passthrough_for_main_py_flag` and `test_tain_unknown_subcommand_exits_nonzero`.
 
-- [ ] **Step 5.3: Run the full test file**
+- [x] **Step 5.3: Run the full test file**
 
 Run: `python -m pytest tests/test_tain_script.py -v`
 Expected: all tests pass.
 
-- [ ] **Step 5.4: Manual test — passthrough**
+- [x] **Step 5.4: Manual test — passthrough**
 
 ```bash
 ./tain --list-agents
 ```
 Expected: same output as `./tain list` (proves passthrough works).
 
-- [ ] **Step 5.5: Manual test — unknown subcommand**
+- [x] **Step 5.5: Manual test — unknown subcommand**
 
 ```bash
 ./tain totally-fake-cmd
@@ -516,7 +516,7 @@ echo "exit=$?"
 ```
 Expected: prints "✗ 未知子命令：totally-fake-cmd" + "运行 'tain help' 查看用法", exits 1.
 
-- [ ] **Step 5.6: Manual test — daemon help error**
+- [x] **Step 5.6: Manual test — daemon help error**
 
 ```bash
 ./tain daemon start
@@ -524,7 +524,7 @@ echo "exit=$?"
 ```
 Expected: prints "usage: tain daemon <start|stop|status> [name]" or similar, exits 1 (because of `:?` parameter expansion).
 
-- [ ] **Step 5.7: Commit**
+- [x] **Step 5.7: Commit**
 
 ```bash
 git add tain
@@ -538,7 +538,7 @@ git commit -m "feat: add webui, daemon, reset, passthrough, and unknown subcomma
 **Files:**
 - Create: `tain.cmd`
 
-- [ ] **Step 6.1: Write `tain.cmd`**
+- [x] **Step 6.1: Write `tain.cmd`**
 
 Create `tain.cmd`:
 
@@ -678,7 +678,7 @@ uv run python main.py %CMD% %*
 goto :eof
 ```
 
-- [ ] **Step 6.2: Document Windows testing limitation**
+- [x] **Step 6.2: Document Windows testing limitation**
 
 Add a comment header to the file (after the `@echo off`):
 
@@ -686,7 +686,7 @@ Actually, the file already has comment headers. Add this note to README's later 
 
 For now, the task is complete once `tain.cmd` is created. The POSIX tests in `tests/test_tain_script.py` do not cover `tain.cmd` (cross-platform testing isn't supported by the test fixture which is POSIX-specific). Note in the PR/commit that Windows testing was not done locally.
 
-- [ ] **Step 6.3: Commit**
+- [x] **Step 6.3: Commit**
 
 ```bash
 git add tain.cmd
@@ -700,7 +700,7 @@ git commit -m "feat: add tain.cmd (Windows batch port)"
 **Files:**
 - Modify: `Makefile`
 
-- [ ] **Step 7.1: Append the `tain` rules**
+- [x] **Step 7.1: Append the `tain` rules**
 
 Read the current `Makefile` (already known: 27 lines), then add to the end:
 
@@ -725,19 +725,19 @@ tain-%:
 
 Note: the trailing `%` rule is a Make no-op that swallows any unknown targets so `make tain help` doesn't error on the second positional.
 
-- [ ] **Step 7.2: Verify `make tain help`**
+- [x] **Step 7.2: Verify `make tain help`**
 
 Run: `make tain help`
 Expected: prints tain help text, exits 0.
 
-- [ ] **Step 7.3: Verify `make tain-run` is NOT eaten by some pre-existing target**
+- [x] **Step 7.3: Verify `make tain-run` is NOT eaten by some pre-existing target**
 
 Run: `make -n tain-run NAME=poet`
 Expected: shows `./tain run NAME=poet` (or similar — the variable substitution might or might not happen, depends on Make's target-vs-variable resolution). If NAME=poet is treated as a target, the no-op `%` rule swallows it.
 
 If you see errors, adjust: change `$(filter-out $@,$(MAKECMDGOALS))` to handle the case where `MAKECMDGOALS` contains target-like things.
 
-- [ ] **Step 7.4: Verify existing targets still work**
+- [x] **Step 7.4: Verify existing targets still work**
 
 Run: `make -n test`
 Expected: shows `python -m pytest tests/ -v` (existing target).
@@ -745,7 +745,7 @@ Expected: shows `python -m pytest tests/ -v` (existing target).
 Run: `make -n webui`
 Expected: shows `python main.py --webui --port 8000` (existing target).
 
-- [ ] **Step 7.5: Commit**
+- [x] **Step 7.5: Commit**
 
 ```bash
 git add Makefile
@@ -759,7 +759,7 @@ git commit -m "feat: add Makefile tain forwarding rules"
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 8.1: Add `### 安装 uv` section before Quick Start**
+- [x] **Step 8.1: Add `### 安装 uv` section before Quick Start**
 
 Find the line `## Quick Start` (around line 14). Just before it, insert a new section:
 
@@ -780,7 +780,7 @@ Find the line `## Quick Start` (around line 14). Just before it, insert a new se
 
 (Use the backtick code-block syntax in the actual file — above uses indented blocks for clarity within this plan.)
 
-- [ ] **Step 8.2: Rewrite the Quick Start section**
+- [x] **Step 8.2: Rewrite the Quick Start section**
 
 Replace the entire `## Quick Start` section (lines 14–37) with:
 
@@ -812,7 +812,7 @@ Replace the entire `## Quick Start` section (lines 14–37) with:
 See [Quick Start Guide](docs/quickstart.md) for detailed instructions.
 ```
 
-- [ ] **Step 8.3: Add `tain` column to CLI Reference table**
+- [x] **Step 8.3: Add `tain` column to CLI Reference table**
 
 Find the CLI Reference table (lines 240–254). Replace it with:
 
@@ -835,7 +835,7 @@ Find the CLI Reference table (lines 240–254). Replace it with:
 | `./tain help` | `python main.py --help` | 显示帮助 |
 ```
 
-- [ ] **Step 8.4: Commit**
+- [x] **Step 8.4: Commit**
 
 ```bash
 git add README.md
@@ -849,17 +849,17 @@ git commit -m "docs: rewrite README Quick Start around tain launcher"
 **Files:**
 - Read: `tain`, `tain.cmd`, `Makefile`, `README.md`, `tests/test_tain_script.py`
 
-- [ ] **Step 9.1: Run the tain smoke test suite**
+- [x] **Step 9.1: Run the tain smoke test suite**
 
 Run: `python -m pytest tests/test_tain_script.py -v`
 Expected: all tests pass (help, no-args, unknown, ~13 parametrized translations, passthrough, reset).
 
-- [ ] **Step 9.2: Run the full project test suite (regression check)**
+- [x] **Step 9.2: Run the full project test suite (regression check)**
 
 Run: `make test 2>&1 | tail -20`
 Expected: all 326 existing tests still pass (main.py was not touched, so this is a regression check).
 
-- [ ] **Step 9.3: Manual verification checklist (5 items)**
+- [x] **Step 9.3: Manual verification checklist (5 items)**
 
 Walk through each:
 
@@ -902,7 +902,7 @@ Walk through each:
    ```
    Expected: `.venv` is gone (or error message saying so), no other side effects.
 
-- [ ] **Step 9.4: Final commit if any cleanup needed**
+- [x] **Step 9.4: Final commit if any cleanup needed**
 
 If Steps 9.1–9.3 surfaced bugs or polish, fix them now:
 
@@ -913,7 +913,7 @@ git commit -m "fix: address final review findings for tain launcher"
 
 If nothing to fix, skip this step.
 
-- [ ] **Step 9.5: Print a summary**
+- [x] **Step 9.5: Print a summary**
 
 Print (for the user's reference):
 
