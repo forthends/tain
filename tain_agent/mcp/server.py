@@ -40,9 +40,16 @@ class AgentMCPServer:
             if not line: continue
             try:
                 req = json.loads(line)
-                resp = self._handle_request(req)
-                sys.stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
-                sys.stdout.flush()
+                if isinstance(req, list):
+                    responses = [self._handle_request(r) for r in req]
+                    responses = [r for r in responses if r is not None]
+                    if responses:
+                        sys.stdout.write(json.dumps(responses, ensure_ascii=False) + "\n")
+                        sys.stdout.flush()
+                else:
+                    resp = self._handle_request(req)
+                    sys.stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
+                    sys.stdout.flush()
             except json.JSONDecodeError:
                 sys.stdout.write(json.dumps({"jsonrpc":"2.0","error":{"code":-32700,"message":"Parse error"},"id":None}) + "\n")
                 sys.stdout.flush()
@@ -57,7 +64,7 @@ class AgentMCPServer:
             return {"jsonrpc":"2.0","error":{"code":-32601,"message":f"Method not found: {method}"},"id":rid}
         try:
             params = req.get("params", {})
-            result = handler(**params) if isinstance(params, dict) else handler()
+            result = handler(*params) if isinstance(params, list) else handler(**params)
             return {"jsonrpc":"2.0","result":result,"id":rid}
         except Exception as e:
             return {"jsonrpc":"2.0","error":{"code":-32000,"message":str(e)},"id":rid}
