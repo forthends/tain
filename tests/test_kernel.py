@@ -16,10 +16,12 @@ class TestDispatch:
         d = Dispatch()
         assert d.call("nonexistent") is None
 
-    def test_handler_exception_returns_none(self):
+    def test_handler_exception_returns_error_string(self):
         d = Dispatch()
         d.register("failing", lambda: 1 / 0)
-        assert d.call("failing") is None
+        result = d.call("failing")
+        assert result is not None
+        assert "[Dispatch Error]" in result
 
 
 class TestLifecycleManager:

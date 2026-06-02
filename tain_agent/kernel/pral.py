@@ -16,10 +16,12 @@ class PRALLoop:
         self._dispatch = dispatch
         self._running = False
         self.cycle_count = 0
+        self._drive_system = None
 
     def run(self, llm_backend, conversation, drive_system, system_prompt_template: str,
             max_cycles: int | float = float("inf"), stop_signal: callable = None) -> int:
         """Execute PRAL cycles until stop."""
+        self._drive_system = drive_system
         self._running = True
         while self._running:
             self.cycle_count += 1
@@ -95,6 +97,16 @@ class PRALLoop:
             if plugin:
                 prompt = plugin.enrich_prompt(prompt)
         # Drive system enriches the prompt too (not a plugin)
+        if self._drive_system is not None:
+            try:
+                weights = self._drive_system.get_action_weights()
+                drive_lines = [f"observation: {weights.get('observation', 0):.2f}",
+                               f"optimization: {weights.get('optimization', 0):.2f}",
+                               f"creation: {weights.get('creation', 0):.2f}",
+                               f"maintenance: {weights.get('maintenance', 0):.2f}"]
+                prompt = prompt + "\n\n[Drive Weights]\n" + " | ".join(drive_lines)
+            except Exception:
+                logger.debug("Failed to read drive weights for prompt enrichment")
         return prompt
 
     def _gather_tool_definitions(self):
