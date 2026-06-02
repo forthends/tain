@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Tain launcher
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+if ! command -v uv >/dev/null 2>&1; then
+    echo "✗ 未找到 uv。请先安装：" >&2
+    echo "  macOS:   brew install uv" >&2
+    echo "  Linux:   curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+    echo "  Windows: winget install astral-sh.uv" >&2
+    exit 127
+fi
+
+needs_sync() {
+    [ ! -d ".venv" ] && return 0
+    [ ! -f ".venv/.synced" ] && return 0
+    [ "uv.lock" -nt ".venv/.synced" ] && return 0
+    return 1
+}
+
+if needs_sync; then
+    echo "→ 首次启动或 lockfile 变更，同步依赖（~30s）…"
+    uv sync --frozen
+    touch ".venv/.synced"
+fi
+
+print_help() {
+    cat <<'EOF'
+Tain — Tain Agent Framework 启动脚本
+
+用法:
+  tain run <name>           启动单个 agent（多 agent 请用 tain daemon start）
+  tain new                  交互式创建 agent
+  tain list                 列出所有 agent
+  tain state <name>         打印 agent 状态
+  tain log <name>           查看决策日志
+  tain export <name>        导出为独立包
+  tain dialogue <name>      REPL 对话模式
+  tain webui [port]         启动 Web UI（默认 8000，自动开浏览器）
+  tain daemon <op> [name]   守护进程：op = start|stop|status
+  tain reset                删除 .venv（下次启动自动重新同步）
+  tain help                 显示本帮助
+
+也支持旧式调用: tain --agent <name> 等，会直接透传给 python main.py。
+EOF
+}
+
+cmd="${1:-help}"
+[ $# -gt 0 ] && shift
+
+case "$cmd" in
+    run)        exec uv run python main.py --agent "${1:?missing agent name}" ;;
+    new)        exec uv run python main.py --create-agent ;;
+    list)       exec uv run python main.py --list-agents ;;
+    state)      exec uv run python main.py --agent "$1" --state ;;
+    log)        exec uv run python main.py --agent "$1" --log ;;
+    export)     exec uv run python main.py --agent "$1" --export ;;
+    dialogue)   exec uv run python main.py --agent "$1" --dialogue ;;
+    webui)
+        port="${1:-8000}"
+        (sleep 1.5 && open "http://localhost:${port}" 2>/dev/null || \
+                       xdg-open "http://localhost:${port}" 2>/dev/null || true) &
+        exec uv run python main.py --webui --port "$port" ;;
+    daemon)
+        op="${1:?usage: tain daemon <start|stop|status> [name]}"
+        case "$op" in
+            start)   name="${2:?missing agent name}"; exec uv run python main.py --daemon start --agent "$name" ;;
+            stop)    exec uv run python main.py --daemon stop ;;
+            status)  exec uv run python main.py --daemon status ;;
+            *)       echo "✗ 未知 daemon 子命令：$op" >&2; exit 1 ;;
+        esac ;;
+    reset)      rm -rf .venv && echo "✓ 已重置 .venv" ;;
+    help|-h|--help) print_help ;;
+    --agent|--create-agent|--list-agents|--webui|--daemon|--state|--log|--export)
+        exec uv run python main.py "$cmd" "$@" ;;
+    *)
+        echo "✗ 未知子命令：$cmd" >&2
+        echo "  运行 'tain help' 查看用法" >&2
+        exit 1
+        ;;
+esac

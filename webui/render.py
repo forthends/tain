@@ -13,6 +13,17 @@ def _escape_html(text: str) -> str:
     return escape(text)
 
 
+_SAFE_URL_SCHEMES = ("http:", "https:", "mailto:", "#")
+
+
+def _safe_url(url: str) -> str:
+    """Return url if its scheme is safe, '#blocked' otherwise."""
+    stripped = url.strip().lower()
+    if any(stripped.startswith(s) for s in _SAFE_URL_SCHEMES):
+        return url
+    return "#blocked"
+
+
 @lru_cache(maxsize=64)
 def render_markdown(text: str) -> str:
     """Render a Markdown string to HTML.
@@ -84,9 +95,11 @@ def render_markdown(text: str) -> str:
         """Render inline Markdown within a single line."""
         t = escape(text)
         # Images (must be before links)
-        t = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", r'<img src="\2" alt="\1">', t)
+        t = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)",
+                   lambda m: f'<img src="{_safe_url(m.group(2))}" alt="{m.group(1)}">', t)
         # Links
-        t = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2" class="text-blue-500 hover:underline">\1</a>', t)
+        t = re.sub(r"\[([^\]]+)\]\(([^)]+)\)",
+                   lambda m: f'<a href="{_safe_url(m.group(2))}" class="text-blue-500 hover:underline">{m.group(1)}</a>', t)
         # Bold + Italic
         t = re.sub(r"\*\*\*(.+?)\*\*\*", r"<strong><em>\1</em></strong>", t)
         # Bold

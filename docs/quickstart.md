@@ -1,12 +1,13 @@
 # Tain Agent Framework — Quick Start Guide
 
-**Version**: 0.4.0
+**Version**: 0.5.1
 
 ---
 
 ## Prerequisites
 
-- Python 3.10+
+- Python 3.12+
+- Node.js 23+ (for CSS build, optional — pre-built CSS included)
 - An LLM API key (Anthropic, DeepSeek, OpenAI, or MiniMax)
 
 ---
@@ -14,10 +15,10 @@
 ## 1. Installation
 
 ```bash
-cd /path/to/zero
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+cd /path/to/tain
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
 ```
 
 ---
@@ -28,7 +29,7 @@ Edit `config.yaml` to set your LLM provider and API key:
 
 ```yaml
 framework:
-  version: "0.4.0"
+  version: "0.5.1"
 
 agent:
   default_agent: "default"
@@ -38,6 +39,14 @@ llm:
   model: "MiniMax-M2.7"
   api_key_env: "MINIMAX_API_KEY"
   base_url: "https://api.minimaxi.com/anthropic"
+  retry:
+    enabled: true
+    max_retries: 3
+
+exploration:
+  max_exploration_cycles: 10
+  min_bootstrap_cycles: 5
+  min_action_categories: 2
 ```
 
 Set your API key:
@@ -110,13 +119,26 @@ python main.py --agent poet
 
 ---
 
-## 5. Dialogue Mode
+## 5. Web UI
 
-Interact with an agent directly:
+Start the Web UI to interact with agents through a browser:
 
 ```bash
-python main.py --agent poet --dialogue
+python -m uvicorn webui.app:create_app --host 0.0.0.0 --port 8000 --factory
 ```
+
+Open `http://localhost:8000` to access the dashboard. From there you can:
+- Create and manage agents
+- Chat with agents in real-time
+- View evolution metrics, tools, and knowledge
+- Monitor agent state and decisions
+
+Protect the API with an API key:
+```bash
+export TAIN_API_KEY="your-secret-key"
+```
+
+Then include `X-API-Key: your-secret-key` in API request headers.
 
 ---
 
@@ -185,50 +207,38 @@ python main.py --agent poet --log
 
 ---
 
-## 9. Exporting an Evolved Agent
-
-After evolution, export your agent as a standalone package:
-
-```bash
-python main.py --agent poet --export --output ./dist
-```
-
-The exported package runs independently without the framework.
-
----
-
-## 10. Daemon Mode
+## 9. Daemon Mode
 
 Run an agent as a background daemon with auto-restart:
 
 ```bash
 python main.py --agent poet --daemon
-python main.py --daemon --status
 python main.py --daemon --stop
+python main.py --daemon --status
 ```
 
 ---
 
-## 11. CLI Reference
+## 10. CLI Reference
 
 | Command | Description |
 |---------|-------------|
 | `python main.py --agent <name>` | Start an agent (creates if new) |
-| `python main.py --agent <name> --dialogue` | Interactive chat with agent |
 | `python main.py --list-agents` | List all agents |
 | `python main.py --create-agent` | Interactive creation wizard |
 | `python main.py --agent <name> --state` | Print agent state |
 | `python main.py --agent <name> --log` | View decision log |
-| `python main.py --agent <name> --export` | Export as standalone package |
 | `python main.py --agent <name> --daemon` | Run as daemon |
 | `python main.py --daemon --stop` | Stop daemon |
 | `python main.py --daemon --status` | Check daemon status |
+| `python -m uvicorn webui.app:create_app --factory` | Start Web UI on port 8000 |
 
 ---
 
 ## Next Steps
 
 - Read [architecture.md](architecture.md) for the full system design
-- Explore the `agent_workspace/<name>/` directory to see what your agent creates
-- Check `agent_workspace/<name>/reports/` for evolution reports
+- Read [EVOLUTION.md](EVOLUTION.md) for the evolution philosophy
+- Explore `agent_workspace/<name>/` to see what your agent creates
+- Check `agent_workspace/<name>/logs/` for decision logs and reports
 - Try creating agents with different roles and let them communicate

@@ -4,7 +4,7 @@
 
 The Tain Agent Framework previously used an "LLM-judging-LLM" pattern for self-evaluation — the same LLM would answer benchmark questions and then score its own answers. This created a closed, self-referential loop with no external ground truth.
 
-Starting from v0.5.0, "evolution" means **framework-measured behavioral change over time**:
+Starting from v0.5.1, "evolution" means **framework-measured behavioral change over time**:
 
 ## What Is Measured
 

@@ -732,3 +732,70 @@ def validate_skill(skill_dir: str) -> dict:
         "description_length": len(desc),
         "skill_dir": str(path),
     }
+
+
+def export_agent_bundle(agent_name: str, output_dir: str = None) -> dict:
+    from pathlib import Path
+    import json
+    root = Path(output_dir) if output_dir else Path("./exports")
+    bundle_dir = root / agent_name
+    scripts_dir = bundle_dir / "scripts"
+    refs_dir = bundle_dir / "references"
+    refs_dir.mkdir(parents=True, exist_ok=True)
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    files_created = 0
+    partial = False
+
+    identity_data = {}
+    workspace = Path("agent_workspace") / agent_name
+    identity_file = workspace / "identity" / "profile.json"
+    if identity_file.exists():
+        identity_data = json.loads(identity_file.read_text(encoding="utf-8"))
+
+    if identity_data:
+        (scripts_dir / "identity.json").write_text(json.dumps(identity_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        files_created += 1
+    else:
+        partial = True
+
+    role = identity_data.get("role", agent_name)
+    mission = identity_data.get("mission", f"{agent_name} — exported Tain Agent")
+    domains = identity_data.get("expertise_domains", [])
+    domain_names = ", ".join(d.get("domain", "") for d in domains[:5]) if domains else "general"
+
+    skill_md = f"""---
+name: {agent_name}
+description: {role}
+tags: [tain-agent, exported]
+version: 0.6.0
+---
+
+# {agent_name} — {role}
+
+## 身份
+{mission}
+
+## 专长领域
+{domain_names}
+
+## 使用方式
+
+### MCP Server
+```bash
+python -m tain_agent.mcp.server --agent {agent_name} --mode stdio
+```
+
+### 独立 Skill 包
+将此目录复制到 IDE skill 目录即可。
+"""
+    (bundle_dir / "SKILL.md").write_text(skill_md, encoding="utf-8")
+    files_created += 1
+
+    for src, dst_name in [("knowledge/graph.json", "knowledge_graph.json"), ("skills/catalog.json", "skills.json")]:
+        src_file = workspace / src
+        if src_file.exists():
+            import shutil
+            shutil.copy(str(src_file), str(scripts_dir / dst_name))
+            files_created += 1
+
+    return {"success": not partial, "partial": partial, "bundle_path": str(bundle_dir), "files_created": files_created}

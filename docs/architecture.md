@@ -1,6 +1,6 @@
 # Tain Agent Framework — Architecture Design
 
-**Version**: 0.5.0
+**Version**: 0.5.1
 **Date**: 2026-05-24
 
 ---
@@ -56,7 +56,7 @@ The Tain Agent Framework is a platform for building and running self-evolving AI
 
 ```
 tain_agent/                        # Framework package
-  __init__.py                      # __version__ = "0.5.0"
+  __init__.py                      # __version__ = "0.5.1"
   decision_log.py                  # Append-only JSONL decision log
 
   core/                            # Central nervous system
@@ -245,7 +245,7 @@ Each agent's `version.json` records the `framework_version` it was created with.
 
 | File | Purpose |
 |------|---------|
-| `tain_agent/__init__.py` | Framework version (`__version__ = "0.5.0"`) |
+| `tain_agent/__init__.py` | Framework version (`__version__ = "0.5.1"`) |
 | `agent_workspace/<name>/version.json` | Agent workspace version + framework binding |
 | `config.yaml` → `framework.version` | Configured framework version |
 

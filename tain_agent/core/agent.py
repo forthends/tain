@@ -28,6 +28,13 @@ Architecture (v0.5.0):
   lineage.py          — Evolution lineage tracking
 """
 
+import warnings
+warnings.warn(
+    "tain_agent.core.agent.TaoAgent is deprecated. "
+    "Use tain_agent.compat.TaoAgentCompat or tain_agent.kernel.AgentKernel directly.",
+    DeprecationWarning, stacklevel=2,
+)
+
 import logging
 import os
 import time
@@ -159,8 +166,8 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
                 tools=tool_defs,
             )
 
-        def _on_rate_limit():
-            self._detect_rate_limit_type("rate_limit")
+        def _on_rate_limit(err_str: str = ""):
+            self._detect_rate_limit_type(err_str or "rate_limit")
             return bool(self._rate_limit_exit_code)
 
         def _on_trim():

@@ -205,7 +205,7 @@ def llm_retry_call(
 
             if "429" in err_str or "rate_limit" in err_str.lower():
                 if on_rate_limit:
-                    should_exit = on_rate_limit()
+                    should_exit = on_rate_limit(err_str)
                     if should_exit:
                         return None
                 delay = _calculate_delay(config, attempt) * 2

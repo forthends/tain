@@ -213,6 +213,15 @@ def main():
     parser.add_argument("--port", type=int, default=8000,
                         help="Port for Web UI (default: 8000)")
 
+    # Kernel mode
+    parser.add_argument("--new-kernel", action="store_true",
+                        help="Use new Core-Plugins AgentKernel (v0.6.0)")
+
+    # MCP / IDE embedding
+    parser.add_argument("--mcp-serve", action="store_true", help="Start agent as MCP Server for IDE embedding")
+    parser.add_argument("--export-bundle", action="store_true", help="Export agent as standalone Skill Bundle")
+    parser.add_argument("--list-production-ready", action="store_true", help="List all production-ready agents")
+
     args = parser.parse_args()
 
     # ── Web UI ────────────────────────────────────────────────────────
@@ -316,7 +325,11 @@ def main():
         print("  The agent may need migration. Proceeding anyway...\n")
 
     # ── Wake the agent ──────────────────────────────────────────────
-    agent = TaoAgent(config_path=args.config, agent_name=agent_name)
+    if args.new_kernel:
+        from tain_agent.compat import TaoAgentCompat
+        agent = TaoAgentCompat(config_path=args.config, agent_name=agent_name)
+    else:
+        agent = TaoAgent(config_path=args.config, agent_name=agent_name)
 
     if args.state:
         agent.print_state()
@@ -380,6 +393,47 @@ def main():
         if result.warnings:
             for w in result.warnings:
                 print(f"  {w}")
+        return
+
+    # ── List production-ready agents ──────────────────────────────
+    if args.list_production_ready:
+        from tain_agent.evolution.quality_gate import ExportQualityGate
+        agents = factory.list_agents()
+        ready = []
+        for name in agents:
+            gate = ExportQualityGate(agent_name=name)
+            report = gate.evaluate()
+            if report.passed:
+                ready.append((name, report))
+        if not ready:
+            print("(no production-ready agents found)")
+        else:
+            print()
+            print(f"{'NAME':<16} {'STABLE STREAK':<14} {'SCORE':<8}")
+            print("-" * 40)
+            for name, report in ready:
+                streak = report.stable_streak if hasattr(report, 'stable_streak') else 0
+                score = report.total_score if hasattr(report, 'total_score') else 0.0
+                print(f"{name:<16} {streak:<14} {score:<8.1f}")
+            print()
+        return
+
+    # ── MCP serve ──────────────────────────────────────────────────
+    if args.mcp_serve:
+        from tain_agent.mcp.server import AgentMCPServer
+        server = AgentMCPServer(agent_name)
+        server.serve(mode="stdio")
+        return
+
+    # ── Export Skill Bundle ─────────────────────────────────────────
+    if args.export_bundle:
+        from tain_agent.evolution.skill_exporter import export_agent_bundle
+        result = export_agent_bundle(agent_name, output_dir=args.output)
+        status = "Exported" if result.get("success") else "Partially exported"
+        print(f"{status}: {result['bundle_path']}")
+        print(f"Files created: {result['files_created']}")
+        if result.get("partial"):
+            print("Warning: Some files could not be included (partial export).")
         return
 
     # ── Run agent ───────────────────────────────────────────────────
