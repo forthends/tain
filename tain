@@ -31,7 +31,7 @@ print_help() {
 Tain — Tain Agent Framework 启动脚本
 
 用法:
-  tain run <name>...        启动 agent（多 agent 用空格分隔）
+  tain run <name>           启动单个 agent（多 agent 请用 tain daemon start）
   tain new                  交互式创建 agent
   tain list                 列出所有 agent
   tain state <name>         打印 agent 状态
@@ -51,7 +51,7 @@ cmd="${1:-help}"
 [ $# -gt 0 ] && shift
 
 case "$cmd" in
-    run)        exec uv run python main.py $(printf ' --agent %s' "$@") ;;
+    run)        exec uv run python main.py --agent "${1:?missing agent name}" ;;
     new)        exec uv run python main.py --create-agent ;;
     list)       exec uv run python main.py --list-agents ;;
     state)      exec uv run python main.py --agent "$1" --state ;;

@@ -45,7 +45,11 @@ if "%CMD%"=="reset"    goto do_reset
 goto passthrough
 
 :run
-uv run python main.py --agent %*
+if "%~1"=="" (
+    echo missing agent name 1>&2
+    exit /b 1
+)
+uv run python main.py --agent %1
 goto :eof
 
 :new
@@ -113,7 +117,7 @@ goto :eof
 echo Tain - Tain Agent Framework launcher
 echo.
 echo Usage:
-echo   tain run ^<name^>...        Start agent^(s^)
+echo   tain run ^<name^>           Start a single agent
 echo   tain new                  Interactive agent creation wizard
 echo   tain list                 List all agents
 echo   tain state ^<name^>         Print agent state
