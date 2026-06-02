@@ -66,3 +66,4 @@ webui/node_modules/
 # Local docs (planning notes, archived design specs — kept on disk, off the repo)
 docs/superpowers/
 docs/archived/
+docs/report/
