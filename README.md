@@ -10,30 +10,53 @@ A practical AI agent framework with multi-provider LLM support, safe tool-use ex
 
 ---
 
+## 安装 uv
+
+`tain` 启动脚本依赖 [uv](https://docs.astral.sh/uv/) 管理 Python 依赖与虚拟环境（首次运行时自动同步）。
+
+```bash
+# macOS
+brew install uv
+
+# Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows
+winget install astral-sh.uv
+```
+
+---
+
 ## Quick Start
 
 ```bash
-# Install
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+# 1. 装 uv（参见上文「安装 uv」）
 
-# Configure your API key
+# 2. 配置 API key
 export MINIMAX_API_KEY="your-key"
 
-# Create and start your first agent
-python main.py --create-agent
+# 3. 启动
+./tain run poet            # 启动 agent（不存在则自动进入创建向导）
+./tain webui               # 启动 Web UI，自动开浏览器
 
-# Or create one with a predefined role
-python main.py --create-agent
-# → Choose mode 2 (Specified)
-# → Role: 浪漫主义诗人
-# → Description: 随性、浪漫的现代诗人，目标是用诗歌慰藉人性
+# 其他常用
+./tain list                # 列出所有 agent
+./tain new                 # 交互式创建 agent
+./tain state poet          # 查看 agent 状态
+./tain log poet            # 查看决策日志
+./tain help                # 完整帮助
+```
 
-# Start an existing agent
+> **首次启动**会触发 `uv sync` 自动安装依赖（~30s），后续启动毫秒级。
+>
+> Windows 用户使用 `tain.cmd`：`tain.cmd run poet`、`tain.cmd webui` 等同效。
+
+如需传统方式（不经 `tain`）：
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
 python main.py --agent poet
-
-# Launch Web UI
-python -m uvicorn webui.app:create_app --host 0.0.0.0 --port 8000 --factory
 ```
 
 See [Quick Start Guide](docs/quickstart.md) for detailed instructions.
@@ -241,17 +264,23 @@ tests/                       # Test suite (326 tests, 25 files)
 
 ## CLI Reference
 
-| Command                                  | Description                     |
-|------------------------------------------|---------------------------------|
-| `python main.py --agent <name>`          | Start an agent (creates if new) |
-| `python main.py --list-agents`           | List all registered agents      |
-| `python main.py --create-agent`          | Interactive creation wizard     |
-| `python main.py --agent <name> --state`  | Print agent state report        |
-| `python main.py --agent <name> --log`    | View agent decision log         |
-| `python main.py --agent <name> --daemon` | Run as background daemon        |
-| `python main.py --daemon --stop`         | Stop the daemon                 |
-| `python main.py --daemon --status`       | Check daemon status             |
-| `uvicorn webui.app:create_app --factory` | Start Web UI on port 8000       |
+| `tain` 命令                       | `python main.py` 旧用法                          | 描述                              |
+|-----------------------------------|--------------------------------------------------|-----------------------------------|
+| `./tain run <name>`               | `python main.py --agent <name>`                  | 启动 agent（不存在则创建）        |
+| `./tain list`                     | `python main.py --list-agents`                   | 列出所有已注册 agent              |
+| `./tain new`                      | `python main.py --create-agent`                  | 交互式创建向导                    |
+| `./tain state <name>`             | `python main.py --agent <name> --state`          | 打印 agent 状态                   |
+| `./tain log <name>`               | `python main.py --agent <name> --log`            | 查看 agent 决策日志               |
+| `./tain export <name>`            | `python main.py --agent <name> --export`         | 导出 agent 为独立包               |
+| `./tain dialogue <name>`          | `python main.py --agent <name> --dialogue`       | REPL 对话模式                     |
+| `./tain daemon start <name>`      | `python main.py --daemon start --agent <name>`   | 启动守护进程                      |
+| `./tain daemon stop`              | `python main.py --daemon stop`                   | 停止守护进程                      |
+| `./tain daemon status`            | `python main.py --daemon status`                 | 查看守护进程状态                  |
+| `./tain webui [port]`             | `python main.py --webui --port 8000`             | 启动 Web UI（自动开浏览器）       |
+| `./tain reset`                    | —                                                | 删除 `.venv`（下次启动自动重同步）|
+| `./tain help`                     | `python main.py --help`                          | 显示帮助                          |
+
+> Windows 用户把 `./tain` 换成 `tain.cmd` 即可（其余参数完全一致）。
 
 ---
 
