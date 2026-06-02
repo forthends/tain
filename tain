@@ -13,6 +13,19 @@ if ! command -v uv >/dev/null 2>&1; then
     exit 127
 fi
 
+needs_sync() {
+    [ ! -d ".venv" ] && return 0
+    [ ! -f ".venv/.synced" ] && return 0
+    [ "uv.lock" -nt ".venv/.synced" ] && return 0
+    return 1
+}
+
+if needs_sync; then
+    echo "→ 首次启动或 lockfile 变更，同步依赖（~30s）…"
+    uv sync --frozen
+    touch ".venv/.synced"
+fi
+
 print_help() {
     cat <<'EOF'
 Tain — Tain Agent Framework 启动脚本
