@@ -25,6 +25,6 @@ class Dispatch:
             return None
         try:
             return handler(*args, **kwargs)
-        except Exception:
+        except Exception as exc:
             logger.exception("Dispatch %r failed", event)
-            return None
+            return f"[Dispatch Error] {event}: {exc}"
