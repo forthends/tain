@@ -105,9 +105,7 @@ class EvaluationPlugin:
         if plugin_metrics is None:
             plugin_metrics = self._collect_metrics()
 
-        if not plugin_metrics:
-            return None
-
+        # Allow empty metrics to produce a baseline snapshot
         snap = self._engine.evaluate(self._ctx.agent_id, plugin_metrics)
         self._history.append(snap)
         self._evaluations_run += 1
@@ -151,6 +149,7 @@ class EvaluationPlugin:
     # ── Internal ─────────────────────────────────────────────────
 
     def _collect_metrics(self) -> dict[str, dict]:
+        # TODO: wire real plugin metric sources (memory, tool, workflow stats)
         return {}
 
     def _inject_action_items(self, report: EvaluationReport) -> None:
