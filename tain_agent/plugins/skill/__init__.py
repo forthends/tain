@@ -29,6 +29,7 @@ class SkillPlugin:
         self._ctx: AgentContext | None = None
         self._skills: dict[str, Skill] = {}
         self._persist_path: Path | None = None
+        self._catalog_dirty = False
 
     # ── PluginProtocol ──────────────────────────────────────────────
 
@@ -73,7 +74,9 @@ class SkillPlugin:
         pass
 
     def on_cycle_end(self, cycle: int) -> None:
-        self._save()
+        if self._catalog_dirty:
+            self._save()
+            self._catalog_dirty = False
 
     def enrich_prompt(self, base: str) -> str:
         if not self._skills:
@@ -125,6 +128,7 @@ class SkillPlugin:
     def register(self, skill: Skill) -> None:
         """Register a new skill."""
         self._skills[skill.name] = skill
+        self._catalog_dirty = True
 
     def get(self, name: str) -> Skill | None:
         """Get a skill by name."""
@@ -143,6 +147,7 @@ class SkillPlugin:
         if skill is None:
             return None
         skill.record_use(success)
+        self._catalog_dirty = True
         return skill
 
     def teach(
@@ -191,4 +196,5 @@ class SkillPlugin:
             workflow=workflow,
         )
         self._skills[name] = composed
+        self._catalog_dirty = True
         return composed

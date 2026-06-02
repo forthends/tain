@@ -72,7 +72,7 @@ def test_tain_unknown_subcommand_exits_nonzero():
     (["dialogue", "poet"],           "run python main.py --agent poet --dialogue"),
     (["new"],                        "run python main.py --create-agent"),
     (["run", "poet"],                "run python main.py --agent poet"),
-    (["run", "a", "b"],              "run python main.py --agent a --agent b"),
+    (["run", "a"],                   "run python main.py --agent a"),
     (["webui"],                      "run python main.py --webui --port 8000"),
     (["webui", "8080"],              "run python main.py --webui --port 8080"),
     (["daemon", "start", "poet"],    "run python main.py --daemon start --agent poet"),

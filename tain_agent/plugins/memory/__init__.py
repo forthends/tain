@@ -27,6 +27,7 @@ class MemoryPlugin:
         self._episodic: EpisodicStore | None = None
         self._semantic: SemanticStore | None = None
         self._working: list[dict[str, Any]] = []
+        self._semantic_dirty = False
 
     # ── PluginProtocol ───────────────────────────────────────────
 
@@ -102,8 +103,9 @@ class MemoryPlugin:
 
     def on_cycle_end(self, cycle: int) -> None:
         """Persist all stores at cycle end."""
-        if self._semantic:
+        if self._semantic and self._semantic_dirty:
             self._semantic.save()
+            self._semantic_dirty = False
 
     def enrich_prompt(self, base: str) -> str:
         """Append recent episodic memories to the system prompt."""
@@ -195,11 +197,13 @@ class MemoryPlugin:
         """Add or update a semantic entity."""
         if self._semantic:
             self._semantic.add_entity(entity_id, label, **attrs)
+            self._semantic_dirty = True
 
     def add_relation(self, source: str, relation: str, target: str, **attrs: Any) -> None:
         """Add a typed relation between entities."""
         if self._semantic:
             self._semantic.add_relation(source, relation, target, **attrs)
+            self._semantic_dirty = True
 
     def query_related(self, entity_id: str, max_depth: int = 2) -> dict[str, Any]:
         """Query the subgraph around an entity."""
