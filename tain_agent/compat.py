@@ -18,6 +18,19 @@ from tain_agent.plugins.collaboration import CollaborationPlugin
 
 logger = logging.getLogger(__name__)
 
+
+class _DecisionLogShim:
+    """Minimal shim so agent.decision_log.read_all() doesn't crash."""
+    def __init__(self, entries: list[dict]):
+        self._entries = entries
+
+    def read_all(self) -> list[dict]:
+        return list(self._entries)
+
+    def filter_by_phase(self, phase: str) -> list[dict]:
+        return [e for e in self._entries if e.get("phase") == phase]
+
+
 _FACTORIES = {
     "identity": IdentityPlugin,
     "memory": MemoryPlugin,
@@ -55,6 +68,11 @@ class TaoAgentCompat:
         )
         self.kernel = AgentKernel(ctx)
         self.kernel.load_plugins(_FACTORIES)
+        self._backend = None
+        self._conversation = None
+        self._drives = None
+        self._config = config
+        self._decision_log_entries: list[dict] = []
         logger.info("TaoAgentCompat initialized for '%s' (mode=%s)", name, evolution_mode)
 
     def run(self, autonomous: bool = False) -> int:
@@ -63,15 +81,18 @@ class TaoAgentCompat:
         from tain_agent.core.llm import LLMBackend
         backend_config = self.kernel.ctx.config.get("llm", {})
         backend = LLMBackend(backend_config)
+        self._backend = backend
 
         from tain_agent.core.conversation import ConversationManager
         conversation = ConversationManager(
             workspace=str(self.kernel.ctx.workspace_path),
             agent_name=self.kernel.ctx.agent_name,
         )
+        self._conversation = conversation
 
         from tain_agent.core.drives import DriveSystem
         drives = DriveSystem()
+        self._drives = drives
 
         from tain_agent.core.bootstrap import EVOLVE_SYSTEM_PROMPT
         system_prompt = EVOLVE_SYSTEM_PROMPT.format(
@@ -85,6 +106,52 @@ class TaoAgentCompat:
     def stop(self) -> None:
         print(f"\nAgent '{self.agent_name}' stopping...")
         self.kernel.shutdown()
+
+    # ── Legacy attribute proxies for main.py / DialogueBridge ──────
+
+    @property
+    def backend(self):
+        return self._backend
+
+    @property
+    def config(self):
+        return self._config
+
+    @property
+    def conversation(self):
+        return self._conversation
+
+    @property
+    def tools(self):
+        return None  # new kernel uses plugin dispatch
+
+    @property
+    def memory(self):
+        return None  # new kernel uses MemoryPlugin
+
+    @property
+    def forge(self):
+        return None  # tool forge not ported to new kernel yet
+
+    @property
+    def goals(self):
+        return None  # goal system not ported to new kernel yet
+
+    @property
+    def decision_log(self):
+        return _DecisionLogShim(self._decision_log_entries)
+
+    def print_state(self) -> None:
+        """Print agent state in a format compatible with old TaoAgent."""
+        print(f"\n  Agent: {self.agent_name}")
+        print(f"  Version: {self.framework_version}")
+        print(f"  Phase: {self.phase}")
+        print(f"  Cycle: {self.cycle_count}")
+        print()
+        for name, health in self.kernel.lifecycle.all_health_checks().items():
+            status = getattr(health, 'status', str(health))
+            print(f"  [{name}] {status}")
+        print()
 
     def health_check(self) -> dict:
         return {
