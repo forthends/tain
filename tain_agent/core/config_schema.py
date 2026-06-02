@@ -93,7 +93,7 @@ class LoggingSchema(BaseModel):
 
 
 class FrameworkConfigSchema(BaseModel):
-    version: str = "0.5.0"
+    version: str = "0.5.1"
     min_agent_version: str = "0.0.1"
 
 

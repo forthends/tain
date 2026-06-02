@@ -7,7 +7,7 @@ runtime kernel for running exported agents independently of the full framework.
 
 ## Current Status
 
-**Experimental (v0.5.0).** The runtime kernel is present but not yet fully
+**Experimental (v0.5.1).** The runtime kernel is present but not yet fully
 integrated with the export pipeline. It is intended as the target for
 `skill_exporter` and `exporter` output.
 

@@ -1,6 +1,6 @@
 # Tain Agent Framework — Quick Start Guide
 
-**Version**: 0.5.0
+**Version**: 0.5.1
 
 ---
 
@@ -29,7 +29,7 @@ Edit `config.yaml` to set your LLM provider and API key:
 
 ```yaml
 framework:
-  version: "0.5.0"
+  version: "0.5.1"
 
 agent:
   default_agent: "default"
