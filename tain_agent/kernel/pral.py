@@ -63,10 +63,10 @@ class PRALLoop:
         ctx: dict = {}
         mem = self._lm.get("memory")
         if mem:
-            ctx["memories"] = mem.recall("recent context", k=5)
+            ctx["memories"] = mem.recall(limit=5)
         kw = self._lm.get("knowledge")
         if kw:
-            ctx["knowledge"] = kw.query("recent topic")
+            ctx["knowledge"] = kw.query("")
         collab = self._lm.get("collaboration")
         if collab:
             ctx["inbox"] = collab.check_inbox()
