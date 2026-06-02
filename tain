@@ -51,6 +51,33 @@ cmd="${1:-help}"
 [ $# -gt 0 ] && shift
 
 case "$cmd" in
+    run)        exec uv run python main.py $(printf ' --agent %s' "$@") ;;
+    new)        exec uv run python main.py --create-agent ;;
+    list)       exec uv run python main.py --list-agents ;;
+    state)      exec uv run python main.py --agent "$1" --state ;;
+    log)        exec uv run python main.py --agent "$1" --log ;;
+    export)     exec uv run python main.py --agent "$1" --export ;;
+    dialogue)   exec uv run python main.py --agent "$1" --dialogue ;;
+    webui)
+        port="${1:-8000}"
+        (sleep 1.5 && open "http://localhost:${port}" 2>/dev/null || \
+                       xdg-open "http://localhost:${port}" 2>/dev/null || true) &
+        exec uv run python main.py --webui --port "$port" ;;
+    daemon)
+        op="${1:?usage: tain daemon <start|stop|status> [name]}"
+        case "$op" in
+            start)   name="${2:?missing agent name}"; exec uv run python main.py --daemon start --agent "$name" ;;
+            stop)    exec uv run python main.py --daemon stop ;;
+            status)  exec uv run python main.py --daemon status ;;
+            *)       echo "✗ 未知 daemon 子命令：$op" >&2; exit 1 ;;
+        esac ;;
+    reset)      rm -rf .venv && echo "✓ 已重置 .venv" ;;
     help|-h|--help) print_help ;;
-    *)              print_help ;;
+    --agent|--create-agent|--list-agents|--webui|--daemon|--state|--log|--export)
+        exec uv run python main.py "$cmd" "$@" ;;
+    *)
+        echo "✗ 未知子命令：$cmd" >&2
+        echo "  运行 'tain help' 查看用法" >&2
+        exit 1
+        ;;
 esac
