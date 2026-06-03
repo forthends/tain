@@ -185,6 +185,7 @@ class ToolBootstrap:
         self._register_metrics()
         self._register_sub_agent()
         self._register_export()
+        self._register_test()
         self._register_knowledge()
 
     # ── Decision recording ──────────────────────────────────────────
@@ -231,13 +232,38 @@ class ToolBootstrap:
     # ── Tool forge ──────────────────────────────────────────────────
 
     def _register_forge(self) -> None:
-        def forge_tool(name: str, description: str, code: str, parameters: str = "{}") -> str:
+        def forge_tool(name: str, description: str, code: str, parameters: str = "{}", dependencies: str = "[]") -> str:
             """Create a new tool for yourself by writing Python code."""
             try:
                 params = json.loads(parameters) if isinstance(parameters, str) else parameters
             except json.JSONDecodeError:
                 params = {}
+
+            try:
+                deps = json.loads(dependencies) if isinstance(dependencies, str) else dependencies
+            except json.JSONDecodeError:
+                deps = []
+
             result = self.a.forge.forge(name, description, code, params)
+
+            # Resolve dependencies if forge succeeded and dependencies declared
+            if result.get("success") and deps:
+                if hasattr(self.a, 'dependency_manager') and self.a.dependency_manager:
+                    dep_result = self.a.dependency_manager.resolve(
+                        tool_name=name,
+                        packages=deps,
+                        reason=f"Tool '{name}' declares these dependencies",
+                        alternative_considered="",
+                    )
+                    result["dependencies"] = {
+                        "installed": dep_result.installed,
+                        "rejected": dep_result.rejected,
+                    }
+                    if dep_result.rejected:
+                        result["message"] += (
+                            f" | {len(dep_result.rejected)} package(s) not in allowlist. "
+                            f"Applications filed for review."
+                        )
 
             # Record lineage: tool forging event
             if self.lineage and result.get("success"):
@@ -260,6 +286,7 @@ class ToolBootstrap:
                 "description": {"type": "string", "description": "What the tool does.", "required": True},
                 "code": {"type": "string", "description": "Python code implementing the tool.", "required": True},
                 "parameters": {"type": "string", "description": "JSON schema of tool parameters.", "required": False},
+                "dependencies": {"type": "string", "description": "JSON array of pip package specs needed (e.g. ['requests>=2.28']).", "required": False},
             },
         )
 
@@ -831,6 +858,33 @@ class ToolBootstrap:
                 "validate": {"type": "boolean",
                              "description": "Whether to run validation after export (default: true).",
                              "required": False},
+            },
+        )
+
+    # ── Test tool (v0.6.0) ───────────────────────────────────────────
+
+    def _register_test(self) -> None:
+        """Register the run_test tool."""
+        from tain_agent.tools.primal import run_test as run_test_func
+
+        def run_test_tool(test_target: str, test_type: str = "function",
+                          test_code: str = "", timeout: int = 60) -> str:
+            """Test a tool in the sandbox environment."""
+            import json as _json
+            result = run_test_func(test_target=test_target, test_type=test_type,
+                                   test_code=test_code, timeout=timeout)
+            return _json.dumps(result, ensure_ascii=False)
+
+        self.a.tools.register(
+            "run_test", run_test_tool,
+            "Test a forged tool in the sandbox. Test types: "
+            "'function' (import + call main), 'pytest' (run test file), "
+            "'assert' (run assertion code). Use this to verify your tools work correctly.",
+            {
+                "test_target": {"type": "string", "description": "Name of the tool or test file to run.", "required": True},
+                "test_type": {"type": "string", "description": "Test mode: 'function', 'pytest', or 'assert'.", "required": False},
+                "test_code": {"type": "string", "description": "Tool source code (function/assert) or test file path (pytest).", "required": False},
+                "timeout": {"type": "integer", "description": "Max seconds (default 60).", "required": False},
             },
         )
 
