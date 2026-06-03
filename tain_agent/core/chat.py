@@ -5,6 +5,7 @@ import re
 import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from typing import AsyncGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +26,16 @@ class ChatEngine:
 
     async def run_turn(self, messages: list[dict],
                        cancel_event=None,
-                       max_tool_turns: int = 5) -> ChatTurn:
+                       max_tool_turns: int = 5) -> AsyncGenerator[dict, None]:
         system_prompt = self.build_system_prompt()
         tool_defs = self._build_tool_defs()
         text_parts: list[str] = []
         reasoning_text = ""
         total_tool_calls = 0
         all_results: list[dict] = []
+        turn_tools: list = []
+
+        yield {"type": "thinking"}
 
         for turn in range(max_tool_turns):
             if cancel_event and cancel_event.is_set():
@@ -71,6 +75,8 @@ class ChatEngine:
             if not turn_tools:
                 break
 
+            yield {"type": "tool_start", "tool_names": [tc.name for tc in turn_tools]}
+
             total_tool_calls += len(turn_tools)
             try:
                 results = self.agent._execute_tool_calls(turn_tools)
@@ -95,12 +101,12 @@ class ChatEngine:
             r'<[^>]*?tool_calls>.*?</[^>]*?tool_calls>', '',
             "".join(text_parts), flags=re.DOTALL).strip()
 
-        return ChatTurn(
+        yield {"type": "done", "turn": ChatTurn(
             text=clean or "[Tool processing — no text response]",
             tool_calls=turn_tools,
             tool_results=all_results,
             thinking=reasoning_text,
-        )
+        )}
 
     def build_system_prompt(self) -> str:
         agent = self.agent
