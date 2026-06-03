@@ -73,6 +73,7 @@ class ImprovementLoop:
         self._on_cycle_complete: Optional[Callable] = None
         self._on_gap_detected: Optional[Callable] = None
         self._code_generator: Optional[Callable] = None
+        self._forge_cycle = None  # Set via set_forge_cycle()
 
         self._load_state()
 
@@ -115,6 +116,10 @@ class ImprovementLoop:
 
     def set_code_generator(self, generator: Callable) -> None:
         self._code_generator = generator
+
+    def set_forge_cycle(self, forge_cycle) -> None:
+        """Inject ForgeCycle for autonomous code generation in improvement cycles."""
+        self._forge_cycle = forge_cycle
 
     def on_cycle_start(self, callback: Callable) -> None:
         self._on_cycle_start = callback
@@ -230,7 +235,7 @@ class ImprovementLoop:
         return True
 
     def _maybe_generate_fallback_code(self, pipeline_result, code: str, parameters: dict):
-        """Try built-in or external code generation if pipeline didn't pass."""
+        """Try ForgeCycle autonomous generation if pipeline didn't pass at forge stage."""
         if pipeline_result.overall_passed or code:
             return pipeline_result
 
@@ -238,12 +243,30 @@ class ImprovementLoop:
         if not spec:
             return pipeline_result
 
-        # Code generation is disabled — gaps are recorded in capability
-        # registry for human developers to address. No LLM or stub-generated
-        # code is auto-registered as a tool.
-        self._log_ungenerated_gap(spec)
-
-        return pipeline_result
+        # If ForgeCycle is available, attempt autonomous code generation
+        if self._forge_cycle and self._forge_cycle.remaining_quota > 0:
+            gap_spec = {
+                "capability_id": spec.capability_id,
+                "description": spec.description,
+            }
+            forge_result = self._forge_cycle.run(gap_spec)
+            if forge_result.success:
+                # Update the pipeline result to reflect successful forge
+                pipeline_result.overall_passed = True
+                pipeline_result.summary = forge_result.summary
+                # Add a stage reflecting the ForgeCycle result so the caller can inspect it
+                class _FakeStage:
+                    def to_dict(self):
+                        return {"stage": "forge_cycle", "passed": True,
+                                "summary": forge_result.summary}
+                pipeline_result.stages.append(_FakeStage())
+                return pipeline_result
+            else:
+                self._log_ungenerated_gap(spec)
+                return pipeline_result
+        else:
+            self._log_ungenerated_gap(spec)
+            return pipeline_result
 
     def _find_forge_stage_needing_code(self, pipeline_result) -> Optional[object]:
         for stage in pipeline_result.stages:
