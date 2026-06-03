@@ -34,22 +34,18 @@
                     {{ agent.name[:1].upper() }}
                 </div>
                 <div class="flex items-center gap-2 px-3 py-2 bg-canvas-soft border border-hairline rounded-lg">
-                    <template x-if="status === 'thinking'">
-                        <span class="flex gap-1">
-                            <span class="w-1.5 h-1.5 bg-ink rounded-full animate-bounce"></span>
-                            <span class="w-1.5 h-1.5 bg-ink rounded-full animate-bounce" style="animation-delay: 0.15s"></span>
-                            <span class="w-1.5 h-1.5 bg-ink rounded-full animate-bounce" style="animation-delay: 0.30s"></span>
-                        </span>
-                    </template>
-                    <template x-if="status === 'tool'">
-                        <svg class="w-3.5 h-3.5 text-charcoal animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                        </svg>
-                    </template>
+                    <span x-show="status === 'thinking'" class="flex gap-1">
+                        <span class="w-1.5 h-1.5 bg-ink rounded-full animate-bounce"></span>
+                        <span class="w-1.5 h-1.5 bg-ink rounded-full animate-bounce" style="animation-delay: 0.15s"></span>
+                        <span class="w-1.5 h-1.5 bg-ink rounded-full animate-bounce" style="animation-delay: 0.30s"></span>
+                    </span>
+                    <svg x-show="status === 'tool'" class="w-3.5 h-3.5 text-charcoal animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
                     <span class="text-xs text-charcoal font-medium">
-                        <template x-if="status === 'thinking'">Thinking...</template>
-                        <template x-if="status === 'tool'">Calling <span x-text="toolName"></span>...</template>
+                        <span x-show="status === 'thinking'">Thinking...</span>
+                        <span x-show="status === 'tool'">Calling <span x-text="toolName"></span>...</span>
                     </span>
                 </div>
             </div>
