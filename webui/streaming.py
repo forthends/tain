@@ -24,6 +24,16 @@ def cancel_chat_message(message_id: str) -> bool:
     return False
 
 
+def cancel_all_streams() -> int:
+    """Cancel all active chat streams. Returns the count of cancelled streams."""
+    count = 0
+    for event in _active_cancel_events.values():
+        if not event.is_set():
+            event.set()
+            count += 1
+    return count
+
+
 def _make_msg_id() -> str:
     return f"msg_{uuid.uuid4().hex[:12]}"
 
@@ -79,20 +89,28 @@ async def stream_chat_message(agent_name: str, user_content: str,
     }
     append_message(agent_name, user_msg)
 
-    turn = await engine.run_turn(messages, cancel_event)
-    if cancel_event and cancel_event.is_set():
-        cleanup_incomplete(messages)
-        yield {"cancelled": True}
-        return
+    async for event in engine.run_turn(messages, cancel_event):
+        etype = event.get("type", "")
+        if etype == "thinking":
+            yield {"status": "thinking"}
+        elif etype == "tool_start":
+            for tname in event.get("tool_names", []):
+                yield {"status": "tool", "tool_name": tname}
+        elif etype == "done":
+            turn = event["turn"]
+            if cancel_event and cancel_event.is_set():
+                cleanup_incomplete(messages)
+                yield {"cancelled": True}
+                return
 
-    if turn.text and turn.text != "[Tool processing — no text response]":
-        yield {"status": "text"}
-        for chunk in _chunk_text(turn.text):
-            yield {"text": chunk}
+            if turn.text and turn.text != "[Tool processing — no text response]":
+                yield {"status": "text"}
+                for chunk in _chunk_text(turn.text):
+                    yield {"text": chunk}
 
-    agent_msg = {
-        "message_id": msg_id, "from_agent": agent_name, "to_agent": "web_user",
-        "timestamp": _now_iso(), "content": turn.text, "reply_to": "", "message_type": "chat",
-    }
-    append_message(agent_name, agent_msg)
-    yield {"done": True, "message_id": msg_id}
+            agent_msg = {
+                "message_id": msg_id, "from_agent": agent_name, "to_agent": "web_user",
+                "timestamp": _now_iso(), "content": turn.text, "reply_to": "", "message_type": "chat",
+            }
+            append_message(agent_name, agent_msg)
+            yield {"done": True, "message_id": msg_id}
