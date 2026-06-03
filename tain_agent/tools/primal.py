@@ -392,6 +392,219 @@ def execute_code(code: str, timeout: int = 30) -> str:
         sys.stdout = old_stdout
 
 
+def _run_function_test(test_target: str, test_code: str,
+                       timeout: int, started_at: float) -> dict:
+    """Import the tool code and call main(), return result."""
+    import time as _time
+    from io import StringIO
+    import sys as _sys
+    import signal
+
+    old_stdout = _sys.stdout
+    _sys.stdout = StringIO()
+
+    # Timeout enforcement via SIGALRM (Unix only)
+    def _handle_timeout(signum, frame):
+        raise TimeoutError(f"Function test exceeded {timeout}s timeout.")
+
+    old_handler = None
+    old_alarm = 0
+    use_alarm = hasattr(signal, 'SIGALRM') and timeout > 0
+    if use_alarm:
+        old_handler = signal.signal(signal.SIGALRM, _handle_timeout)
+        old_alarm = signal.alarm(int(timeout) if timeout >= 1 else 1)
+
+    try:
+        ns = {}
+        exec(test_code, ns)
+        func = ns.get("main") or ns.get(test_target)
+        if func is None:
+            candidates = {k: v for k, v in ns.items()
+                          if callable(v) and not k.startswith("_") and not isinstance(v, type)}
+            if candidates:
+                func = list(candidates.values())[0]
+        if func is None or not callable(func):
+            return {
+                "passed": False, "total": 1, "failures": 1,
+                "errors": f"No callable function found. Defined: {list(ns.keys())}",
+                "output": _sys.stdout.getvalue(),
+                "duration_ms": (_time.monotonic() - started_at) * 1000,
+            }
+        output = func()
+        stdout_output = _sys.stdout.getvalue()
+        full_output = stdout_output + ("\n" + str(output) if output else "")
+        return {
+            "passed": True, "total": 1, "failures": 0,
+            "errors": "", "output": full_output.strip() or "(no output)",
+            "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+    except TimeoutError:
+        return {
+            "passed": False, "total": 1, "failures": 1,
+            "errors": f"Function test exceeded {timeout}s timeout.",
+            "output": _sys.stdout.getvalue(),
+            "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+    except Exception as e:
+        return {
+            "passed": False, "total": 1, "failures": 1,
+            "errors": f"{type(e).__name__}: {e}",
+            "output": _sys.stdout.getvalue(),
+            "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+    finally:
+        if use_alarm:
+            signal.alarm(0)
+            if old_handler is not None:
+                signal.signal(signal.SIGALRM, old_handler)
+        _sys.stdout = old_stdout
+
+
+def _run_assert_test(test_code: str, timeout: int, started_at: float) -> dict:
+    """Execute assertion code and return pass/fail."""
+    import time as _time
+    import signal
+
+    def _handle_timeout(signum, frame):
+        raise TimeoutError(f"Assert test exceeded {timeout}s timeout.")
+
+    old_handler = None
+    old_alarm = 0
+    use_alarm = hasattr(signal, 'SIGALRM') and timeout > 0
+    if use_alarm:
+        old_handler = signal.signal(signal.SIGALRM, _handle_timeout)
+        old_alarm = signal.alarm(int(timeout) if timeout >= 1 else 1)
+
+    try:
+        exec(test_code, {})
+        return {
+            "passed": True, "total": 1, "failures": 0,
+            "errors": "", "output": "All assertions passed.",
+            "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+    except TimeoutError:
+        return {
+            "passed": False, "total": 1, "failures": 1,
+            "errors": f"Assert test exceeded {timeout}s timeout.",
+            "output": "",
+            "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+    except AssertionError as e:
+        return {
+            "passed": False, "total": 1, "failures": 1,
+            "errors": f"AssertionError: {e}",
+            "output": "",
+            "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+    except Exception as e:
+        return {
+            "passed": False, "total": 1, "failures": 1,
+            "errors": f"{type(e).__name__}: {e}",
+            "output": "",
+            "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+    finally:
+        if use_alarm:
+            signal.alarm(0)
+            if old_handler is not None:
+                signal.signal(signal.SIGALRM, old_handler)
+
+
+def _run_pytest_test(test_target: str, test_code: str,
+                     timeout: int, started_at: float,
+                     workspace: "Path") -> dict:
+    """Run pytest against a test file in the workspace."""
+    import time as _time
+    import subprocess
+    import re
+
+    test_file = workspace / test_code.lstrip("/")
+    if not test_file.exists():
+        return {
+            "passed": False, "total": 0, "failures": 1,
+            "errors": f"Test file not found: {test_file}",
+            "output": "", "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+
+    venv_dir = workspace / ".forge_venv"
+    pytest_bin = venv_dir / "bin" / "pytest"
+    if not pytest_bin.exists():
+        return {
+            "passed": False, "total": 0, "failures": 1,
+            "errors": "pytest not installed in .forge_venv/. Install pytest via forge dependencies.",
+            "output": "", "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+
+    try:
+        proc = subprocess.run(
+            [str(pytest_bin), str(test_file), "-v"],
+            capture_output=True, text=True, timeout=timeout,
+            cwd=str(workspace),
+        )
+        output = proc.stdout + "\n" + proc.stderr
+        passed = proc.returncode == 0
+        total = 0
+        failures = 0
+        match = re.search(r'(\d+) passed', output)
+        if match:
+            total += int(match.group(1))
+        match = re.search(r'(\d+) failed', output)
+        if match:
+            failures = int(match.group(1))
+            total += failures
+        if total == 0:
+            total = 1 if passed else 0
+        return {
+            "passed": passed,
+            "total": total,
+            "failures": failures,
+            "errors": "" if passed else f"pytest exited with code {proc.returncode}",
+            "output": output[:5000],
+            "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "passed": False, "total": 0, "failures": 1,
+            "errors": f"pytest exceeded {timeout}s timeout.",
+            "output": "", "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+
+
+def run_test(test_target: str, test_type: str = "function",
+             test_code: str = "", timeout: int = 60) -> dict:
+    """Run a test against a tool in the sandboxed workspace.
+
+    Args:
+        test_target: Name of the tool or test to run.
+        test_type: "function" (import + call main), "pytest" (run pytest file),
+                   or "assert" (run assertion code).
+        test_code: Tool source code (function/assert mode) or test file path (pytest).
+        timeout: Max seconds before timeout (default 60).
+
+    Returns:
+        dict with keys: passed (bool), total (int), failures (int),
+             errors (str), output (str), duration_ms (float)
+    """
+    import time as _time
+    from pathlib import Path as _PathLibPath
+
+    started_at = _time.monotonic()
+    ws = _WORKSPACE_DIR.resolve() if _WORKSPACE_DIR else _PathLibPath.cwd()
+
+    if test_type == "function":
+        return _run_function_test(test_target, test_code, timeout, started_at)
+    elif test_type == "assert":
+        return _run_assert_test(test_code, timeout, started_at)
+    elif test_type == "pytest":
+        return _run_pytest_test(test_target, test_code, timeout, started_at, ws)
+    else:
+        return {
+            "passed": False, "total": 0, "failures": 1,
+            "errors": f"Unknown test_type: {test_type}. Use 'function', 'pytest', or 'assert'.",
+            "output": "", "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+
+
 def resolve_storage_path(content_type: str, filename: str) -> str:
     """Resolve a semantic content type + filename to a workspace path.
 
