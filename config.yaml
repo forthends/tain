@@ -97,6 +97,26 @@ drives:
     idle_pressure_rate: 0.10      # pressure increase per day of inactivity
     max_idle_pressure: 0.40       # cap for idle pressure
 
+# ── Forge Configuration ─────────────────────────────────────────────────
+# Controls autonomous tool forging behavior.
+forge:
+  # Packages the agent is allowed to install as tool dependencies.
+  # Packages not in this list generate an application report for human review.
+  allowed_packages:
+    - requests
+    - pandas
+    - numpy
+    - pytest
+    - beautifulsoup4
+    - matplotlib
+    - plotly
+    - scipy
+    - pillow
+    - httpx
+    - aiohttp
+  # Maximum autonomous forge cycles per agent session.
+  max_forges_per_session: 3
+
 # ── Phase 2: Evolution Metrics ──────────────────────────────────────
 # Quantitative self-evaluation system for tracking evolution quality.
 metrics:

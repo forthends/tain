@@ -73,6 +73,14 @@ class DrivesSchema(BaseModel):
     exploration: DrivesExplorationSchema = Field(default_factory=DrivesExplorationSchema)
 
 
+class ForgeConfigSchema(BaseModel):
+    allowed_packages: list[str] = Field(default=[
+        "requests", "pandas", "numpy", "pytest", "beautifulsoup4",
+        "matplotlib", "plotly", "scipy", "pillow", "httpx", "aiohttp",
+    ])
+    max_forges_per_session: int = 3
+
+
 class MetricsSchema(BaseModel):
     degradation_alert_threshold: float = 0.15
     auto_collect_on_report: bool = True
@@ -106,6 +114,7 @@ class AppConfig(BaseModel):
     exploration: ExplorationConfigSchema = Field(default_factory=ExplorationConfigSchema)
     diversity: DiversitySchema = Field(default_factory=DiversitySchema)
     drives: DrivesSchema = Field(default_factory=DrivesSchema)
+    forge: ForgeConfigSchema = Field(default_factory=ForgeConfigSchema)
     metrics: MetricsSchema = Field(default_factory=MetricsSchema)
     safety: SafetySchema = Field(default_factory=SafetySchema)
     logging: LoggingSchema = Field(default_factory=LoggingSchema)
