@@ -22,6 +22,8 @@ from tain_agent.evolution.pipeline import SelfImprovementPipeline
 from tain_agent.evolution.improvement_loop import ImprovementLoop
 from tain_agent.evolution.lineage import LineageTracker
 from tain_agent.evolution.reporter import EvolutionReporter
+from tain_agent.evolution.dependency_manager import DependencyManager
+from tain_agent.evolution.forge_cycle import ForgeCycle
 from tain_agent.core.cognitive_loop import CognitiveLoop
 from tain_agent.core.personality import Personality
 from tain_agent.core.drives import DriveSystem
@@ -87,6 +89,18 @@ class AgentSubsystemsMixin:
         self.tools = ToolRegistry()
         self.forge = ToolForge(self.tools, decision_log=self.decision_log,
                                workspace_dir=str(self._workspace_path))
+
+        # ── Dependency manager for forged tools ─────────────────────
+        forge_config = self.config.get("forge", {})
+        self.dependency_manager = DependencyManager(
+            workspace_dir=str(self._workspace_path),
+            allowed_packages=forge_config.get("allowed_packages", [
+                "requests", "pandas", "numpy", "pytest", "beautifulsoup4",
+                "matplotlib", "plotly", "scipy", "pillow", "httpx", "aiohttp",
+            ]),
+            decision_log=self.decision_log,
+        )
+
         self.goals = GoalSystem(memory=self.memory)
         self.self_modify = SelfModify(
             base_dir=str(self._workspace_path),
@@ -127,6 +141,20 @@ class AgentSubsystemsMixin:
         self.improvement_loop.configure(
             require_confirmation=False, auto_approve_safe=True
         )
+
+        # ── ForgeCycle — autonomous tool creation ────────────────────
+        forge_config = self.config.get("forge", {})
+        self.forge_cycle = ForgeCycle(
+            tool_forge=self.forge,
+            dependency_manager=self.dependency_manager,
+            capability_registry=self.capability,
+            decision_log=self.decision_log,
+            lineage_tracker=self.lineage,
+            memory=self.memory,
+            llm_backend=None,
+        )
+        self.forge_cycle._max_forges = forge_config.get("max_forges_per_session", 3)
+        self.improvement_loop.set_forge_cycle(self.forge_cycle)
 
         # ── PRAL Cognitive Loop (Phase 3 Architecture) ────────────────
         self.cognitive_loop = CognitiveLoop(
@@ -174,16 +202,18 @@ class AgentSubsystemsMixin:
             from tain_agent.core.llm_logger import LLMLogger
             self.llm_logger = LLMLogger(Path(self.log_dir))
             self.backend.set_logger(self.llm_logger)
+            if self.forge_cycle:
+                self.forge_cycle._llm_backend = self.backend
         else:
             api_key_env = self.config.get("llm", {}).get("api_key_env", "MINIMAX_API_KEY")
             print(f"⚠️  未设置 {api_key_env} 环境变量。Agent 将在无 LLM 状态下启动。")
             self.backend = None
             self.llm_logger = None
 
-        # LLM code generation is disabled — the improvement loop uses
-        # built-in stub generators only. New tools should be created by
-        # human developers, not by LLM self-modification.
+        # ForgeCycle is wired into the improvement loop — when a capability
+        # gap is detected, autonomous code generation + forge + test + register
+        # will be attempted. See tain_agent/evolution/forge_cycle.py.
 
-    # Code generation (LLM → tool) is intentionally disabled.
-    # Capability gaps are logged for human developers to address.
-    # See improvement_loop._log_ungenerated_gap().
+    # Code generation (LLM → tool) is enabled via ForgeCycle.
+    # The pipeline is: LLM generate → ToolSandbox forge → dep install → test → register.
+    # Safety: max 3 forges/session, AST+subprocess sandbox, allowlist-gated dependencies.
