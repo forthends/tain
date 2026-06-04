@@ -346,10 +346,21 @@ class MetricsCollector:
 
         # Fallback: scan forged_tools directories on filesystem
         if s.tool_total_count == 0:
-            for tools_dir in [
+            # Agent-specific workspaces: agent_workspace/<agent_name>/forged_tools/
+            workspace_root = self.base_dir / "agent_workspace"
+            candidate_dirs = []
+            if workspace_root.exists():
+                for agent_dir in workspace_root.iterdir():
+                    if agent_dir.is_dir():
+                        ft = agent_dir / "forged_tools"
+                        if ft.exists():
+                            candidate_dirs.append(ft)
+            # Also scan the project-level (non-agent-specific) and built-in
+            candidate_dirs.extend([
                 self.base_dir / "agent_workspace" / "forged_tools",
                 self.base_dir / "tain_agent" / "tools" / "forged",
-            ]:
+            ])
+            for tools_dir in candidate_dirs:
                 if tools_dir.exists():
                     py_files = [f for f in tools_dir.glob("*.py")
                                if not f.name.startswith("_")]
@@ -374,10 +385,19 @@ class MetricsCollector:
                 pass
 
         # Dead tool detection by file modification time (> 30 days)
-        forged_dirs = [
+        # Collect all possible forged_tools directories including agent-specific ones
+        wsr = self.base_dir / "agent_workspace"
+        forged_dirs = []
+        if wsr.exists():
+            for agent_dir in wsr.iterdir():
+                if agent_dir.is_dir():
+                    ft = agent_dir / "forged_tools"
+                    if ft.exists():
+                        forged_dirs.append(ft)
+        forged_dirs.extend([
             self.base_dir / "agent_workspace" / "forged_tools",
             self.base_dir / "tain_agent" / "tools" / "forged",
-        ]
+        ])
         now_ts = now()
         dead_count = 0
         for forged_dir in forged_dirs:
