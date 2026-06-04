@@ -322,6 +322,22 @@ class DriveSystem:
         """Return the name of the currently dominant drive."""
         return max(self.drives, key=self.drives.get)
 
+    def get_target_domain(self) -> str:
+        """Return a domain description for the currently dominant drive.
+
+        Used by agent loop to fill goal templates with drive-appropriate
+        target descriptions. The caller should refine this with specific
+        tool/module names from the capability registry.
+        """
+        dominant = max(self.drives, key=self.drives.get)
+        domains = {
+            "curiosity": "a new knowledge domain",
+            "mastery": "an existing tool or module",
+            "creation": "a capability gap that needs a new tool",
+            "conservation": "a system module that needs maintenance",
+        }
+        return domains.get(dominant, "an area worth attention")
+
     # ── Internal ────────────────────────────────────────────────────
 
     def _track_tool_type(self, tool_name: str) -> None:

@@ -362,11 +362,80 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
         # Periodic cognitive introspection
         self._maybe_introspect()
 
+        # Auto-goal generation from drive pressure
+        if self.cycle_count % 5 == 0:
+            self._maybe_auto_generate_goal()
+
         # Drive exploration prompt injection
         if self.cycle_count % 8 == 0 and hasattr(self, 'drive_system') and self.drive_system:
             prompt = self.drive_system.get_exploration_prompt()
             if prompt:
                 self.conversation.append("user", prompt)
+
+    def _maybe_auto_generate_goal(self) -> None:
+        """Generate a goal automatically when drive pressure is high and no active goals.
+
+        Bridge between DriveSystem (motivation) and GoalSystem (execution).
+        Only triggers when exploration_score > 0.7 and no goals are active.
+        """
+        if not hasattr(self, 'drive_system') or not self.drive_system:
+            return
+        if not hasattr(self, 'goals'):
+            return
+
+        exploration = self.drive_system.compute_exploration_score()
+        if exploration <= 0.7:
+            return
+
+        active = self.goals.list_active()
+        if active:
+            return
+
+        dominant = self.drive_system.dominate_drive()
+        domain = self.drive_system.get_target_domain()
+
+        templates = {
+            "curiosity": ("探索并了解 {domain} 的基本概念和应用",
+                         "产出至少一份知识摘要或理解 3+ 个核心概念"),
+            "mastery": ("深入优化 {domain} 的性能或代码质量",
+                       "代码变更通过测试，或性能指标有可测量提升"),
+            "creation": ("锻造一个新工具来填补 {domain}",
+                        "工具通过 forge -> test 闭环并被注册"),
+            "conservation": ("审查和整理 {domain} 的现有状态并产出审计报告",
+                           "产出一份结构化的审计报告或维护记录"),
+        }
+
+        desc_tpl, criteria = templates.get(dominant,
+            ("基于当前状态采取有意义的行动", "产出可验证的结果"))
+
+        description = desc_tpl.format(domain=domain)
+
+        try:
+            goal = self.goals.create_goal(description, criteria)
+
+            notification = (
+                f"[自主目标] 你的 {dominant} 驱动力高涨（探索分数 {exploration:.2f}），"
+                f"系统自动为你创建了一个目标：\n"
+                f"  -> {description}\n"
+                f"  成功标准：{criteria}\n"
+                f"你可以通过 set_goal 工具调整或替换这个目标。"
+            )
+            self.conversation.append("user", notification)
+
+            if hasattr(self, 'decision_log') and self.decision_log:
+                self.decision_log.record(
+                    context={"action": "auto_generate_goal", "drive": dominant},
+                    decision_type="auto_goal",
+                    options_considered=[{"option": "auto_generate_goal",
+                                         "drive": dominant}],
+                    chosen_option=goal.id,
+                    reasoning=f"Exploration score {exploration:.3f} > 0.7, "
+                              f"no active goals, dominant drive: {dominant}",
+                    expected_outcome=description,
+                    phase=getattr(self, 'phase', "work"),
+                )
+        except Exception:
+            pass
 
     # ─── Main Run Loop ───────────────────────────────────────────────
 
