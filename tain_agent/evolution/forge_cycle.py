@@ -20,6 +20,7 @@ class ForgeResult:
     dependencies_installed: list[str] = field(default_factory=list)
     test_result: Optional[dict] = None
     registered: bool = False
+    notification: str = ""
     summary: str = ""
 
 
@@ -148,6 +149,11 @@ class ForgeCycle:
             result.stage_results["register"] = {"passed": True, "output": "registered", "error": None}
             result.success = True
             result.summary = f"Tool '{tool_name}' forged, tested, and registered.{rejected_msg}"
+            result.notification = (
+                f"[工具注册] 新工具 '{tool_name}' 已锻造成功并通过测试，现已注册到工具注册表。"
+                f"你可以通过 list_available_tools 查看所有可用工具，"
+                f"或使用 describe_tool 查看 '{tool_name}' 的详细信息。"
+            )
         except Exception as e:
             result.stage_results["register"] = {"passed": False, "output": None, "error": str(e)}
             result.summary = f"Register failed: {e}{rejected_msg}"

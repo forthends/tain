@@ -257,11 +257,13 @@ class ImprovementLoop:
                 # Update the pipeline result to reflect successful forge
                 pipeline_result.overall_passed = True
                 pipeline_result.summary = forge_result.summary
+                pipeline_result.notification = forge_result.notification
                 # Add a stage reflecting the ForgeCycle result so the caller can inspect it
                 class _FakeStage:
                     def to_dict(self):
                         return {"stage": "forge_cycle", "passed": True,
-                                "summary": forge_result.summary}
+                                "summary": forge_result.summary,
+                                "notification": forge_result.notification}
                 pipeline_result.stages.append(_FakeStage())
                 return pipeline_result
             else:
