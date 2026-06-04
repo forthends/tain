@@ -593,7 +593,8 @@ class ToolBootstrap:
             """
             try:
                 from tain_agent.tools.forged.evolution_metrics import main as metrics_main
-                return metrics_main(action=action, version=version, compare_with=compare_with)
+                return metrics_main(action=action, version=version, compare_with=compare_with,
+                                   agent_name=self.a.agent_name)
             except ImportError as e:
                 return json.dumps({"status": "error", "message": f"Metrics unavailable: {e}"})
 
