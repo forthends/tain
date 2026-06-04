@@ -32,6 +32,9 @@ TRAIT_CATEGORIES = [
     "self_description",    # How the agent describes itself in its own words
     "relationship_stance", # How the agent relates to humans and other agents
     "growth_orientation",  # How the agent approaches its own evolution
+    "preferences",         # Tool and workflow preferences
+    "problem_solving",     # How the agent handles obstacles and errors
+    "coding_style",        # Programming style tendencies
 ]
 
 
@@ -68,6 +71,7 @@ class Personality:
         self._version = self.VERSION
         self._created_at = now().isoformat()
         self._evolution_log: list[dict] = []  # history of personality changes
+        self._autonomous_streak: int = 0
 
         # Load existing personality from memory if available
         self._load_from_memory()
