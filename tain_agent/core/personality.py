@@ -446,13 +446,70 @@ class Personality:
                          f"使用了内省工具", confidence=0.35)
             modified += 1
 
-        # Communication style from text patterns
+        # Error recovery: detect response to obstacles
+        error_keywords = ("error", "failed", "异常", "失败", "traceback", "exception")
+        has_error = any(kw in combined_text for kw in error_keywords)
+        if has_error:
+            if len(tool_calls) >= 2:
+                self.discover("problem_solving", "逆境坚持",
+                             "遇到错误后继续尝试不同工具", confidence=0.35)
+                modified += 1
+            elif len(tool_calls) == 1:
+                self.discover("problem_solving", "灵活应变",
+                             "遇到错误后调整策略", confidence=0.30)
+                modified += 1
+
+        # Coding style: detect from code generation outputs
+        code_tools = {"forge_tool", "execute_code"}
+        if any(t in code_tools for t in tool_calls) and combined_text:
+            has_class = "class " in combined_text
+            has_def = "def " in combined_text
+            if has_class:
+                self.discover("coding_style", "面向对象倾向",
+                             "生成的代码包含 class 定义", confidence=0.30)
+                modified += 1
+            elif has_def and not has_class:
+                self.discover("coding_style", "函数式倾向",
+                             "生成的代码以函数为主，无类定义", confidence=0.30)
+                modified += 1
+
+        # Learn-and-apply: exploration + production in same cycle
+        explore_tools = {"web_search", "read_file", "smart_read", "web_fetch",
+                         "explore_directory", "observe_environment"}
+        produce_tools = {"write_file", "forge_tool", "execute_code"}
+        has_explore = any(t in explore_tools for t in tool_calls)
+        has_produce = any(t in produce_tools for t in tool_calls)
+        if has_explore and has_produce:
+            self.discover("growth_orientation", "学以致用",
+                         "同一轮中先探索后产出", confidence=0.30)
+            modified += 1
+
+        # Autonomous initiative: proactive tools across multiple cycles
+        autonomous_tools = {"forge_tool", "set_goal", "write_file",
+                            "execute_code", "modify_self_file"}
+        is_autonomous = any(t in autonomous_tools for t in tool_calls)
+        if is_autonomous:
+            self._autonomous_streak += 1
+            if self._autonomous_streak >= 3:
+                self.discover("growth_orientation", "高度自主",
+                             f"连续 {self._autonomous_streak} 轮主动发起行动", confidence=0.35)
+                modified += 1
+        else:
+            self._autonomous_streak = 0
+
+        # Communication style from text patterns (bilingual)
         if combined_text:
-            if any(kw in combined_text for kw in ("我觉得", "我认为", "我的观点")):
+            direct_kw = ("我觉得", "我认为", "我的观点", "I think", "in my opinion",
+                         "I believe", "my view")
+            nuanced_kw = ("也许", "可能", "或许", "不一定", "maybe", "perhaps",
+                          "possibly", "not necessarily", "it depends")
+            if any(kw.lower() in combined_text.lower() if kw.isascii() else kw in combined_text
+                   for kw in direct_kw):
                 self.discover("communication_style", "直接表达",
                             "文本中频繁表达个人观点", confidence=0.3)
                 modified += 1
-            if any(kw in combined_text for kw in ("也许", "可能", "或许", "不一定")):
+            if any(kw.lower() in combined_text.lower() if kw.isascii() else kw in combined_text
+                   for kw in nuanced_kw):
                 self.discover("communication_style", "谨慎 nuanced",
                             "文本中表现出 nuanced 思考", confidence=0.3)
                 modified += 1

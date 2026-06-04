@@ -173,3 +173,157 @@ class TestAutoObserveToolAffinity:
         )
         trait = p._find_similar("preferences", "钟爱 read_file")
         assert trait is None
+
+
+class TestAutoObserveErrorRecovery:
+    def test_persistence_when_error_but_tools_continue(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["write_file", "execute_code", "read_file"],
+            text_outputs=["error: something went wrong", "trying again"]
+        )
+        trait = p._find_similar("problem_solving", "逆境坚持")
+        assert trait is not None
+        assert trait["confidence"] == 0.35
+
+    def test_adaptability_when_error_then_tool_switch(self):
+        p = Personality()
+        p.auto_observe(
+            tool_calls=["write_file"],
+            text_outputs=["write failed"]
+        )
+        modified = p.auto_observe(
+            tool_calls=["execute_code"],
+            text_outputs=["switching approach"]
+        )
+        trait = p._find_similar("problem_solving", "灵活应变")
+        assert trait is not None
+        assert trait["confidence"] == 0.30
+
+    def test_no_error_recovery_without_error_signal(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["read_file", "web_search"],
+            text_outputs=["everything is fine", "looking good"]
+        )
+        assert p._find_similar("problem_solving", "逆境坚持") is None
+        assert p._find_similar("problem_solving", "灵活应变") is None
+
+
+class TestAutoObserveCodingStyle:
+    def test_oop_style_when_class_in_output(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["forge_tool"],
+            text_outputs=["class MyTool:\n    def run(self): pass"]
+        )
+        trait = p._find_similar("coding_style", "面向对象倾向")
+        assert trait is not None
+        assert trait["confidence"] == 0.30
+
+    def test_functional_style_when_def_without_class(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["execute_code"],
+            text_outputs=["def main():\n    return 42"]
+        )
+        trait = p._find_similar("coding_style", "函数式倾向")
+        assert trait is not None
+        assert trait["confidence"] == 0.30
+
+    def test_no_coding_style_without_code_tool(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["read_file", "web_search"],
+            text_outputs=["def foo(): pass"]
+        )
+        assert p._find_similar("coding_style", "面向对象倾向") is None
+        assert p._find_similar("coding_style", "函数式倾向") is None
+
+
+class TestAutoObserveLearnApply:
+    def test_learn_and_apply_in_same_cycle(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["web_search", "read_file", "write_file"],
+            text_outputs=["researching then creating"]
+        )
+        trait = p._find_similar("growth_orientation", "学以致用")
+        assert trait is not None
+        assert trait["confidence"] == 0.30
+
+    def test_explore_only_no_learn_apply(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["web_search", "read_file"],
+            text_outputs=["just researching"]
+        )
+        assert p._find_similar("growth_orientation", "学以致用") is None
+
+    def test_create_only_no_learn_apply(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["write_file", "execute_code"],
+            text_outputs=["just creating"]
+        )
+        assert p._find_similar("growth_orientation", "学以致用") is None
+
+
+class TestAutoObserveAutonomy:
+    def test_autonomous_streak_detected_after_3_consecutive_rounds(self):
+        p = Personality()
+        autonomous_tools_sets = [
+            ["forge_tool"],
+            ["write_file"],
+            ["execute_code"],
+        ]
+        for tool_set in autonomous_tools_sets:
+            p.auto_observe(tool_calls=tool_set, text_outputs=[])
+        trait = p._find_similar("growth_orientation", "高度自主")
+        assert trait is not None
+        assert trait["confidence"] == 0.35
+
+    def test_autonomous_streak_resets_on_non_autonomous_tool(self):
+        p = Personality()
+        p.auto_observe(tool_calls=["forge_tool"], text_outputs=[])
+        p.auto_observe(tool_calls=["write_file"], text_outputs=[])
+        p.auto_observe(tool_calls=["read_file"], text_outputs=[])
+        trait = p._find_similar("growth_orientation", "高度自主")
+        assert trait is None
+        assert p._autonomous_streak == 0
+
+    def test_set_goal_counts_as_autonomous(self):
+        p = Personality()
+        for _ in range(3):
+            p.auto_observe(tool_calls=["set_goal"], text_outputs=[])
+        trait = p._find_similar("growth_orientation", "高度自主")
+        assert trait is not None
+
+
+class TestAutoObserveBilingual:
+    def test_english_direct_expression(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["read_file"],
+            text_outputs=["I think this is correct"]
+        )
+        trait = p._find_similar("communication_style", "直接表达")
+        assert trait is not None
+
+    def test_english_nuanced_expression(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["read_file"],
+            text_outputs=["maybe we should reconsider", "perhaps not"]
+        )
+        trait = p._find_similar("communication_style", "谨慎 nuanced")
+        assert trait is not None
+
+    def test_chinese_still_works(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["read_file"],
+            text_outputs=["我认为这个方案可行", "也许有更好的方式"]
+        )
+        assert p._find_similar("communication_style", "直接表达") is not None
+        assert p._find_similar("communication_style", "谨慎 nuanced") is not None
