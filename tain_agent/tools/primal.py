@@ -689,12 +689,16 @@ def _get_notes_path() -> Path:
     return memory_dir / _NOTES_FILENAME
 
 
-def remember_note(category: str, content: str) -> dict:
+def remember_note(category: str = "", content: str = "", **kwargs) -> dict:
     """Record a note to persistent memory.
 
     Notes are stored as JSONL entries in the agent's workspace memory directory.
     Use this to save important discoveries, patterns, or user preferences
     that should persist across sessions.
+
+    Accepts flexible parameter formats to be robust against LLM variations:
+      - Flat: {\"category\": \"...\", \"content\": \"...\"}
+      - Keyword: category=\"...\", content=\"...\"
 
     Args:
         category: Category label (e.g. 'discovery', 'user_preference', 'pattern', 'reflection').
@@ -705,10 +709,33 @@ def remember_note(category: str, content: str) -> dict:
     """
     import json as _json
 
+    # Handle nested/wrapped formats that LLMs sometimes produce
+    if not category and not content:
+        for wrapper_key in ("note", "params", "arguments", "object"):
+            if wrapper_key in kwargs and isinstance(kwargs[wrapper_key], dict):
+                inner = kwargs[wrapper_key]
+                category = str(inner.get("category", inner.get("cat", "")))
+                content = str(inner.get("content", inner.get("text", inner.get("body", ""))))
+                break
+
+    # Still empty? Try kwargs directly
+    if not category:
+        category = str(kwargs.get("category", kwargs.get("cat", "")))
+    if not content:
+        content = str(kwargs.get("content", kwargs.get("text", kwargs.get("body", ""))))
+
+    category = category.strip().lower()
+    content = content.strip()
+
+    if not category:
+        return {"status": "error", "error": "category is required", "hint": "Provide a category like 'discovery', 'user_preference', 'pattern', 'reflection', 'idea', 'decision', 'milestone'."}
+    if not content:
+        return {"status": "error", "error": "content is required", "hint": "Provide the note content to save."}
+
     note = {
         "timestamp": now().isoformat(),
-        "category": category.strip().lower(),
-        "content": content.strip(),
+        "category": category,
+        "content": content,
     }
 
     notes_path = _get_notes_path()
