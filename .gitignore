@@ -67,3 +67,6 @@ webui/node_modules/
 docs/superpowers/
 docs/archived/
 docs/report/
+
+# Agent runtime artifacts
+agent_notes.jsonl
