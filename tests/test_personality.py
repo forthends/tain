@@ -129,3 +129,47 @@ class TestPersonalityVersioning:
         p.discover("values", "test", "")
         assert len(p._evolution_log) >= 1
         assert p._evolution_log[-1]["action"] == "discovered"
+
+
+class TestAutoObserveToolAffinity:
+    def test_detects_tool_affinity_when_same_tool_used_3_times(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["read_file", "read_file", "read_file"],
+            text_outputs=[]
+        )
+        trait = p._find_similar("preferences", "钟爱 read_file")
+        assert trait is not None
+        assert trait["confidence"] == 0.30
+        assert modified >= 1
+
+    def test_no_affinity_when_tools_varied(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["read_file", "web_search", "write_file"],
+            text_outputs=[]
+        )
+        trait = p._find_similar("preferences", "钟爱 read_file")
+        assert trait is None
+
+    def test_affinity_reinforces_on_repeat(self):
+        p = Personality()
+        p.auto_observe(
+            tool_calls=["read_file", "read_file", "read_file"],
+            text_outputs=[]
+        )
+        p.auto_observe(
+            tool_calls=["read_file", "read_file", "read_file"],
+            text_outputs=[]
+        )
+        trait = p._find_similar("preferences", "钟爱 read_file")
+        assert trait["observations"] >= 2
+
+    def test_affinity_requires_3_same_tool(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["read_file", "read_file"],
+            text_outputs=[]
+        )
+        trait = p._find_similar("preferences", "钟爱 read_file")
+        assert trait is None

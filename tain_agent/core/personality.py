@@ -408,6 +408,15 @@ class Personality:
         modified = 0
         combined_text = " ".join(text_outputs).lower()
 
+        # Tool affinity: same tool used 3+ times in one cycle
+        from collections import Counter
+        tool_counts = Counter(tool_calls)
+        for tool_name, count in tool_counts.items():
+            if count >= 3:
+                self.discover("preferences", f"钟爱 {tool_name}",
+                             f"单轮内调用 {tool_name} {count} 次", confidence=0.30)
+                modified += 1
+
         # Curiosity: using read/search/explore tools
         curiosity_tools = {"web_search", "web_fetch", "read_file", "smart_read",
                           "explore_directory", "observe_environment", "wikipedia"}
