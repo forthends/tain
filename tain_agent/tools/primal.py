@@ -295,8 +295,15 @@ def execute_code(code: str, timeout: int = 30) -> str:
     def _sandboxed_import(name, *args, **kwargs):
         if name in _STDLIB_WHITELIST or name.startswith("tain_agent."):
             return _original_import(name, *args, **kwargs)
+        hint = ""
+        if name == "os":
+            hint = " Use 'pathlib.Path' instead of 'os.path' for file operations."
+        elif name == "sys":
+            hint = " Use 'pathlib' and environment-agnostic patterns instead."
+        elif name in ("subprocess", "shutil"):
+            hint = " Subprocess and shell operations are not available in the sandbox."
         raise ImportError(
-            f"Module '{name}' is not in the execute_code whitelist. "
+            f"Module '{name}' is not in the execute_code whitelist.{hint}\n"
             f"Allowed: {sorted(_STDLIB_WHITELIST)}"
         )
 
