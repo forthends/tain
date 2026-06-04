@@ -1,5 +1,6 @@
 """Web UI for Tain Agent Framework — FastAPI application."""
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -10,8 +11,16 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    from webui.streaming import cancel_all_streams
+    cancel_all_streams()
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="Tain Agent Framework — Web UI", version=__version__)
+    app = FastAPI(title="Tain Agent Framework — Web UI", version=__version__,
+                  lifespan=lifespan)
 
     # Security middleware
     from webui.auth import APIKeyMiddleware

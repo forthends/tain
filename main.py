@@ -231,7 +231,8 @@ def main():
         app = create_app()
         print(f"\n  Tain Agent Framework Web UI v0.4.1")
         print(f"  → http://127.0.0.1:{args.port}\n")
-        uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")
+        uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info",
+                    timeout_graceful_shutdown=3)
         return
 
     # ── Factory (for listing, creation) ─────────────────────────────
