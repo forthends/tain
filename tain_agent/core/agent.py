@@ -35,9 +35,11 @@ warnings.warn(
     DeprecationWarning, stacklevel=2,
 )
 
+import json
 import logging
 import os
 import time
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +185,10 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
         """PRAL Act: execute tool calls, append results, track actions."""
         text_parts = llm_response.text_blocks
         tool_use_blocks = llm_response.tool_calls
+
+        # Track last action time for daemon idle timeout
+        if tool_use_blocks:
+            self._last_action_at = time.time()
 
         if text_parts:
             thought = "\n".join(text_parts)
@@ -461,9 +467,39 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
         logger.info("Agent: %s, Model: %s, Phase: %s", self.agent_name, self.model, self.phase)
 
         initial_message = self._build_initial_message()
+
+        # Resume context from previous daemon session
+        daemon_config = self.config.get("daemon", {})
+        if daemon_config.get("resume_context", False):
+            ctx_path = Path("agent_workspace/state/conversation_context.json")
+            if ctx_path.exists():
+                try:
+                    ctx = json.loads(ctx_path.read_text())
+                    resume_msg = (
+                        f"[上下文恢复] 你上次运行到第 {ctx.get('cycle_count', 0)} 轮，"
+                        f"阶段: {ctx.get('phase', 'explore')}。"
+                        f"上次目标: {', '.join(ctx.get('last_goals', [])) or '无'}。"
+                        f"请继续你的工作。"
+                    )
+                    initial_message = initial_message + "\n\n" + resume_msg
+                except Exception:
+                    pass
+
         self.conversation.append("user", initial_message)
+        self._last_action_at = time.time()
 
         while self._running:
+            # Idle timeout check (daemon mode)
+            daemon_config = self.config.get("daemon", {})
+            idle_timeout = daemon_config.get("idle_timeout", 0)
+            if idle_timeout > 0:
+                elapsed = time.time() - self._last_action_at
+                if elapsed >= idle_timeout:
+                    logger.info("Idle timeout reached (%.0fs), exiting for guardian restart", elapsed)
+                    self._save_conversation_context()
+                    self._running = False
+                    continue
+
             self.cycle_count += 1
             max_cycles = self.MAX_CYCLES.get(self.phase, 50)
 
@@ -489,6 +525,19 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
         return self._rate_limit_exit_code
 
     # ── Lifecycle ────────────────────────────────────────────────────
+
+    def _save_conversation_context(self) -> None:
+        """Save conversation summary for daemon resume."""
+        ctx_path = Path("agent_workspace/state/conversation_context.json")
+        ctx_path.parent.mkdir(parents=True, exist_ok=True)
+        summary = {
+            "cycle_count": self.cycle_count,
+            "phase": getattr(self, 'phase', 'explore'),
+            "last_goals": [g.description for g in self.goals.list_active()]
+                if hasattr(self, 'goals') else [],
+            "saved_at": now().isoformat(),
+        }
+        ctx_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2))
 
     def stop(self) -> None:
         """Gracefully stop the agent. Flushes buffers, saves checkpoint and phase."""
