@@ -641,8 +641,38 @@ def list_available_tools(tool_registry) -> str:
     tools = tool_registry.list_tools()
     lines = [f"Available tools ({len(tools)}):"]
     for name, info in tools.items():
-        lines.append(f"  • {name}: {info['description']}")
+        lines.append(f"  - {name}: {info['description']}")
     return "\n".join(lines)
+
+
+def describe_tool(tool_registry, tool_name: str) -> str:
+    """Get detailed information about a specific tool.
+
+    Args:
+        tool_registry: ToolRegistry instance.
+        tool_name: Name of the tool to describe.
+
+    Returns:
+        Formatted string with tool name, description, parameters, and readonly status.
+    """
+    tools = tool_registry.list_tools()
+    if tool_name not in tools:
+        return f"Tool '{tool_name}' not found. Use list_available_tools to see all tools."
+    info = tools[tool_name]
+    params = info.get("parameters", {})
+    param_lines = []
+    if params:
+        for pname, pspec in params.items():
+            req = "(required)" if pspec.get("required") else "(optional)"
+            param_lines.append(f"    - {pname} ({pspec.get('type', 'any')}) {req}: {pspec.get('description', '')}")
+    param_str = "\n".join(param_lines) if param_lines else "    (no parameters)"
+    readonly = "yes" if info.get("is_readonly") else "no"
+    return (
+        f"Tool: {tool_name}\n"
+        f"Description: {info['description']}\n"
+        f"Parameters:\n{param_str}\n"
+        f"Read-only: {readonly}"
+    )
 
 
 # ─── Memory note tools ────────────────────────────────────────────────────
@@ -855,4 +885,16 @@ def register_primal_tools(registry, workspace_dir: str = None) -> None:
                 "required": False,
             },
         },
+    )
+    # Tool discovery — let agent query its own capabilities at runtime
+    registry.register(
+        "list_available_tools", lambda **kw: list_available_tools(registry),
+        "List all tools currently available to you. Use this when you need "
+        "to know what capabilities you have at runtime.",
+    )
+    registry.register(
+        "describe_tool", lambda tool_name, **kw: describe_tool(registry, tool_name),
+        "Get detailed information about a specific tool including its parameters "
+        "and whether it is read-only.",
+        {"tool_name": {"type": "string", "description": "Name of the tool to describe.", "required": True}},
     )
