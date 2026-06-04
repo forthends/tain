@@ -148,3 +148,15 @@ logging:
   memory_file: "memory.json"
   checkpoint_file: "conversation_checkpoint.json"
   lineage_file: "lineage.jsonl"
+
+# ── Daemon Configuration ────────────────────────────────────────────────
+# Controls agent behavior when running under the guardian process supervisor.
+daemon:
+  # Exit after this many seconds of inactivity (0 = never exit).
+  idle_timeout: 3600
+  # Seconds between auto-restarts when idle_timeout triggers exit (0 = no auto-restart).
+  wake_interval: 0
+  # Start a lightweight HTTP health endpoint on the given port (0 = disabled).
+  health_port: 0
+  # On restart, inject previous conversation summary into initial message.
+  resume_context: true
