@@ -135,7 +135,7 @@ class AgentSubsystemsMixin:
         self.improvement_loop = ImprovementLoop(
             pipeline=self.pipeline, capability_registry=self.capability,
             decision_log=self.decision_log, memory=self.memory,
-            tool_registry=self.tools,
+            tool_registry=self.tools, goal_system=self.goals,
         )
         # Enable autonomous improvement — auto-approve safe changes
         self.improvement_loop.configure(

@@ -31,12 +31,13 @@ class ImprovementLoop:
     """Cyclic scheduler for continuous self-improvement."""
 
     def __init__(self, pipeline=None, capability_registry=None, decision_log=None,
-                 memory=None, tool_registry=None):
+                 memory=None, tool_registry=None, goal_system=None):
         self._pipeline = pipeline
         self._capability_registry = capability_registry
         self._decision_log = decision_log
         self._memory = memory
         self._tool_registry = tool_registry
+        self._goal_system = goal_system
 
         self.min_interval_seconds = 300
         self.max_improvements_per_session = 10
@@ -45,12 +46,14 @@ class ImprovementLoop:
 
         self.trigger_config = {
             "min_trigger_score": 0.01,
-            "capability_gap": {"enabled": True,  "threshold": 0.0, "weight": 0.10},
-            "code_health":    {"enabled": True,  "threshold": 0.50, "weight": 0.25},
-            "knowledge_fresh": {"enabled": True, "threshold": 0.30, "weight": 0.25},
-            "tool_fitness":   {"enabled": True,  "threshold": 0.10, "weight": 0.15},
-            "tool_dedup":     {"enabled": True,  "threshold": 0.40, "weight": 0.10},
-            "subgraph_balance": {"enabled": True, "threshold": 0.30, "weight": 0.15},
+            "capability_gap":   {"enabled": True, "threshold": 0.0,  "weight": 0.08},
+            "code_health":      {"enabled": True, "threshold": 0.50, "weight": 0.20},
+            "knowledge_fresh":  {"enabled": True, "threshold": 0.30, "weight": 0.20},
+            "tool_fitness":     {"enabled": True, "threshold": 0.10, "weight": 0.12},
+            "tool_dedup":       {"enabled": True, "threshold": 0.40, "weight": 0.08},
+            "subgraph_balance": {"enabled": True, "threshold": 0.30, "weight": 0.12},
+            "task_completion":  {"enabled": True, "threshold": 0.30, "weight": 0.15},
+            "goal_achievement": {"enabled": True, "threshold": 0.30, "weight": 0.10},
         }
         self._last_trigger_scores: dict = {}
         self._last_triggered_by: Optional[str] = None
@@ -601,12 +604,51 @@ class ImprovementLoop:
             "tool_fitness": self._eval_tool_fitness,
             "tool_dedup": self._eval_tool_dedup,
             "subgraph_balance": self._eval_subgraph_balance,
+            "task_completion": self._eval_task_completion,
+            "goal_achievement": self._eval_goal_achievement,
         }
         evaluator = evaluators.get(dim_name)
         if not evaluator:
             return 0.0
         score = evaluator(threshold)
         return max(0.0, min(1.0, score))
+
+    def _eval_task_completion(self, threshold: float) -> float:
+        """Evaluate task completion rate from decision log.
+
+        Looks at recent task_outcome entries. High failure rate → high score.
+        """
+        if not self._decision_log:
+            return 0.0
+        try:
+            all_entries = self._decision_log.read_all()
+            task_entries = [e for e in all_entries
+                           if e.get("decision_type") == "task_outcome"]
+            recent = task_entries[-20:]
+            if not recent:
+                return 0.0
+            failures = sum(1 for e in recent
+                          if e.get("actual_outcome") in ("failure", "abandoned", "blocked"))
+            return round(failures / len(recent), 4)
+        except Exception:
+            return 0.0
+
+    def _eval_goal_achievement(self, threshold: float) -> float:
+        """Evaluate goal achievement rate from GoalSystem.
+
+        High proportion of abandoned/blocked goals → high score (needs improvement).
+        """
+        if not self._goal_system:
+            return 0.0
+        try:
+            all_goals = self._goal_system.list_all()
+            if not all_goals:
+                return 0.0
+            abandoned_or_blocked = sum(1 for g in all_goals
+                                       if g.status in ("abandoned", "blocked"))
+            return round(abandoned_or_blocked / len(all_goals), 4)
+        except Exception:
+            return 0.0
 
     def _reinforce_personality(self) -> dict:
         """Reinforce discovered personality traits after each improvement cycle.
