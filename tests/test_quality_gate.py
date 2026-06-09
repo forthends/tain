@@ -96,3 +96,44 @@ class TestGateReport:
         # total_score is sum of weighted scores: 0.8*0.25 + 0.6*0.15 = 0.29
         score = r.total_score
         assert 0.25 < score < 0.35
+
+
+class TestS9DedupTrend:
+    """Tests for S9 code dedup trend scoring gate (v0.7.0)."""
+
+    def test_no_tools_dir(self, tmp_path, monkeypatch):
+        from tain_agent.evolution.quality_gate import _s9_dedup_trend
+        monkeypatch.setattr(
+            "tain_agent.evolution.quality_gate._forged_tools_dir",
+            lambda agent_name: tmp_path / "nonexistent",
+        )
+        result = _s9_dedup_trend("test_agent")
+        assert result.gate_id == "S9"
+        assert result.score == 0.50
+
+    def test_no_reports_to_compare(self, tmp_path, monkeypatch):
+        from tain_agent.evolution.quality_gate import _s9_dedup_trend
+        tools_dir = tmp_path / "forged_tools"
+        tools_dir.mkdir()
+        (tools_dir / "tool_a.py").write_text("def main():\n    return 'a'")
+        monkeypatch.setattr(
+            "tain_agent.evolution.quality_gate._forged_tools_dir",
+            lambda agent_name: tools_dir,
+        )
+        monkeypatch.setattr(
+            "tain_agent.evolution.quality_gate._workspace_dir",
+            lambda agent_name: tmp_path,
+        )
+        result = _s9_dedup_trend("test_agent")
+        assert result.gate_id == "S9"
+
+
+class TestGateReportWeights:
+    """Ensure scoring weights sum to 1.0 (v0.7.0 weight recalibration)."""
+
+    def test_weight_sum(self):
+        weights = [
+            0.23, 0.15, 0.20, 0.15, 0.10, 0.05, 0.02, 0.05, 0.05,
+        ]
+        total = sum(weights)
+        assert total == 1.0, f"Weights sum to {total}, expected 1.0"

@@ -5,7 +5,7 @@ Evaluates whether an evolved agent meets the minimum standard to
 operate as an independent executable. Two-tier assessment:
 
   Hard Gates (7): all must PASS — basic viability conditions.
-  Scoring Gates (8): weighted sum must be ≥ 0.80 — quality dimensions.
+  Scoring Gates (9): weighted sum must be ≥ 0.80 — quality dimensions.
 
 Design: Phase 3 §4.
 """
@@ -569,14 +569,14 @@ def _h7_version_tagged(agent_name: str = "") -> GateResult:
 # ─── Scoring Gates ─────────────────────────────────────────────────────
 
 def _s1_tool_success_rate(agent=None) -> ScoredResult:
-    """S1 (0.25): Framework-measured tool execution success rate.
+    """S1 (0.23): Framework-measured tool execution success rate.
 
     Reads from cognitive loop telemetry — no LLM involvement.
     Measures how reliably the agent's tools execute successfully.
     """
     if agent is None:
         return ScoredResult(
-            "S1", "Tool Success Rate", 0.50, 0.25,
+            "S1", "Tool Success Rate", 0.50, 0.23,
             "No agent available",
             {"status": "no_agent"},
         )
@@ -587,7 +587,7 @@ def _s1_tool_success_rate(agent=None) -> ScoredResult:
             rates = cognitive._tool_success_rates
             if not rates:
                 return ScoredResult(
-                    "S1", "Tool Success Rate", 0.50, 0.25,
+                    "S1", "Tool Success Rate", 0.50, 0.23,
                     "No tool execution data yet",
                     {"tools_measured": 0},
                 )
@@ -595,12 +595,12 @@ def _s1_tool_success_rate(agent=None) -> ScoredResult:
             total_successes = sum(s for s, _ in rates.values())
             total_calls = sum(t for _, t in rates.values())
             if total_calls == 0:
-                return ScoredResult("S1", "Tool Success Rate", 0.50, 0.25,
+                return ScoredResult("S1", "Tool Success Rate", 0.50, 0.23,
                                    "No tool calls recorded")
 
             avg_rate = total_successes / total_calls
             return ScoredResult(
-                "S1", "Tool Success Rate", round(avg_rate, 3), 0.25,
+                "S1", "Tool Success Rate", round(avg_rate, 3), 0.23,
                 f"{total_successes}/{total_calls} calls succeeded ({avg_rate:.1%})",
                 {
                     "tools_measured": len(rates),
@@ -610,11 +610,11 @@ def _s1_tool_success_rate(agent=None) -> ScoredResult:
                 },
             )
 
-        return ScoredResult("S1", "Tool Success Rate", 0.50, 0.25,
+        return ScoredResult("S1", "Tool Success Rate", 0.50, 0.23,
                            "No cognitive loop telemetry available",
                            {"status": "no_data"})
     except Exception as e:
-        return ScoredResult("S1", "Tool Success Rate", 0.50, 0.25,
+        return ScoredResult("S1", "Tool Success Rate", 0.50, 0.23,
                            f"Error reading telemetry: {e}")
 
 
@@ -864,23 +864,23 @@ def _s6_knowledge_freshness() -> ScoredResult:
 
 
 def _s7_drive_integrity(agent_name: str = "") -> ScoredResult:
-    """S7 (0.05): All 4 drives non-zero, no degradation across last 3 snapshots."""
+    """S7 (0.02): All 4 drives non-zero, no degradation across last 3 snapshots."""
     ws = _workspace_dir(agent_name)
     if ws is None:
-        return ScoredResult("S7", "Drive Integrity", 0.50, 0.05,
+        return ScoredResult("S7", "Drive Integrity", 0.50, 0.02,
                             "No workspace — cannot assess drives")
 
     snapshots_dir = ws / "state" / "metrics_snapshots"
     if not snapshots_dir.exists():
         snapshots_dir = _project_root() / "tain_agent" / "state" / "metrics_snapshots"
         if not snapshots_dir.exists():
-            return ScoredResult("S7", "Drive Integrity", 0.50, 0.05,
+            return ScoredResult("S7", "Drive Integrity", 0.50, 0.02,
                                 "No metrics snapshots found",
                                 {"status": "no_data"})
 
     snapshot_files = sorted(snapshots_dir.glob("*.json"))
     if len(snapshot_files) < 2:
-        return ScoredResult("S7", "Drive Integrity", 0.60, 0.05,
+        return ScoredResult("S7", "Drive Integrity", 0.60, 0.02,
                             f"Only {len(snapshot_files)} snapshot(s) — need ≥ 3",
                             {"snapshots": len(snapshot_files)})
 
@@ -895,7 +895,7 @@ def _s7_drive_integrity(agent_name: str = "") -> ScoredResult:
             pass
 
     if len(drives_history) < 2:
-        return ScoredResult("S7", "Drive Integrity", 0.60, 0.05,
+        return ScoredResult("S7", "Drive Integrity", 0.60, 0.02,
                             "Could not parse drive snapshots")
 
     drive_names = ["curiosity", "mastery", "creation", "conservation"]
@@ -924,7 +924,7 @@ def _s7_drive_integrity(agent_name: str = "") -> ScoredResult:
     score = max(0.0, score)
 
     return ScoredResult(
-        "S7", "Drive Integrity", round(score, 3), 0.05,
+        "S7", "Drive Integrity", round(score, 3), 0.02,
         f"Non-zero: {all_nonzero}, Degrading: {degrading or 'none'}",
         {"all_nonzero": all_nonzero, "degrading": degrading},
     )
@@ -958,6 +958,84 @@ def _s8_external_feedback() -> ScoredResult:
         "S8", "External Feedback", round(score, 3), 0.05,
         f"{feedback_count} feedback event(s) found",
         {"feedback_events": feedback_count, "threshold": 1},
+    )
+
+
+def _s9_dedup_trend(agent_name: str = "") -> ScoredResult:
+    """S9 (0.05): Code dedup ratio trending positive.
+
+    Compares forged_tools file count between the two most recent
+    evolution milestones. Rewards file count reduction (dedup/cleanup)
+    while penalizing growth without corresponding capability expansion.
+    """
+    tools_dir = _forged_tools_dir(agent_name)
+    if not tools_dir.exists():
+        return ScoredResult("S9", "Code Dedup Trend", 0.50, 0.05,
+                           "No forged tools directory found",
+                           {"status": "no_tools_dir"})
+
+    py_files = [f for f in sorted(tools_dir.glob("*.py"))
+                if not f.name.startswith("_") and f.name != "smart_improve.py"]
+    current_count = len(py_files)
+
+    ws = _workspace_dir(agent_name)
+    if ws is None:
+        return ScoredResult("S9", "Code Dedup Trend", 0.50, 0.05,
+                           "No workspace — cannot compare milestones",
+                           {"current_count": current_count})
+
+    reports_dir = ws / "reports"
+    if not reports_dir.exists():
+        if agent_name:
+            alt_reports = _project_root() / "agent_workspace" / agent_name / "reports"
+            if alt_reports.exists():
+                reports_dir = alt_reports
+
+    if not reports_dir or not reports_dir.exists():
+        return ScoredResult("S9", "Code Dedup Trend", 0.50, 0.05,
+                           "No evolution reports to compare",
+                           {"current_count": current_count})
+
+    report_files = sorted(reports_dir.glob("*.md"))
+    if len(report_files) < 2:
+        return ScoredResult("S9", "Code Dedup Trend", 0.50, 0.05,
+                           "Need >= 2 evolution reports to establish trend",
+                           {"current_count": current_count, "reports_found": len(report_files)})
+
+    import re as _re
+    tool_counts = []
+    for rf in report_files[-2:]:
+        try:
+            text = rf.read_text(encoding="utf-8")
+            m = _re.search(r'(?:Forged tools|锻造工具)[:\s]*(\d+)', text)
+            if m:
+                tool_counts.append(int(m.group(1)))
+        except (IOError, OSError):
+            pass
+
+    if len(tool_counts) < 2:
+        return ScoredResult("S9", "Code Dedup Trend", 0.50, 0.05,
+                           "Could not extract tool counts from reports",
+                           {"current_count": current_count})
+
+    prev_count, latest_count = tool_counts
+    delta = current_count - latest_count
+
+    if delta < 0:
+        score = min(1.0, 0.8 + abs(delta) * 0.1)
+        detail = f"Tool count decreased by {abs(delta)} ({latest_count} -> {current_count}) — dedup positive"
+    elif delta == 0:
+        score = 0.70
+        detail = f"Tool count stable at {current_count} — no new bloat detected"
+    else:
+        score = max(0.0, 0.5 - delta * 0.15)
+        detail = f"Tool count increased by {delta} ({latest_count} -> {current_count}) — monitor for bloat"
+
+    return ScoredResult(
+        "S9", "Code Dedup Trend", round(score, 3), 0.05,
+        detail,
+        {"prev_report_count": latest_count, "current_count": current_count,
+         "delta": delta},
     )
 
 
@@ -1006,6 +1084,8 @@ class ExportQualityGate:
             ("S7", "Drive Integrity",
              lambda: _s7_drive_integrity(self.agent_name)),
             ("S8", "External Feedback", _s8_external_feedback),
+            ("S9", "Code Dedup Trend",
+             lambda: _s9_dedup_trend(self.agent_name)),
         ]
 
     def evaluate(self) -> GateReport:
