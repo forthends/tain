@@ -387,7 +387,7 @@ def _h4_safety_boundary(agent_name: str = "") -> GateResult:
         agent_log = _project_root() / "agent_workspace" / agent_name / "logs" / "decisions.jsonl"
         if agent_log.exists():
             candidates.append(agent_log)
-    ws = _workspace_dir()
+    ws = _workspace_dir(agent_name)
     if ws:
         ws_log = ws / "logs" / "decision_log.json"
         if ws_log.exists():
