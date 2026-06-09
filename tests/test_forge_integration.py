@@ -70,3 +70,150 @@ class TestForgeIntegration:
         )
         assert result["success"] is False
         assert "rejected" in str(result.get("error", "")).lower()
+
+
+class TestForgeUpdate:
+    """Tests for the forge --update mode (action='update')."""
+
+    CODE_V1 = (
+        'import json\n'
+        'def main():\n'
+        '    return {"version": 1, "data": json.dumps([1, 2, 3])}\n'
+    )
+    CODE_V2 = (
+        'import json\n'
+        'def main():\n'
+        '    return {"version": 2, "data": json.dumps([4, 5, 6])}\n'
+    )
+
+    def test_update_existing_tool(self, tmp_path):
+        """Create a tool, then update it — the update should succeed and reflect new code."""
+        from tain_agent.tools.forge import ToolForge
+        from tain_agent.tools.registry import ToolRegistry
+
+        registry = ToolRegistry()
+        forge = ToolForge(registry, workspace_dir=str(tmp_path))
+
+        # Step 1: create
+        result = forge.forge(
+            name="my_tool",
+            description="Version 1",
+            code=self.CODE_V1,
+            action="create",
+        )
+        assert result["success"] is True
+        assert "my_tool" in registry.list_names()
+
+        # Step 2: update
+        result = forge.forge(
+            name="my_tool",
+            description="Version 2",
+            code=self.CODE_V2,
+            action="update",
+        )
+        assert result["success"] is True
+
+        # Step 3: verify the updated tool returns new data
+        response = registry.call("my_tool")
+        assert response["success"] is True
+        output = response["result"]
+        assert output["version"] == 2
+        assert output["data"] == '[4, 5, 6]'
+
+    def test_update_nonexistent_tool_rejected(self, tmp_path):
+        """Updating a tool that doesn't exist should fail with a clear error."""
+        from tain_agent.tools.forge import ToolForge
+        from tain_agent.tools.registry import ToolRegistry
+
+        registry = ToolRegistry()
+        forge = ToolForge(registry, workspace_dir=str(tmp_path))
+
+        result = forge.forge(
+            name="ghost_tool",
+            description="Does not exist",
+            code=self.CODE_V1,
+            action="update",
+        )
+        assert result["success"] is False
+        assert "does not exist" in result["error"].lower()
+        assert "create" in result.get("hint", "").lower()
+
+    def test_update_creates_backup(self, tmp_path):
+        """Updating a tool should create a .py.bak backup with the old content."""
+        from tain_agent.tools.forge import ToolForge
+        from tain_agent.tools.registry import ToolRegistry
+
+        registry = ToolRegistry()
+        forge = ToolForge(registry, workspace_dir=str(tmp_path))
+
+        # Create first
+        forge.forge(
+            name="backup_tool",
+            description="Original",
+            code=self.CODE_V1,
+            action="create",
+        )
+
+        # Update
+        forge.forge(
+            name="backup_tool",
+            description="Updated",
+            code=self.CODE_V2,
+            action="update",
+        )
+
+        # Check .py.bak exists and contains old code
+        bak_path = tmp_path / "forged_tools" / "backup_tool.py.bak"
+        assert bak_path.exists()
+        bak_content = bak_path.read_text(encoding="utf-8")
+        assert "version\": 1" in bak_content
+
+        # Current file should contain new code
+        source_path = tmp_path / "forged_tools" / "backup_tool.py"
+        source_content = source_path.read_text(encoding="utf-8")
+        assert "version\": 2" in source_content
+
+    def test_create_still_rejects_existing(self, tmp_path):
+        """Default action='create' should still reject an existing tool name."""
+        from tain_agent.tools.forge import ToolForge
+        from tain_agent.tools.registry import ToolRegistry
+
+        registry = ToolRegistry()
+        forge = ToolForge(registry, workspace_dir=str(tmp_path))
+
+        # Create first
+        result = forge.forge(
+            name="duplicate_tool",
+            description="First",
+            code=self.CODE_V1,
+        )
+        assert result["success"] is True
+
+        # Try to create again with same name
+        result = forge.forge(
+            name="duplicate_tool",
+            description="Second",
+            code=self.CODE_V2,
+        )
+        assert result["success"] is False
+        assert "already exists" in result["error"].lower()
+        assert "update" in result.get("hint", "").lower()
+
+    def test_invalid_action_rejected(self, tmp_path):
+        """An invalid action value should return an error immediately."""
+        from tain_agent.tools.forge import ToolForge
+        from tain_agent.tools.registry import ToolRegistry
+
+        registry = ToolRegistry()
+        forge = ToolForge(registry, workspace_dir=str(tmp_path))
+
+        result = forge.forge(
+            name="some_tool",
+            description="Test",
+            code=self.CODE_V1,
+            action="delete",
+        )
+        assert result["success"] is False
+        assert "invalid action" in result["error"].lower()
+        assert "create" in result["error"].lower()
+        assert "update" in result["error"].lower()
