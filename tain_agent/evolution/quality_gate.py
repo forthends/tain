@@ -880,6 +880,12 @@ def _s7_drive_integrity(agent_name: str = "") -> ScoredResult:
 
     snapshots_dir = ws / "state" / "metrics_snapshots"
     if not snapshots_dir.exists():
+        # Fallback 1: global agent_workspace
+        global_ws = _workspace_dir()
+        if global_ws:
+            snapshots_dir = global_ws / "state" / "metrics_snapshots"
+    if not snapshots_dir.exists():
+        # Fallback 2: framework built-in
         snapshots_dir = _project_root() / "tain_agent" / "state" / "metrics_snapshots"
         if not snapshots_dir.exists():
             return ScoredResult("S7", "Drive Integrity", 0.50, 0.02,
