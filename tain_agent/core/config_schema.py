@@ -81,6 +81,48 @@ class ForgeConfigSchema(BaseModel):
     max_forges_per_session: int = 3
 
 
+class CognitiveSuggestionRoleOverride(BaseModel):
+    act_pressure: float = 0.4
+    explore_pressure: float = 0.3
+    reflect_ratio: float = 0.5
+
+
+class CognitiveSuggestionModeConfig(BaseModel):
+    act_pressure: float = 0.5
+    explore_pressure: float = 0.4
+    reflect_ratio: float = 0.4
+    role_overrides: dict[str, CognitiveSuggestionRoleOverride] = Field(default_factory=dict)
+
+
+class CognitiveSuggestionModesConfig(BaseModel):
+    chaos: CognitiveSuggestionModeConfig = Field(default_factory=lambda: CognitiveSuggestionModeConfig(
+        act_pressure=0.6, explore_pressure=0.5, reflect_ratio=0.3,
+    ))
+    specified: CognitiveSuggestionModeConfig = Field(default_factory=lambda: CognitiveSuggestionModeConfig(
+        act_pressure=0.4, explore_pressure=0.3, reflect_ratio=0.5,
+        role_overrides={
+            "reflective": CognitiveSuggestionRoleOverride(
+                act_pressure=0.2, reflect_ratio=0.7,
+            ),
+            "creative": CognitiveSuggestionRoleOverride(
+                act_pressure=0.7, reflect_ratio=0.2,
+            ),
+        },
+    ))
+
+
+class CognitiveSuggestionAdaptiveConfig(BaseModel):
+    enabled: bool = True
+    observation_window: int = 5
+    act_drought_threshold: float = 0.2
+    pressure_adjustment_rate: float = 0.1
+
+
+class CognitiveSuggestionConfigSchema(BaseModel):
+    modes: CognitiveSuggestionModesConfig = Field(default_factory=CognitiveSuggestionModesConfig)
+    adaptive: CognitiveSuggestionAdaptiveConfig = Field(default_factory=CognitiveSuggestionAdaptiveConfig)
+
+
 class MetricsSchema(BaseModel):
     degradation_alert_threshold: float = 0.15
     auto_collect_on_report: bool = True
@@ -118,3 +160,6 @@ class AppConfig(BaseModel):
     metrics: MetricsSchema = Field(default_factory=MetricsSchema)
     safety: SafetySchema = Field(default_factory=SafetySchema)
     logging: LoggingSchema = Field(default_factory=LoggingSchema)
+    cognitive_suggestion: CognitiveSuggestionConfigSchema = Field(
+        default_factory=CognitiveSuggestionConfigSchema
+    )

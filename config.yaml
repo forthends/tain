@@ -160,3 +160,31 @@ daemon:
   health_port: 0
   # On restart, inject previous conversation summary into initial message.
   resume_context: true
+
+# ── Cognitive Suggestion ────────────────────────────────────────────────
+# Controls how the framework nudges the agent toward action, exploration,
+# or reflection. Pressure values (0.0–1.0) determine how often each type
+# of suggestion appears. Adaptive mode adjusts pressures based on observed
+# behavior patterns.
+cognitive_suggestion:
+  modes:
+    chaos:
+      act_pressure: 0.6
+      explore_pressure: 0.5
+      reflect_ratio: 0.3
+    specified:
+      act_pressure: 0.4
+      explore_pressure: 0.3
+      reflect_ratio: 0.5
+      role_overrides:
+        reflective:
+          act_pressure: 0.2
+          reflect_ratio: 0.7
+        creative:
+          act_pressure: 0.7
+          reflect_ratio: 0.2
+  adaptive:
+    enabled: true
+    observation_window: 5
+    act_drought_threshold: 0.2
+    pressure_adjustment_rate: 0.1
