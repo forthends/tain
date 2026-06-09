@@ -111,7 +111,66 @@ class CognitiveLoop:
         self._all_tools_used: set[str] = set()  # cumulative distinct tools
         self._tool_success_rates: dict[str, tuple[int, int]] = {}  # tool → (successes, total)
         self._total_tools_available: int = 0
-        
+
+        # Adaptive suggestion tracking (v0.7.0)
+        self._act_count: int = 0
+        self._reflect_count: int = 0
+        self._suggestion_config: dict = {}
+        self._agent_mode: str = "chaos"
+        self._agent_role: str = ""
+
+    def configure_suggestions(self, config: dict, agent_mode: str = "chaos",
+                              agent_role: str = "") -> None:
+        """Load cognitive suggestion configuration and agent identity."""
+        self._suggestion_config = config
+        self._agent_mode = agent_mode
+        self._agent_role = agent_role
+
+    def _get_effective_pressures(self) -> dict:
+        """Compute effective suggestion pressures for the current agent.
+
+        Merges mode defaults + role overrides + adaptive adjustments.
+        """
+        cfg = self._suggestion_config
+        if not cfg:
+            return {"act_pressure": 0.5, "explore_pressure": 0.4, "reflect_ratio": 0.4}
+
+        modes = cfg.get("modes", {})
+        mode_cfg = modes.get(self._agent_mode, modes.get("chaos", {}))
+        act = mode_cfg.get("act_pressure", 0.5)
+        explore = mode_cfg.get("explore_pressure", 0.4)
+        reflect = mode_cfg.get("reflect_ratio", 0.4)
+
+        # Apply role override
+        role = self._agent_role
+        if role:
+            role_overrides = mode_cfg.get("role_overrides", {})
+            override = role_overrides.get(role, {})
+            if override:
+                act = override.get("act_pressure", act)
+                explore = override.get("explore_pressure", explore)
+                reflect = override.get("reflect_ratio", reflect)
+
+        # Apply adaptive adjustment
+        adaptive = cfg.get("adaptive", {})
+        if adaptive.get("enabled", True):
+            window = adaptive.get("observation_window", 5)
+            threshold = adaptive.get("act_drought_threshold", 0.2)
+            rate = adaptive.get("pressure_adjustment_rate", 0.1)
+
+            total_recent = self._act_count + self._reflect_count
+            if total_recent >= window:
+                act_ratio = self._act_count / max(total_recent, 1)
+                if act_ratio < threshold:
+                    act = max(0.05, act - rate)
+                    reflect = min(0.95, reflect + rate)
+
+        return {
+            "act_pressure": round(act, 3),
+            "explore_pressure": round(explore, 3),
+            "reflect_ratio": round(reflect, 3),
+        }
+
     # ── Perceive ───────────────────────────────────────────────────
     
     def perceive(self, environment: dict, conversation_summary: str = "") -> dict:
@@ -187,19 +246,25 @@ class CognitiveLoop:
         return reasoning
     
     def _generate_recommendation(self, perception: dict) -> str:
-        """Generate a simple recommendation based on state."""
+        """Generate a recommendation based on state and adaptive pressures."""
+        pressures = self._get_effective_pressures()
+
         if not perception.get('current_goal'):
             return "set_goal: No active goal — define one."
-        
+
         # Check if stuck in a loop
         if len(self._action_history) >= 3:
             last_three = self._action_history[-3:]
             if len(set(last_three)) == 1:
                 return f"try_different: Repeating {last_three[0]}. Try a different action."
-        
+
         if self._total_cycles < 3:
             return "explore: Early cycles — gather information."
-        
+
+        # v0.7.0: Mode-aware suggestion
+        if pressures["act_pressure"] < 0.3 and pressures["reflect_ratio"] > 0.5:
+            return "reflect: What deeper patterns do you observe? What are you learning?"
+
         return "act: Take action toward current goal."
     
     # ── Act ────────────────────────────────────────────────────────
@@ -228,7 +293,10 @@ class CognitiveLoop:
                 prev[0] + (1 if success else 0),
                 prev[1] + 1,
             )
-        
+
+        # v0.7.0: Track for adaptive suggestion
+        self._act_count += 1
+
         action = {
             "phase": "act",
             "action": action_name,
@@ -280,6 +348,14 @@ class CognitiveLoop:
         
         # Calculate confidence
         tool_name = action.get('action', '')
+
+        # v0.7.0: Track reflective tools for adaptive suggestions
+        _reflective = {"personality_introspect", "personality_update", "set_goal",
+                       "complete_goal", "evolve_report", "assess_capabilities",
+                       "pipeline_status", "record_decision"}
+        if isinstance(tool_name, str) and tool_name in _reflective:
+            self._reflect_count += 1
+
         rate = self._get_tool_rate(tool_name)
         if rate is not None:
             self.state.confidence = rate
@@ -334,6 +410,10 @@ class CognitiveLoop:
             reads = sum(1 for a in recent if a in 
                        ('read_file', 'smart_read', 'observe_environment', 'explore_directory'))
             if reads >= 4:
+                pressures = self._get_effective_pressures()
+                if pressures.get("reflect_ratio", 0.4) > 0.5:
+                    return ("High reflection ratio — consistent with your reflective nature. "
+                            "What insights have emerged from this observation period?")
                 return "High read-to-act ratio — consider taking more actions."
         
         return None

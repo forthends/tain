@@ -166,6 +166,13 @@ class AgentSubsystemsMixin:
         # Wire improvement loop to cognitive loop for cognitive-driven improvement
         self.cognitive_loop.connect_improvement_loop(self.improvement_loop)
 
+        # v0.7.0: Configure adaptive cognitive suggestions
+        cs_config = self.config.get("cognitive_suggestion", {})
+        if cs_config:
+            self.cognitive_loop.configure_suggestions(
+                cs_config, self.evolution_mode, self.role
+            )
+
         # ── Personality — emergent self-identity ──────────────────────
         self.personality = Personality(memory=self.memory)
 
