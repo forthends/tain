@@ -120,16 +120,44 @@ def _project_root() -> Path:
     return Path(__file__).resolve().parent.parent.parent
 
 
-def _workspace_dir() -> Optional[Path]:
+def _workspace_dir(agent_name: str = "") -> Optional[Path]:
+    """Return the agent workspace directory.
+
+    If agent_name is provided, returns the agent-specific workspace.
+    Otherwise returns the global agent_workspace root.
+    """
     root = _project_root()
     candidate = root / "agent_workspace"
-    if candidate.exists():
-        return candidate
+    if not candidate.exists():
+        return None
+    if agent_name:
+        agent_ws = candidate / agent_name
+        if agent_ws.exists():
+            return agent_ws
+        # Fall back to global workspace if agent dir doesn't exist
+    return candidate
+
+
+def _agent_forged_tools_dir(agent_name: str) -> Optional[Path]:
+    """Return agent-specific forged tools directory if it exists."""
+    if not agent_name:
+        return None
+    root = _project_root()
+    agent_tools = root / "agent_workspace" / agent_name / "forged_tools"
+    if agent_tools.exists():
+        return agent_tools
     return None
 
 
-def _forged_tools_dir() -> Path:
-    """Return the forged tools directory, preferring workspace over built-in."""
+def _forged_tools_dir(agent_name: str = "") -> Path:
+    """Return the forged tools directory.
+
+    Priority: agent workspace > global workspace > built-in framework.
+    """
+    if agent_name:
+        agent_tools = _agent_forged_tools_dir(agent_name)
+        if agent_tools:
+            return agent_tools
     ws = _workspace_dir()
     if ws:
         ws_tools = ws / "forged_tools"
@@ -138,7 +166,13 @@ def _forged_tools_dir() -> Path:
     return _project_root() / "tain_agent" / "tools" / "forged"
 
 
-def _knowledge_dir() -> Optional[Path]:
+def _knowledge_dir(agent_name: str = "") -> Optional[Path]:
+    """Return the knowledge directory, preferring agent-specific path."""
+    if agent_name:
+        root = _project_root()
+        agent_kg = root / "agent_workspace" / agent_name / "knowledge"
+        if agent_kg.exists():
+            return agent_kg
     ws = _workspace_dir()
     if ws:
         kg = ws / "knowledge_garden"
@@ -149,20 +183,27 @@ def _knowledge_dir() -> Optional[Path]:
 
 # ─── Hard Gates ────────────────────────────────────────────────────────
 
-def _h1_personality_completeness() -> GateResult:
+def _h1_personality_completeness(agent_name: str = "") -> GateResult:
     """H1: All 7 trait dimensions formed, each with ≥ 1 trait at confidence ≥ 0.3."""
-    ws = _workspace_dir()
+    REQUIRED_CATEGORIES = [
+        "values", "communication_style", "interests", "quirks",
+        "self_description", "relationship_stance", "growth_orientation",
+    ]
+
+    ws = _workspace_dir(agent_name)
     if ws:
         personality_path = ws / "state" / "personality.json"
+        if not personality_path.exists() and agent_name:
+            alt = _project_root() / "agent_workspace" / agent_name / "state" / "personality_structured.json"
+            if alt.exists():
+                personality_path = alt
         if personality_path.exists():
             try:
                 data = json.loads(personality_path.read_text(encoding="utf-8"))
-                dims = data.get("dimensions", data.get("_traits", {}))
             except (json.JSONDecodeError, IOError):
                 return GateResult("H1", "Personality Completeness", False,
                                   "Failed to read personality.json")
         else:
-            # Check if there's personality in the code
             return GateResult("H1", "Personality Completeness", False,
                               "personality.json not found in workspace",
                               {"path_checked": str(personality_path)})
@@ -171,10 +212,31 @@ def _h1_personality_completeness() -> GateResult:
                           "No agent_workspace directory found",
                           {"workspace": "missing"})
 
-    categories = ["values", "communication_style", "interests", "quirks",
-                  "self_description", "relationship_stance", "growth_orientation"]
+    # Detect format: category-nested vs flat-list
+    dims = data.get("dimensions", data.get("_traits", {}))
+    if not dims:
+        # Try flat-list format (e.g., personality_structured.json)
+        personality = data.get("personality", data)
+        flat_traits = []
+        for key, val in personality.items():
+            if isinstance(val, list):
+                for item in val:
+                    if isinstance(item, dict) and "value" in item:
+                        flat_traits.append(item)
+        if flat_traits:
+            # Group by category
+            from collections import defaultdict
+            dims = defaultdict(list)
+            for t in flat_traits:
+                cat = t.get("category", "uncategorized")
+                dims[cat].append(t)
+
+    if not dims:
+        return GateResult("H1", "Personality Completeness", False,
+                          "No trait data found in personality file")
+
     failures = []
-    for cat in categories:
+    for cat in REQUIRED_CATEGORIES:
         traits = dims.get(cat, [])
         qualified = [t for t in traits
                      if t.get("confidence", 0) >= 0.3]
@@ -185,13 +247,13 @@ def _h1_personality_completeness() -> GateResult:
     return GateResult(
         "H1", "Personality Completeness", passed,
         "" if passed else f"Missing qualified traits in: {', '.join(failures)}",
-        {"categories_checked": len(categories), "categories_failed": len(failures)},
+        {"categories_checked": len(REQUIRED_CATEGORIES), "categories_failed": len(failures)},
     )
 
 
-def _h2_tool_loadability() -> GateResult:
+def _h2_tool_loadability(agent_name: str = "") -> GateResult:
     """H2: All forged tools can be imported without error."""
-    tools_dir = _forged_tools_dir()
+    tools_dir = _forged_tools_dir(agent_name)
     if not tools_dir.exists():
         return GateResult("H2", "Tool Loadability", False,
                           "No forged tools directory found")
@@ -208,6 +270,14 @@ def _h2_tool_loadability() -> GateResult:
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
 
+    # For agent-scoped tools, add the tools directory to sys.path
+    # so intra-tool imports work (e.g., dream_loop importing from another tool)
+    tools_dir_str = str(tools_dir)
+    if tools_dir_str not in sys.path:
+        sys.path.insert(0, tools_dir_str)
+
+    import importlib.util as _util
+
     failed = []
     for py_file in py_files:
         name = py_file.stem
@@ -215,7 +285,15 @@ def _h2_tool_loadability() -> GateResult:
             try:
                 importlib.import_module(f"tain_agent.tools.forged.{name}")
             except ImportError:
-                importlib.import_module(name)
+                try:
+                    importlib.import_module(name)
+                except ImportError:
+                    # Last resort: load from file path
+                    spec = _util.spec_from_file_location(name, str(py_file))
+                    if spec and spec.loader:
+                        mod = _util.module_from_spec(spec)
+                        sys.modules[name] = mod
+                        spec.loader.exec_module(mod)
         except Exception as exc:
             failed.append(f"{name}: {exc}")
 
@@ -227,9 +305,9 @@ def _h2_tool_loadability() -> GateResult:
     )
 
 
-def _h3_tool_no_conflicts() -> GateResult:
+def _h3_tool_no_conflicts(agent_name: str = "") -> GateResult:
     """H3: No circular dependencies between tools, no function name clashes."""
-    tools_dir = _forged_tools_dir()
+    tools_dir = _forged_tools_dir(agent_name)
     if not tools_dir.exists():
         return GateResult("H3", "Tool No Conflicts", False,
                           "No forged tools directory found")
@@ -301,10 +379,14 @@ def _h3_tool_no_conflicts() -> GateResult:
     )
 
 
-def _h4_safety_boundary() -> GateResult:
+def _h4_safety_boundary(agent_name: str = "") -> GateResult:
     """H4: No dangerous operations in recent decision log."""
-    # Check workspace logs first (agent's own decisions), then framework logs
     candidates = []
+    # Agent-specific logs first
+    if agent_name:
+        agent_log = _project_root() / "agent_workspace" / agent_name / "logs" / "decisions.jsonl"
+        if agent_log.exists():
+            candidates.append(agent_log)
     ws = _workspace_dir()
     if ws:
         ws_log = ws / "logs" / "decision_log.json"
@@ -322,11 +404,22 @@ def _h4_safety_boundary() -> GateResult:
     all_entries = []
     for log_path in candidates:
         try:
-            log = json.loads(log_path.read_text(encoding="utf-8"))
+            raw = log_path.read_text(encoding="utf-8")
+            if log_path.suffix == ".jsonl":
+                # Line-delimited JSON — each line is a JSON object
+                for line in raw.strip().split("\n"):
+                    line = line.strip()
+                    if line:
+                        try:
+                            all_entries.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            pass
+            else:
+                log = json.loads(raw)
+                entries = log if isinstance(log, list) else log.get("entries", [])
+                all_entries.extend(entries)
         except (json.JSONDecodeError, IOError):
             continue
-        entries = log if isinstance(log, list) else log.get("entries", [])
-        all_entries.extend(entries)
 
     recent = all_entries[-100:] if len(all_entries) > 100 else all_entries
 
@@ -356,7 +449,7 @@ def _h4_safety_boundary() -> GateResult:
     )
 
 
-def _h5_memory_module_functional() -> GateResult:
+def _h5_memory_module_functional(agent_name: str = "") -> GateResult:
     """H5: Runtime memory store can execute add/query/stats operations."""
     try:
         from tain_agent.runtime.memory import MemoryStore
@@ -397,12 +490,11 @@ def _h5_memory_module_functional() -> GateResult:
                           f"Memory store exception: {exc}")
 
 
-def _h6_knowledge_retrievable() -> GateResult:
+def _h6_knowledge_retrievable(agent_name: str = "") -> GateResult:
     """H6: ≥ 5 markdown docs in knowledge dir, total size ≥ 10KB."""
-    kg = _knowledge_dir()
+    kg = _knowledge_dir(agent_name)
     if kg is None:
-        # Check for knowledge in workspace root
-        ws = _workspace_dir()
+        ws = _workspace_dir(agent_name)
         if ws:
             kg = ws / "knowledge"
             if not kg.exists():
@@ -426,20 +518,31 @@ def _h6_knowledge_retrievable() -> GateResult:
     )
 
 
-def _h7_version_tagged() -> GateResult:
+def _h7_version_tagged(agent_name: str = "") -> GateResult:
     """H7: version.json exists with version ≥ 0.5.0."""
+    candidates = []
+    # Agent-specific paths first
+    if agent_name:
+        base = _project_root() / "agent_workspace" / agent_name
+        candidates.extend([
+            base / "version.json",
+            base / "state" / "version.json",
+        ])
     ws = _workspace_dir()
-    version_path = (ws / "state" / "version.json") if ws else None
+    if ws:
+        candidates.append(ws / "state" / "version.json")
+    candidates.append(_project_root() / "agent_workspace" / "state" / "version.json")
 
-    if version_path is None or not version_path.exists():
-        # Check root-level
-        alt = _project_root() / "agent_workspace" / "state" / "version.json"
-        if alt.exists():
-            version_path = alt
-        else:
-            return GateResult("H7", "Version Tagged", False,
-                              "version.json not found",
-                              {"looked_at": str(version_path) if version_path else "none"})
+    version_path = None
+    for c in candidates:
+        if c.exists():
+            version_path = c
+            break
+
+    if version_path is None:
+        return GateResult("H7", "Version Tagged", False,
+                          "version.json not found",
+                          {"looked_at": [str(c) for c in candidates[:3]]})
 
     try:
         data = json.loads(version_path.read_text(encoding="utf-8"))
@@ -515,11 +618,11 @@ def _s1_tool_success_rate(agent=None) -> ScoredResult:
                            f"Error reading telemetry: {e}")
 
 
-def _s2_knowledge_coverage() -> ScoredResult:
+def _s2_knowledge_coverage(agent_name: str = "") -> ScoredResult:
     """S2 (0.15): ≥ 20 knowledge nodes, ≥ 4 domains."""
-    kg = _knowledge_dir()
+    kg = _knowledge_dir(agent_name)
     if kg is None:
-        ws = _workspace_dir()
+        ws = _workspace_dir(agent_name)
         kg = ws / "knowledge" if ws and (ws / "knowledge").exists() else None
 
     # Try graph.json first
@@ -554,18 +657,29 @@ def _s2_knowledge_coverage() -> ScoredResult:
         except (json.JSONDecodeError, IOError):
             node_count, domain_count = 0, 0
 
-    node_score = min(node_count / 20.0, 1.0)
+    # v0.7.0: Count referenced knowledge files from other agents
+    ref_count = 0
+    try:
+        from tain_agent.plugins.knowledge.lifecycle import get_referenced_files
+        ref_files = get_referenced_files(agent_name) if agent_name else []
+        ref_count = len(ref_files)
+    except ImportError:
+        pass
+
+    total_nodes = node_count + ref_count
+    node_score = min(total_nodes / 20.0, 1.0)
     domain_score = min(domain_count / 4.0, 1.0)
     score = round(0.6 * node_score + 0.4 * domain_score, 3)
 
     return ScoredResult(
         "S2", "Knowledge Coverage", score, 0.15,
-        f"{node_count} nodes, {domain_count} domains",
-        {"nodes": node_count, "domains": domain_count},
+        f"{total_nodes} nodes ({node_count} own + {ref_count} refs), {domain_count} domains",
+        {"nodes": total_nodes, "domains": domain_count,
+         "own_nodes": node_count, "ref_nodes": ref_count},
     )
 
 
-def _s3_tool_chain_coherence(agent=None) -> ScoredResult:
+def _s3_tool_chain_coherence(agent=None, agent_name: str = "") -> ScoredResult:
     """S3 (0.20): ≥ 3 tool chains work end-to-end without error."""
     if agent is None:
         return ScoredResult(
@@ -574,7 +688,7 @@ def _s3_tool_chain_coherence(agent=None) -> ScoredResult:
             {"status": "no_agent", "min_chains": 3},
         )
 
-    tools_dir = _forged_tools_dir()
+    tools_dir = _forged_tools_dir(agent_name)
     if not tools_dir.exists():
         return ScoredResult("S3", "Tool Chain Coherence", 0.0, 0.20,
                            "No forged tools directory found")
@@ -749,16 +863,15 @@ def _s6_knowledge_freshness() -> ScoredResult:
         )
 
 
-def _s7_drive_integrity() -> ScoredResult:
+def _s7_drive_integrity(agent_name: str = "") -> ScoredResult:
     """S7 (0.05): All 4 drives non-zero, no degradation across last 3 snapshots."""
-    ws = _workspace_dir()
+    ws = _workspace_dir(agent_name)
     if ws is None:
         return ScoredResult("S7", "Drive Integrity", 0.50, 0.05,
                             "No workspace — cannot assess drives")
 
     snapshots_dir = ws / "state" / "metrics_snapshots"
     if not snapshots_dir.exists():
-        # Check project-root snapshots
         snapshots_dir = _project_root() / "tain_agent" / "state" / "metrics_snapshots"
         if not snapshots_dir.exists():
             return ScoredResult("S7", "Drive Integrity", 0.50, 0.05,
@@ -882,14 +995,16 @@ class ExportQualityGate:
         self.scoring_gates = [
             ("S1", "Tool Success Rate",
              lambda: _s1_tool_success_rate(self.agent)),
-            ("S2", "Knowledge Coverage", _s2_knowledge_coverage),
+            ("S2", "Knowledge Coverage",
+             lambda: _s2_knowledge_coverage(self.agent_name)),
             ("S3", "Tool Chain Coherence",
-             lambda: _s3_tool_chain_coherence(self.agent)),
+             lambda: _s3_tool_chain_coherence(self.agent, self.agent_name)),
             ("S4", "Action Diversity",
              lambda: _s4_action_diversity(self.agent)),
             ("S5", "Code Health", _s5_code_health),
             ("S6", "Knowledge Freshness", _s6_knowledge_freshness),
-            ("S7", "Drive Integrity", _s7_drive_integrity),
+            ("S7", "Drive Integrity",
+             lambda: _s7_drive_integrity(self.agent_name)),
             ("S8", "External Feedback", _s8_external_feedback),
         ]
 
@@ -902,7 +1017,7 @@ class ExportQualityGate:
 
         for gate_id, label, fn in self.hard_gates:
             try:
-                result = fn()
+                result = fn(self.agent_name)
             except Exception as exc:
                 result = GateResult(gate_id, label, False, str(exc))
             report.hard_results.append(result)
