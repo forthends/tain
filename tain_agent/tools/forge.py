@@ -360,7 +360,7 @@ class ToolForge:
         # For update: remove old registration before re-registering
         if action == "update":
             self.registry.remove(name)
-            del self._forged_tools[name]
+            self._forged_tools.pop(name, None)
         self.registry.register(name, func, description, parameters)
         self._forged_tools[name] = {"description": description, "code": code, "parameters": parameters}
         self._save_forged_tool(name, code, description, parameters, action=action)
