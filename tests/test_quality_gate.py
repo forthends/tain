@@ -122,7 +122,7 @@ class TestS9DedupTrend:
         )
         monkeypatch.setattr(
             "tain_agent.evolution.quality_gate._workspace_dir",
-            lambda agent_name: tmp_path,
+            lambda agent_name="": tmp_path,
         )
         result = _s9_dedup_trend("test_agent")
         assert result.gate_id == "S9"

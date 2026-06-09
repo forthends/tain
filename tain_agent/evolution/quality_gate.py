@@ -998,58 +998,78 @@ def _s9_dedup_trend(agent_name: str = "") -> ScoredResult:
                            "No workspace — cannot compare milestones",
                            {"current_count": current_count})
 
-    reports_dir = ws / "reports"
-    if not reports_dir.exists():
-        if agent_name:
-            alt_reports = _project_root() / "agent_workspace" / agent_name / "reports"
-            if alt_reports.exists():
-                reports_dir = alt_reports
-
-    if not reports_dir or not reports_dir.exists():
+    # Use the same snapshots S7 reads (state/metrics_snapshots/metrics_*.json)
+    snapshots_dir = ws / "state" / "metrics_snapshots"
+    if not snapshots_dir.exists():
+        global_ws = _workspace_dir()
+        if global_ws:
+            snapshots_dir = global_ws / "state" / "metrics_snapshots"
+    if not snapshots_dir.exists():
+        snapshots_dir = _project_root() / "tain_agent" / "state" / "metrics_snapshots"
+    if not snapshots_dir.exists():
         return ScoredResult("S9", "Code Dedup Trend", 0.50, 0.05,
-                           "No evolution reports to compare",
+                           "No metrics snapshots found — need >= 2 evolution milestones",
                            {"current_count": current_count})
 
-    report_files = sorted(reports_dir.glob("*.md"))
-    if len(report_files) < 2:
+    snapshot_files = sorted(snapshots_dir.glob("metrics_*.json"))
+    if len(snapshot_files) < 2:
         return ScoredResult("S9", "Code Dedup Trend", 0.50, 0.05,
-                           "Need >= 2 evolution reports to establish trend",
-                           {"current_count": current_count, "reports_found": len(report_files)})
+                           "Need >= 2 metrics snapshots to establish trend",
+                           {"current_count": current_count,
+                            "snapshots_found": len(snapshot_files)})
 
-    import re as _re
+    # Extract tool counts from the last 2 snapshots
     tool_counts = []
-    for rf in report_files[-2:]:
+    for sf in snapshot_files[-2:]:
         try:
-            text = rf.read_text(encoding="utf-8")
-            m = _re.search(r'(?:Forged tools|锻造工具)[:\s]*(\d+)', text)
-            if m:
-                tool_counts.append(int(m.group(1)))
-        except (IOError, OSError):
-            pass
+            data = json.loads(sf.read_text(encoding="utf-8"))
+            te = data.get("tool_efficacy", {})
+            count = te.get("total_tools", 0)
+            tool_counts.append(count)
+        except (json.JSONDecodeError, IOError, KeyError):
+            continue
 
     if len(tool_counts) < 2:
         return ScoredResult("S9", "Code Dedup Trend", 0.50, 0.05,
-                           "Could not extract tool counts from reports",
+                           "Could not extract tool counts from snapshots",
                            {"current_count": current_count})
 
     prev_count, latest_count = tool_counts
-    delta = current_count - latest_count
+    trend_delta = latest_count - prev_count          # milestone trend
+    current_delta = current_count - latest_count      # change since last snapshot
 
-    if delta < 0:
-        score = min(1.0, 0.8 + abs(delta) * 0.1)
-        detail = f"Tool count decreased by {abs(delta)} ({latest_count} -> {current_count}) — dedup positive"
-    elif delta == 0:
-        score = 0.70
-        detail = f"Tool count stable at {current_count} — no new bloat detected"
+    # Score: reward dedup trend (negative trend_delta) with no rebound
+    if trend_delta < 0:
+        # Dedup trend active
+        if current_delta <= 0:
+            # Sustained or continued dedup — high score
+            score = min(1.0, 0.85 + abs(trend_delta) * 0.1)
+            detail = (f"Dedup trend active: {prev_count} -> {latest_count} "
+                      f"({abs(trend_delta)} removed). Current: {current_count} — holding.")
+        else:
+            # Dedup trend but current rebound — moderate score
+            score = max(0.45, 0.70 - current_delta * 0.15)
+            detail = (f"Dedup reversed: {prev_count} -> {latest_count} "
+                      f"(was trending down), now {current_count} (+{current_delta}).")
+    elif trend_delta == 0:
+        if current_delta == 0:
+            score = 0.70
+            detail = f"Tool count stable at {current_count} — no bloat detected"
+        else:
+            score = max(0.35, 0.60 - current_delta * 0.15)
+            detail = f"Stable history broken: now {current_count} ({current_delta:+d})"
     else:
-        score = max(0.0, 0.5 - delta * 0.15)
-        detail = f"Tool count increased by {delta} ({latest_count} -> {current_count}) — monitor for bloat"
+        # trend_delta > 0: bloat trend
+        score = max(0.0, 0.45 - trend_delta * 0.15)
+        detail = (f"Bloat trend: {prev_count} -> {latest_count} "
+                  f"(+{trend_delta}). Current: {current_count}.")
 
     return ScoredResult(
         "S9", "Code Dedup Trend", round(score, 3), 0.05,
         detail,
-        {"prev_report_count": latest_count, "current_count": current_count,
-         "delta": delta},
+        {"prev_count": prev_count, "latest_count": latest_count,
+         "current_count": current_count,
+         "trend_delta": trend_delta, "current_delta": current_delta},
     )
 
 
