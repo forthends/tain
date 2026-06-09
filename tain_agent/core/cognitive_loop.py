@@ -162,8 +162,8 @@ class CognitiveLoop:
             if total_recent >= window:
                 act_ratio = self._act_count / max(total_recent, 1)
                 if act_ratio < threshold:
-                    act = max(0.05, act - rate)
-                    reflect = min(0.95, reflect + rate)
+                    act = min(0.95, act + rate)
+                    reflect = max(0.05, reflect - rate)
 
         return {
             "act_pressure": round(act, 3),
