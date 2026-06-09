@@ -292,8 +292,16 @@ def _h2_tool_loadability(agent_name: str = "") -> GateResult:
                     spec = _util.spec_from_file_location(name, str(py_file))
                     if spec and spec.loader:
                         mod = _util.module_from_spec(spec)
+                        if name in sys.modules:
+                            raise ImportError(
+                                f"Module name '{name}' shadows existing module in sys.modules"
+                            )
                         sys.modules[name] = mod
-                        spec.loader.exec_module(mod)
+                        try:
+                            spec.loader.exec_module(mod)
+                        except Exception:
+                            del sys.modules[name]
+                            raise
         except Exception as exc:
             failed.append(f"{name}: {exc}")
 
