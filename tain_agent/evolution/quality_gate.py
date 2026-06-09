@@ -13,6 +13,7 @@ Design: Phase 3 §4.
 import json
 import importlib
 import os
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,18 @@ from typing import Optional
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+logger = logging.getLogger(__name__)
+
+try:
+    from tain_agent.plugins.knowledge.lifecycle import get_referenced_files
+except ImportError:
+    get_referenced_files = None
+    logger.warning(
+        "Knowledge plugin unavailable — S2 knowledge coverage will not "
+        "count cross-agent references."
+    )
 
 
 # ─── Data structures ──────────────────────────────────────────────────
@@ -667,12 +680,15 @@ def _s2_knowledge_coverage(agent_name: str = "") -> ScoredResult:
 
     # v0.7.0: Count referenced knowledge files from other agents
     ref_count = 0
-    try:
-        from tain_agent.plugins.knowledge.lifecycle import get_referenced_files
-        ref_files = get_referenced_files(agent_name) if agent_name else []
-        ref_count = len(ref_files)
-    except ImportError:
-        pass
+    if get_referenced_files is not None and agent_name:
+        try:
+            ref_files = get_referenced_files(agent_name)
+            ref_count = len(ref_files)
+        except Exception:
+            logger.warning(
+                "Failed to count referenced knowledge files for agent '%s'",
+                agent_name,
+            )
 
     total_nodes = node_count + ref_count
     node_score = min(total_nodes / 20.0, 1.0)
