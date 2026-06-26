@@ -232,8 +232,20 @@ class ToolBootstrap:
     # ── Tool forge ──────────────────────────────────────────────────
 
     def _register_forge(self) -> None:
-        def forge_tool(name: str, description: str, code: str, parameters: str = "{}", dependencies: str = "[]") -> str:
-            """Create a new tool for yourself by writing Python code."""
+        def forge_tool(name: str, description: str, code: str, parameters: str = "{}",
+                       dependencies: str = "[]", action: str = "create") -> str:
+            """Create or update a tool by writing Python code.
+
+            Use action='create' (default) to forge a new tool.
+            Use action='update' to modify an existing tool — this re-runs the
+            full safety pipeline and replaces the registered version.
+            """
+            if action not in ("create", "update"):
+                return json.dumps({
+                    "success": False,
+                    "error": f"Invalid action '{action}'. Must be 'create' or 'update'."
+                }, ensure_ascii=False)
+
             try:
                 params = json.loads(parameters) if isinstance(parameters, str) else parameters
             except json.JSONDecodeError:
@@ -244,7 +256,7 @@ class ToolBootstrap:
             except json.JSONDecodeError:
                 deps = []
 
-            result = self.a.forge.forge(name, description, code, params)
+            result = self.a.forge.forge(name, description, code, params, action=action)
 
             # Resolve dependencies if forge succeeded and dependencies declared
             if result.get("success") and deps:
@@ -271,22 +283,25 @@ class ToolBootstrap:
                     tool_name=name,
                     tool_code=code,
                     agent_version=self.a.version,
-                    reasoning=f"Forged tool: {name} — {description[:100]}",
+                    reasoning=f"Tool {action}d: {name} — {description[:100]}",
                 )
 
             return json.dumps(result, ensure_ascii=False)
 
         self.a.tools.register(
             "forge_tool", forge_tool,
-            "Create a new tool by writing Python code. "
+            "Create or update a tool by writing Python code. "
             "The code must contain at least one callable function. "
+            "Use action='create' to forge a new tool, action='update' to "
+            "modify an existing tool (re-runs full safety pipeline). "
             "This is how you expand your own capabilities.",
             {
-                "name": {"type": "string", "description": "Name of the new tool.", "required": True},
+                "name": {"type": "string", "description": "Name of the tool.", "required": True},
                 "description": {"type": "string", "description": "What the tool does.", "required": True},
                 "code": {"type": "string", "description": "Python code implementing the tool.", "required": True},
                 "parameters": {"type": "string", "description": "JSON schema of tool parameters.", "required": False},
                 "dependencies": {"type": "string", "description": "JSON array of pip package specs needed (e.g. ['requests>=2.28']).", "required": False},
+                "action": {"type": "string", "description": "'create' (default) to forge a new tool, 'update' to modify and re-register an existing tool.", "required": False},
             },
         )
 
