@@ -194,6 +194,35 @@ def _knowledge_dir(agent_name: str = "") -> Optional[Path]:
     return None
 
 
+def _find_snapshot_dir(agent_name: str = "") -> Optional[Path]:
+    """Find the agent's metrics snapshot directory.
+
+    Searches in priority order:
+    1. Agent workspace: agent_workspace/{agent_name}/state/metrics_snapshots/
+    2. Global workspace: agent_workspace/state/metrics_snapshots/
+    3. Framework built-in: tain_agent/state/metrics_snapshots/
+    """
+    root = _project_root()
+
+    # Agent-specific workspace
+    if agent_name:
+        candidate = root / "agent_workspace" / agent_name / "state" / "metrics_snapshots"
+        if candidate.exists():
+            return candidate
+
+    # Global workspace fallback
+    global_candidate = root / "agent_workspace" / "state" / "metrics_snapshots"
+    if global_candidate.exists():
+        return global_candidate
+
+    # Framework built-in
+    framework_candidate = root / "tain_agent" / "state" / "metrics_snapshots"
+    if framework_candidate.exists():
+        return framework_candidate
+
+    return None
+
+
 # ─── Hard Gates ────────────────────────────────────────────────────────
 
 def _h1_personality_completeness(agent_name: str = "") -> GateResult:
@@ -889,24 +918,11 @@ def _s6_knowledge_freshness() -> ScoredResult:
 
 def _s7_drive_integrity(agent_name: str = "") -> ScoredResult:
     """S7 (0.02): All 4 drives non-zero, no degradation across last 3 snapshots."""
-    ws = _workspace_dir(agent_name)
-    if ws is None:
+    snapshots_dir = _find_snapshot_dir(agent_name)
+    if snapshots_dir is None:
         return ScoredResult("S7", "Drive Integrity", 0.50, 0.02,
-                            "No workspace — cannot assess drives")
-
-    snapshots_dir = ws / "state" / "metrics_snapshots"
-    if not snapshots_dir.exists():
-        # Fallback 1: global agent_workspace
-        global_ws = _workspace_dir()
-        if global_ws:
-            snapshots_dir = global_ws / "state" / "metrics_snapshots"
-    if not snapshots_dir.exists():
-        # Fallback 2: framework built-in
-        snapshots_dir = _project_root() / "tain_agent" / "state" / "metrics_snapshots"
-        if not snapshots_dir.exists():
-            return ScoredResult("S7", "Drive Integrity", 0.50, 0.02,
-                                "No metrics snapshots found",
-                                {"status": "no_data"})
+                            "No metrics snapshots found",
+                            {"status": "no_data"})
 
     snapshot_files = sorted(snapshots_dir.glob("*.json"))
     if len(snapshot_files) < 2:
@@ -1008,21 +1024,8 @@ def _s9_dedup_trend(agent_name: str = "") -> ScoredResult:
                 if not f.name.startswith("_") and f.name != "smart_improve.py"]
     current_count = len(py_files)
 
-    ws = _workspace_dir(agent_name)
-    if ws is None:
-        return ScoredResult("S9", "Code Dedup Trend", 0.50, 0.05,
-                           "No workspace — cannot compare milestones",
-                           {"current_count": current_count})
-
-    # Use the same snapshots S7 reads (state/metrics_snapshots/metrics_*.json)
-    snapshots_dir = ws / "state" / "metrics_snapshots"
-    if not snapshots_dir.exists():
-        global_ws = _workspace_dir()
-        if global_ws:
-            snapshots_dir = global_ws / "state" / "metrics_snapshots"
-    if not snapshots_dir.exists():
-        snapshots_dir = _project_root() / "tain_agent" / "state" / "metrics_snapshots"
-    if not snapshots_dir.exists():
+    snapshots_dir = _find_snapshot_dir(agent_name)
+    if snapshots_dir is None:
         return ScoredResult("S9", "Code Dedup Trend", 0.50, 0.05,
                            "No metrics snapshots found — need >= 2 evolution milestones",
                            {"current_count": current_count})

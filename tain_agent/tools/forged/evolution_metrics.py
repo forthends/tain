@@ -548,8 +548,8 @@ def _project_root() -> Path:
 
 def _snapshots_dir(base_dir: str = None) -> Path:
     if base_dir is None:
-        base_dir = str(_project_root())
-    d = Path(base_dir) / "tain_agent" / "state" / "metrics_snapshots"
+        base_dir = str(_project_root() / "tain_agent" / "state" / "metrics_snapshots")
+    d = Path(base_dir)
     d.mkdir(parents=True, exist_ok=True)
     return d
 

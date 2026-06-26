@@ -19,6 +19,14 @@ from tain_agent.core.time_utils import now
 from pathlib import Path
 
 
+def _resolve_snapshot_dir(workspace_dir: str) -> Path:
+    """Resolve the canonical metrics snapshot directory for an agent workspace."""
+    ws = Path(workspace_dir).resolve()
+    snap_dir = ws / "state" / "metrics_snapshots"
+    snap_dir.mkdir(parents=True, exist_ok=True)
+    return snap_dir
+
+
 class EvolutionReporter:
     """Handles version bumping, report generation, and git commit/push.
 
@@ -220,10 +228,11 @@ class EvolutionReporter:
                                          decision_log=self.decision_log,
                                          memory=self.memory)
             current = collector.collect(version=version_to)
-            save_snapshot(current, base_dir=str(self.base_dir))
+            snap_dir = _resolve_snapshot_dir(str(self.base_dir))
+            save_snapshot(current, base_dir=str(snap_dir))
 
             # Try to load previous snapshot for comparison
-            prev = load_snapshot(version_from, base_dir=str(self.base_dir))
+            prev = load_snapshot(version_from, base_dir=str(snap_dir))
 
             lines = []
             if prev:
