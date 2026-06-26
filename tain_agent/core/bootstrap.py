@@ -187,6 +187,7 @@ class ToolBootstrap:
         self._register_export()
         self._register_test()
         self._register_sandbox_info()
+        self._register_introspection()
         self._register_knowledge()
 
     def on_shutdown(self) -> None:
@@ -928,6 +929,32 @@ class ToolBootstrap:
             "List all Python modules allowed in the tool forge sandbox. "
             "Use this before writing forge_tool code to know which imports are available.",
             {},
+        )
+
+    # ── Introspection (Phase 3, Chain C) ───────────────────────────────
+
+    def _register_introspection(self) -> None:
+        from tain_agent.evolution.introspection import get_self_profile
+
+        def self_profile(since_days: int = 7) -> str:
+            """Get a structured self-profile with action distribution, tool usage,
+            trait activity, and active goals."""
+            return get_self_profile(
+                decision_log=self.a.decision_log if hasattr(self.a, 'decision_log') else None,
+                personality=self.a.personality if hasattr(self.a, 'personality') else None,
+                goals=self.a.goals if hasattr(self.a, 'goals') else None,
+                tools_registry=self.a.tools if hasattr(self.a, 'tools') else None,
+                since_days=since_days,
+            )
+
+        self.a.tools.register(
+            "get_self_profile", self_profile,
+            "Get a structured overview of your own behavior: action types, "
+            "tool usage rankings, current trait activity, and active goals. "
+            "Cheaper than manually scanning logs.",
+            {
+                "since_days": {"type": "integer", "description": "Look back N days for trends (default 7).", "required": False},
+            },
         )
 
     # ── Knowledge upgrade (Phase 3.1) ──────────────────────────────────
