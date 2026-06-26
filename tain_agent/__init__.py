@@ -6,5 +6,5 @@ execution, behavioral evolution tracking, and inter-agent communication.
 v0.7.0 — ToolForge update mode, knowledge references, evolution-mode adaptive suggestions, subtraction feedback signal.
 """
 
-__version__ = "0.7.0"
+__version__ = "0.9.0"
 __compatible_agent_versions__ = ">=0.0.1"
