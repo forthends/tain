@@ -147,6 +147,40 @@ def get_agent_decisions(name: str, phase: str = "", decision_type: str = "",
     return entries[offset:offset + limit], total
 
 
+def _normalize_params(params):
+    """Normalize tool parameters to JSON Schema form: {'type':'object','properties':{...},'required':[...]}."""
+    if not params:
+        return {}
+    if isinstance(params, list):
+        props = {}
+        required = []
+        for p in params:
+            if isinstance(p, dict) and "name" in p:
+                pn = p["name"]
+                props[pn] = {k: v for k, v in p.items() if k != "name"}
+                if p.get("required"):
+                    required.append(pn)
+        return {"type": "object", "properties": props, "required": required}
+    if isinstance(params, dict) and "properties" not in params:
+        props = {}
+        required = []
+        for pname, pinfo in params.items():
+            if isinstance(pinfo, dict):
+                props[pname] = {k: v for k, v in pinfo.items() if k != "required"}
+                if pinfo.get("required"):
+                    required.append(pname)
+        return {"type": "object", "properties": props, "required": required}
+    return params
+
+
+def _meta_stem(path: Path) -> str:
+    """Return the filename stem, stripping both .meta and .json suffixes."""
+    name = path.name
+    if name.endswith(".meta.json"):
+        return name[:-len(".meta.json")]
+    return path.stem
+
+
 def get_agent_tools(name: str) -> list[dict]:
     forged_dir = WORKSPACE_ROOT / name / "forged_tools"
     if not forged_dir.exists():
@@ -156,13 +190,13 @@ def get_agent_tools(name: str) -> list[dict]:
         meta = _read_json(meta_file)
         if not meta:
             continue
-        tool_name = meta.get("name", meta_file.stem)
+        tool_name = meta.get("name") or meta.get("tool_name") or _meta_stem(meta_file)
         source_file = forged_dir / f"{tool_name}.py"
         source = source_file.read_text(encoding="utf-8") if source_file.exists() else ""
         tools.append({
             "name": tool_name,
-            "description": meta.get("description", ""),
-            "parameters": meta.get("parameters", {}),
+            "description": meta.get("description") or "",
+            "parameters": _normalize_params(meta.get("parameters")),
             "source": source,
         })
     return tools
@@ -176,8 +210,8 @@ def get_agent_tool_detail(name: str, tool_name: str) -> dict | None:
     source = source_file.read_text(encoding="utf-8") if source_file.exists() else ""
     return {
         "name": tool_name,
-        "description": meta.get("description", ""),
-        "parameters": meta.get("parameters", {}),
+        "description": meta.get("description") or "",
+        "parameters": _normalize_params(meta.get("parameters")),
         "source": source,
     }
 

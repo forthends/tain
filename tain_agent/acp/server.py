@@ -200,11 +200,15 @@ class ACPServer:
             engine = ChatEngine(agent)
 
             messages = [{"role": "user", "content": text}]
-            turn = await engine.run_turn(messages, cancel_event)
+            final_turn = None
+            async for event in engine.run_turn(messages, cancel_event):
+                if event["type"] == "done":
+                    final_turn = event["turn"]
 
-            self._send_event(session_id, {"type": "text", "text": turn.text})
-            for tc in turn.tool_calls:
-                self._send_event(session_id, {"type": "tool_call", "name": tc.name, "input": tc.input})
+            if final_turn:
+                self._send_event(session_id, {"type": "text", "text": final_turn.text})
+                for tc in final_turn.tool_calls:
+                    self._send_event(session_id, {"type": "tool_call", "name": tc.name, "input": tc.input})
             if cancel_event.is_set():
                 self._send_event(session_id, {"type": "cancelled"})
 

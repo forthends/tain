@@ -7,9 +7,14 @@ from tain_agent.kernel.protocol import AgentContext, PluginProtocol
 from tain_agent.plugins.knowledge import KnowledgePlugin
 from tain_agent.plugins.knowledge.graph import KnowledgeGraph, Entity, Relation
 from tain_agent.plugins.knowledge.lifecycle import (
+    _project_root,
+    add_reference,
     conflict_detect,
     freshness_check,
+    get_referenced_files,
     inherit_entities,
+    list_references,
+    sync_references,
 )
 
 
@@ -270,3 +275,116 @@ class TestKnowledgePlugin:
             plugin2.initialize(ctx)
             assert plugin2._graph.entity_count >= 1
             plugin2.shutdown()
+
+
+class TestKnowledgeReferences:
+    """Tests for knowledge reference functions — cross-agent knowledge sharing."""
+
+    def test_add_reference_creates_record(self, tmp_path, monkeypatch):
+        """Create a reference and verify it appears in list_references."""
+        monkeypatch.setattr(
+            "tain_agent.plugins.knowledge.lifecycle._project_root",
+            lambda: tmp_path,
+        )
+
+        # Set up source agent's knowledge directory and file
+        source_knowledge = tmp_path / "agent_workspace" / "sage" / "knowledge"
+        source_knowledge.mkdir(parents=True)
+        (source_knowledge / "framework_bug_inventory.md").write_text(
+            "# Framework Bug Inventory\n\nBugs found in the Tain framework."
+        )
+
+        result = add_reference(
+            "sage", "framework_bug_inventory.md", "framework_constraints", "puzzle"
+        )
+        assert result["success"] is True
+        assert result["reference_id"] == "sage::framework_bug_inventory.md"
+        assert result["record"]["source_agent"] == "sage"
+        assert result["record"]["category"] == "framework_constraints"
+        assert result["record"]["status"] == "active"
+
+        listed = list_references("puzzle")
+        assert listed["success"] is True
+        assert listed["count"] == 1
+        assert listed["references"][0]["source_agent"] == "sage"
+        assert listed["references"][0]["path"] == "framework_bug_inventory.md"
+
+    def test_add_reference_rejects_missing_source(self, tmp_path, monkeypatch):
+        """Reference to nonexistent agent/path must fail."""
+        monkeypatch.setattr(
+            "tain_agent.plugins.knowledge.lifecycle._project_root",
+            lambda: tmp_path,
+        )
+
+        # Do not create the source file
+        result = add_reference(
+            "sage", "nonexistent.md", "framework_constraints", "puzzle"
+        )
+        assert result["success"] is False
+        assert "error" in result
+        assert "Source file not found" in result["error"]
+
+    def test_sync_references_updates_timestamps(self, tmp_path, monkeypatch):
+        """Create a reference then sync; verify synced count."""
+        monkeypatch.setattr(
+            "tain_agent.plugins.knowledge.lifecycle._project_root",
+            lambda: tmp_path,
+        )
+
+        source_knowledge = tmp_path / "agent_workspace" / "sage" / "knowledge"
+        source_knowledge.mkdir(parents=True)
+        (source_knowledge / "framework_bug_inventory.md").write_text("content")
+
+        add_reference(
+            "sage", "framework_bug_inventory.md", "framework_constraints", "puzzle"
+        )
+
+        # Small delay so the synced timestamp is visibly different
+        import time
+        time.sleep(0.01)
+
+        result = sync_references("puzzle")
+        assert result["success"] is True
+        assert result["synced"] == 1
+        assert "Synced 1 references" in result["message"]
+
+    def test_get_referenced_files_returns_paths(self, tmp_path, monkeypatch):
+        """Create a reference, verify get_referenced_files returns the correct Path."""
+        monkeypatch.setattr(
+            "tain_agent.plugins.knowledge.lifecycle._project_root",
+            lambda: tmp_path,
+        )
+
+        source_knowledge = tmp_path / "agent_workspace" / "sage" / "knowledge"
+        source_knowledge.mkdir(parents=True)
+        (source_knowledge / "framework_bug_inventory.md").write_text("content")
+
+        add_reference(
+            "sage", "framework_bug_inventory.md", "framework_constraints", "puzzle"
+        )
+
+        files = get_referenced_files("puzzle")
+        assert len(files) == 1
+        assert files[0].name == "framework_bug_inventory.md"
+        assert "sage" in str(files[0])
+        assert isinstance(files[0], Path)
+
+    def test_empty_references_graceful(self, tmp_path, monkeypatch):
+        """List/sync/get on an agent with no references returns empty/zero results."""
+        monkeypatch.setattr(
+            "tain_agent.plugins.knowledge.lifecycle._project_root",
+            lambda: tmp_path,
+        )
+
+        # No references file exists for this agent
+        listed = list_references("unknown")
+        assert listed["success"] is True
+        assert listed["count"] == 0
+        assert listed["references"] == []
+
+        synced = sync_references("unknown")
+        assert synced["success"] is True
+        assert synced["synced"] == 0
+
+        files = get_referenced_files("unknown")
+        assert files == []

@@ -289,13 +289,14 @@ class MetricsCollector:
 
     def __init__(self, base_dir: str = ".", tool_registry=None,
                  personality=None, improvement_loop=None,
-                 decision_log=None, memory=None):
+                 decision_log=None, memory=None, agent_name: str = ""):
         self.base_dir = Path(base_dir).resolve()
         self.tool_registry = tool_registry
         self.personality = personality
         self.improvement_loop = improvement_loop
         self.decision_log = decision_log
         self.memory = memory
+        self.agent_name = agent_name
 
     def collect(self, version: str = "unknown") -> MetricsSnapshot:
         """Collect all available metrics into a snapshot."""
@@ -346,10 +347,17 @@ class MetricsCollector:
 
         # Fallback: scan forged_tools directories on filesystem
         if s.tool_total_count == 0:
-            for tools_dir in [
-                self.base_dir / "agent_workspace" / "forged_tools",
+            candidate_dirs = []
+            # Current agent's workspace takes priority
+            if self.agent_name:
+                ft = self.base_dir / "agent_workspace" / self.agent_name / "forged_tools"
+                if ft.exists():
+                    candidate_dirs.append(ft)
+            # Also scan built-in forged tools for comprehensive count
+            candidate_dirs.append(
                 self.base_dir / "tain_agent" / "tools" / "forged",
-            ]:
+            )
+            for tools_dir in candidate_dirs:
                 if tools_dir.exists():
                     py_files = [f for f in tools_dir.glob("*.py")
                                if not f.name.startswith("_")]
@@ -374,10 +382,14 @@ class MetricsCollector:
                 pass
 
         # Dead tool detection by file modification time (> 30 days)
-        forged_dirs = [
-            self.base_dir / "agent_workspace" / "forged_tools",
+        forged_dirs = []
+        if self.agent_name:
+            ft = self.base_dir / "agent_workspace" / self.agent_name / "forged_tools"
+            if ft.exists():
+                forged_dirs.append(ft)
+        forged_dirs.append(
             self.base_dir / "tain_agent" / "tools" / "forged",
-        ]
+        )
         now_ts = now()
         dead_count = 0
         for forged_dir in forged_dirs:
@@ -536,8 +548,8 @@ def _project_root() -> Path:
 
 def _snapshots_dir(base_dir: str = None) -> Path:
     if base_dir is None:
-        base_dir = str(_project_root())
-    d = Path(base_dir) / "tain_agent" / "state" / "metrics_snapshots"
+        base_dir = str(_project_root() / "tain_agent" / "state" / "metrics_snapshots")
+    d = Path(base_dir)
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -616,13 +628,15 @@ def _get_suggestion(metric_key: str) -> str:
 
 # ─── Tool Entry Point ──────────────────────────────────────────────────
 
-def collect(version: str = "", compare_with: str = "") -> dict:
+def collect(version: str = "", compare_with: str = "",
+            agent_name: str = "") -> dict:
     """Main entry point for the evolution_metrics tool.
 
     Args:
         version: Current version string. Auto-detected if empty.
         compare_with: Previous version to compare against. If empty and a
                       prior snapshot exists, compares with the most recent.
+        agent_name: Current agent name for workspace-scoped tool discovery.
 
     Returns:
         dict with snapshot, comparison (if applicable), and any alerts.
@@ -638,7 +652,7 @@ def collect(version: str = "", compare_with: str = "") -> dict:
             version = "0.0.0"
 
     # Collect current metrics (use project root, not CWD)
-    collector = MetricsCollector(base_dir=str(root))
+    collector = MetricsCollector(base_dir=str(root), agent_name=agent_name)
     snapshot = collector.collect(version=version)
 
     result = {
@@ -685,15 +699,18 @@ def collect(version: str = "", compare_with: str = "") -> dict:
     return result
 
 
-def main(action: str = "collect", version: str = "", compare_with: str = "") -> str:
+def main(action: str = "collect", version: str = "", compare_with: str = "",
+         agent_name: str = "") -> str:
     """Forged tool entry point."""
     if action == "collect":
-        result = collect(version=version, compare_with=compare_with)
+        result = collect(version=version, compare_with=compare_with,
+                        agent_name=agent_name)
     elif action == "list":
         versions = list_snapshots()
         result = {"status": "ok", "snapshots": versions}
     elif action == "check":
-        result = collect(version=version, compare_with=compare_with)
+        result = collect(version=version, compare_with=compare_with,
+                        agent_name=agent_name)
         # Focus on alerts
         alerts = result.get("alerts", [])
         degradations = result.get("degradations", [])

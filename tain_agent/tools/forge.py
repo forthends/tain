@@ -152,7 +152,7 @@ class ToolForge:
                 report = result
             else:
                 report = json.loads(result)
-            return {
+            sandbox_report = {
                 "passed": report.get("passed", False),
                 "report": report.get("summary", "No summary."),
                 "warnings": report.get("warnings", []),
@@ -160,7 +160,16 @@ class ToolForge:
                 "functions_found": report.get("functions_found", []),
                 "sandbox_result": report,
             }
+            if not sandbox_report["passed"]:
+                from tain_agent.tools.sandbox_allowlist import get_allowlist
+                sandbox_report["allowlist_hint"] = get_allowlist()
+            return sandbox_report
         except Exception as e:
+            try:
+                from tain_agent.tools.sandbox_allowlist import get_allowlist
+                hint = get_allowlist()
+            except Exception:
+                hint = None
             return {
                 "passed": False,
                 "report": f"Sandbox internal error: {e}",
@@ -168,6 +177,7 @@ class ToolForge:
                 "errors": [{"type": "sandbox_error", "detail": str(e)}],
                 "functions_found": [],
                 "sandbox_result": None,
+                "allowlist_hint": hint,
             }
 
     # ── Parameter inference from function signatures ──────────────────
@@ -216,18 +226,35 @@ class ToolForge:
     # ── Forge ─────────────────────────────────────────────────────────
 
     # ── Forge helper: Stage 0 ──
-    def _forge_check_name(self, name: str) -> dict | None:
-        """Check if name is protected or already exists. Returns error dict or None."""
+    def _forge_check_name(self, name: str, action: str = "create") -> dict | None:
+        """Check if name is protected, already exists, or doesn't exist (update mode).
+        Returns error dict or None.
+
+        For action="create" (default): rejects if the name already exists.
+        For action="update": rejects if the name does NOT exist in the registry.
+        """
         protected = {"observe_environment", "execute_code", "write_file", "read_file",
                      "web_fetch", "web_search", "get_current_time", "explore_directory"}
         if name in protected:
             return {"success": False, "error": f"Cannot override protected tool: {name}."}
-        # Check if tool with same name already registered
+
+        # ── Update mode: reject if tool does NOT exist ──
+        if action == "update":
+            if name not in self.registry.list_names():
+                return {
+                    "success": False,
+                    "error": f"Tool '{name}' does not exist in registry. Cannot update a non-existent tool.",
+                    "hint": "Use action='create' to forge a new tool with this name.",
+                }
+            return None
+
+        # ── Create mode (default): reject if tool already exists ──
         if name in self.registry.list_names():
             return {
                 "success": False,
-                "error": f"Tool '{name}' already exists. Use a different name or remove the existing tool first.",
-                "hint": "Check /tools list to see all registered tools.",
+                "error": f"Tool '{name}' already exists. Use a different name, remove the existing tool first, "
+                         f"or use action='update' to modify it.",
+                "hint": "Check /tools list to see all registered tools. To modify this tool, pass action='update'.",
             }
         # Check for similar names (fuzzy match)
         import difflib
@@ -338,26 +365,42 @@ class ToolForge:
                max(candidates.items(), key=lambda kv: len(inspect.signature(kv[1]).parameters))[1]
 
     # ── Forge helper: Stage 5 ──
-    def _forge_register(self, name: str, func, description: str, parameters: dict, code: str) -> None:
+    def _forge_register(self, name: str, func, description: str, parameters: dict, code: str,
+                        action: str = "create") -> None:
+        # For update: remove old registration before re-registering
+        if action == "update":
+            self.registry.remove(name)
+            self._forged_tools.pop(name, None)
         self.registry.register(name, func, description, parameters)
         self._forged_tools[name] = {"description": description, "code": code, "parameters": parameters}
-        self._save_forged_tool(name, code, description, parameters)
+        self._save_forged_tool(name, code, description, parameters, action=action)
         if self.decision_log:
+            log_action = "forge_tool_updated" if action == "update" else "forge_tool"
             self.decision_log.record(
-                context={"action": "forge_tool", "tool_name": name},
+                context={"action": log_action, "tool_name": name},
                 decision_type="tool_forge",
-                options_considered=[{"option": "forge", "tool_name": name}],
+                options_considered=[{"option": action, "tool_name": name}],
                 chosen_option=name,
-                reasoning=f"Tool forged: {name} — {description}",
+                reasoning=f"Tool {action}d: {name} — {description}",
                 expected_outcome=f"Tool '{name}' available.",
                 phase="evolve")
 
-    def forge(self, name: str, description: str, code: str, parameters: dict = None) -> dict:
-        """Dynamically create a new tool from source code.
+    def forge(self, name: str, description: str, code: str, parameters: dict = None,
+              action: str = "create") -> dict:
+        """Dynamically create or update a tool from source code.
         Pipeline: NameCheck → Sandbox → PathCheck → Compile → Exec → Discover → Register
+
+        Args:
+            action: "create" (default) to forge a new tool, "update" to modify an existing one.
         """
+        # Validate action
+        if action not in ("create", "update"):
+            return {
+                "success": False,
+                "error": f"Invalid action '{action}'. Must be 'create' or 'update'.",
+            }
         # Stage 0
-        err = self._forge_check_name(name)
+        err = self._forge_check_name(name, action=action)
         if err: return err
         # Stage 1
         sr = self._forge_validate_sandbox(name, code)
@@ -386,7 +429,7 @@ class ToolForge:
         # Stage 4.5
         if not parameters: parameters = self._infer_parameters(func)
         # Stage 5
-        self._forge_register(name, func, description, parameters, code)
+        self._forge_register(name, func, description, parameters, code, action=action)
         return {"success": True,
                 "message": f"Tool '{name}' forged and registered successfully.",
                 "tool_description": description, "tool_parameters": parameters,
@@ -453,27 +496,39 @@ class ToolForge:
 
     # ── Persistence ───────────────────────────────────────────────────
 
-    def _save_forged_tool(self, name: str, code: str, description: str = "", parameters: dict = None) -> None:
+    def _save_forged_tool(self, name: str, code: str, description: str = "",
+                         parameters: dict = None, action: str = "create") -> None:
         """Persist forged tool source code + metadata to disk.
-        
+
         Safety: checks for file collisions before overwriting. If {name}.py already exists
         and contains code for a DIFFERENT tool (detected by function name mismatch),
         refuses to overwrite to prevent accidental tool destruction.
+
+        On update: creates a .py.bak backup before overwriting and skips the collision
+        check (the update action implies intentional overwrite).
         """
         import re as _re
-        
+
         self._forge_dir.mkdir(parents=True, exist_ok=True)
         source_path = self._forge_dir / f"{name}.py"
         meta_path = self._forge_dir / f"{name}.meta.json"
-        
+
+        is_update = action == "update"
+
+        # ── Backup on update ──
+        if is_update and source_path.exists():
+            bak_path = self._forge_dir / f"{name}.py.bak"
+            bak_path.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+
         # ── Collision check: prevent overwriting a different tool's file ──
-        if source_path.exists():
+        # Skip on update — the caller intends to overwrite the existing tool.
+        if source_path.exists() and not is_update:
             existing_code = source_path.read_text(encoding="utf-8")
             # Extract function names from existing code
             existing_funcs = set(_re.findall(r'^def (\w+)', existing_code, _re.MULTILINE))
             # Extract function names from new code
             new_funcs = set(_re.findall(r'^def (\w+)', code, _re.MULTILINE))
-            
+
             # If the main function name is different and there's no overlap at all,
             # this is likely a collision — a different tool is being saved to the same name
             if name not in new_funcs and name not in existing_funcs:
@@ -486,7 +541,7 @@ class ToolForge:
                         f"functions {new_funcs}. This would destroy a different tool. "
                         f"Choose a different tool name."
                     )
-        
+
         # Save Python source
         source_path.write_text(code, encoding="utf-8")
         # Save metadata (description + parameter schema)

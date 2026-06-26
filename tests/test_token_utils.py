@@ -14,7 +14,8 @@ class TestEstimateTokens:
         assert est > 0
 
     def test_longer_text(self):
-        text = "x" * 1003  # 1003 chars × 2/5 ≈ 401.2 → > 400
+        # ~2400 chars of diverse text → well above 400 tokens in any encoding
+        text = "hello world " * 200
         est = estimate_tokens(text)
         assert est > 400
 

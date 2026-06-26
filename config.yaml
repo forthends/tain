@@ -3,7 +3,7 @@
 
 # ── Framework ──────────────────────────────────────────────────────────
 framework:
-  version: "0.5.1"
+  version: "0.6.0"
   min_agent_version: "0.0.1"
 
 # ── Agent defaults ─────────────────────────────────────────────────────
@@ -97,6 +97,26 @@ drives:
     idle_pressure_rate: 0.10      # pressure increase per day of inactivity
     max_idle_pressure: 0.40       # cap for idle pressure
 
+# ── Forge Configuration ─────────────────────────────────────────────────
+# Controls autonomous tool forging behavior.
+forge:
+  # Packages the agent is allowed to install as tool dependencies.
+  # Packages not in this list generate an application report for human review.
+  allowed_packages:
+    - requests
+    - pandas
+    - numpy
+    - pytest
+    - beautifulsoup4
+    - matplotlib
+    - plotly
+    - scipy
+    - pillow
+    - httpx
+    - aiohttp
+  # Maximum autonomous forge cycles per agent session.
+  max_forges_per_session: 3
+
 # ── Phase 2: Evolution Metrics ──────────────────────────────────────
 # Quantitative self-evaluation system for tracking evolution quality.
 metrics:
@@ -128,3 +148,43 @@ logging:
   memory_file: "memory.json"
   checkpoint_file: "conversation_checkpoint.json"
   lineage_file: "lineage.jsonl"
+
+# ── Daemon Configuration ────────────────────────────────────────────────
+# Controls agent behavior when running under the guardian process supervisor.
+daemon:
+  # Exit after this many seconds of inactivity (0 = never exit).
+  idle_timeout: 3600
+  # Seconds between auto-restarts when idle_timeout triggers exit (0 = no auto-restart).
+  wake_interval: 0
+  # Start a lightweight HTTP health endpoint on the given port (0 = disabled).
+  health_port: 0
+  # On restart, inject previous conversation summary into initial message.
+  resume_context: true
+
+# ── Cognitive Suggestion ────────────────────────────────────────────────
+# Controls how the framework nudges the agent toward action, exploration,
+# or reflection. Pressure values (0.0–1.0) determine how often each type
+# of suggestion appears. Adaptive mode adjusts pressures based on observed
+# behavior patterns.
+cognitive_suggestion:
+  modes:
+    chaos:
+      act_pressure: 0.6
+      explore_pressure: 0.5
+      reflect_ratio: 0.3
+    specified:
+      act_pressure: 0.4
+      explore_pressure: 0.3
+      reflect_ratio: 0.5
+      role_overrides:
+        reflective:
+          act_pressure: 0.2
+          reflect_ratio: 0.7
+        creative:
+          act_pressure: 0.7
+          reflect_ratio: 0.2
+  adaptive:
+    enabled: true
+    observation_window: 5
+    act_drought_threshold: 0.2
+    pressure_adjustment_rate: 0.1

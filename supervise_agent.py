@@ -12,8 +12,10 @@ Usage:
     python supervise_agent.py -- python main.py --dialogue  # Pass args to agent
 """
 
+import json
 import os
 import sys
+import threading
 import time
 import signal
 import subprocess
@@ -136,6 +138,30 @@ def check_agent_health() -> dict:
     return health
 
 
+def _start_health_endpoint(port: int, agent_name: str) -> None:
+    """Start a lightweight HTTP health check endpoint."""
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/health":
+                health = {"status": "ok", "agent": agent_name, "pid": os.getpid()}
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(health).encode())
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def log_message(self, format, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", port), HealthHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    print(f"[guardian] Health endpoint listening on http://127.0.0.1:{port}/health")
+
+
 def _find_python() -> str:
     """Find the best Python interpreter — prefer venv if available."""
     venv_python = PROJECT_ROOT / "venv" / "bin" / "python3"
@@ -153,6 +179,21 @@ def run_agent(agent_args: list[str], proc_holder: list) -> int:
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     env["TAO_DAEMON"] = "1"
+
+    # Load daemon config and pass to child process
+    try:
+        import yaml
+        config_path = PROJECT_ROOT / "config.yaml"
+        if config_path.exists():
+            with open(config_path) as f:
+                cfg = yaml.safe_load(f)
+            daemon_cfg = cfg.get("daemon", {})
+            env["TAO_DAEMON_IDLE_TIMEOUT"] = str(daemon_cfg.get("idle_timeout", 0))
+            env["TAO_DAEMON_WAKE_INTERVAL"] = str(daemon_cfg.get("wake_interval", 0))
+            env["TAO_DAEMON_HEALTH_PORT"] = str(daemon_cfg.get("health_port", 0))
+            env["TAO_DAEMON_RESUME_CONTEXT"] = str(daemon_cfg.get("resume_context", True))
+    except Exception:
+        pass
 
     cmd = [_find_python(), "-u", str(PROJECT_ROOT / "main.py")] + agent_args
 
@@ -337,6 +378,19 @@ def main():
 
     if args.daemon:
         log(f"Daemon PID: {os.getpid()}")
+
+    # Start health endpoint if configured
+    try:
+        import yaml
+        config_path = PROJECT_ROOT / "config.yaml"
+        if config_path.exists():
+            with open(config_path) as f:
+                cfg = yaml.safe_load(f)
+            health_port = cfg.get("daemon", {}).get("health_port", 0)
+            if health_port > 0:
+                _start_health_endpoint(health_port, agent_name)
+    except Exception:
+        pass
 
     consecutive_failures = 0
     restart_count = 0

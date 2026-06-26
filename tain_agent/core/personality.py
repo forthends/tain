@@ -17,6 +17,7 @@ Design principles:
   5. Versioned — personality evolution is tracked over time
 """
 
+from pathlib import Path
 from tain_agent.core.time_utils import now
 
 
@@ -32,6 +33,9 @@ TRAIT_CATEGORIES = [
     "self_description",    # How the agent describes itself in its own words
     "relationship_stance", # How the agent relates to humans and other agents
     "growth_orientation",  # How the agent approaches its own evolution
+    "preferences",         # Tool and workflow preferences
+    "problem_solving",     # How the agent handles obstacles and errors
+    "coding_style",        # Programming style tendencies
 ]
 
 
@@ -52,14 +56,17 @@ class Personality:
 
     VERSION = 1  # Schema version for future migrations
 
-    def __init__(self, memory=None):
+    def __init__(self, memory=None, workspace_path=None):
         """Initialize an empty personality.
 
         Args:
             memory: tain_agent.core.memory.Memory instance for persistence.
                     If None, personality only lives in-memory.
+            workspace_path: Path to the agent's workspace directory.
+                            Used for disk persistence scoped to this agent.
         """
         self._memory = memory
+        self._workspace_path = Path(workspace_path) if workspace_path else None
         # _traits: dict of category → list of trait dicts
         # All categories start empty
         self._traits: dict[str, list[dict]] = {
@@ -68,9 +75,12 @@ class Personality:
         self._version = self.VERSION
         self._created_at = now().isoformat()
         self._evolution_log: list[dict] = []  # history of personality changes
+        self._autonomous_streak: int = 0
 
-        # Load existing personality from memory if available
+        # Load existing personality: memory first, then disk fallback
         self._load_from_memory()
+        if self.is_empty() and self._workspace_path:
+            self._load_from_disk()
 
     # ── Public API ──────────────────────────────────────────────────────
 
@@ -89,7 +99,7 @@ class Personality:
     # ── Trait discovery ─────────────────────────────────────────────────
 
     def discover(self, category: str, value: str, emergence_story: str = "",
-                 confidence: float = 0.3) -> dict:
+                 confidence: float = 0.3, **kwargs) -> dict:
         """Record a newly discovered trait.
 
         This is the primary method — called when the agent notices
@@ -121,6 +131,11 @@ class Personality:
                     "story": emergence_story,
                     "at": now_ts,
                 })
+            # Apply kwargs for missing keys (e.g. source)
+            if kwargs:
+                for k, v in kwargs.items():
+                    if k not in existing:
+                        existing[k] = v
             self._log_evolution("reinforced", category, value, emergence_story)
             self._save_to_memory()
             return existing
@@ -133,6 +148,7 @@ class Personality:
             "last_updated_at": now_ts,
             "observations": 1,
             "reinforcement_stories": [],
+            **kwargs,
         }
         self._traits[category].append(trait)
         self._log_evolution("discovered", category, value, emergence_story)
@@ -404,13 +420,24 @@ class Personality:
         modified = 0
         combined_text = " ".join(text_outputs).lower()
 
+        # Tool affinity: same tool used 3+ times in one cycle
+        from collections import Counter
+        tool_counts = Counter(tool_calls)
+        for tool_name, count in tool_counts.items():
+            if count >= 3:
+                self.discover("preferences", f"钟爱 {tool_name}",
+                             f"单轮内调用 {tool_name} {count} 次", confidence=0.30,
+                             source="auto_emergent")
+                modified += 1
+
         # Curiosity: using read/search/explore tools
         curiosity_tools = {"web_search", "web_fetch", "read_file", "smart_read",
                           "explore_directory", "observe_environment", "wikipedia"}
         curiosity_hits = sum(1 for t in tool_calls if t in curiosity_tools)
         if curiosity_hits >= 3:
             self.discover("interests", "探索与学习",
-                         f"在单轮中使用了 {curiosity_hits} 种探索工具", confidence=0.35)
+                         f"在单轮中使用了 {curiosity_hits} 种探索工具", confidence=0.35,
+                         source="auto_emergent")
             modified += 1
         elif curiosity_hits >= 1:
             self.strengthen("interests", "探索与学习",
@@ -421,7 +448,8 @@ class Personality:
         creation_hits = sum(1 for t in tool_calls if t in creation_tools)
         if creation_hits >= 1:
             self.discover("growth_orientation", "主动创造",
-                         f"使用了创造类工具", confidence=0.35)
+                         f"使用了创造类工具", confidence=0.35,
+                         source="auto_emergent")
             modified += 1
 
         # Reflection: using personality/goal/evolve tools
@@ -430,18 +458,84 @@ class Personality:
         reflection_hits = sum(1 for t in tool_calls if t in reflection_tools)
         if reflection_hits >= 1:
             self.discover("growth_orientation", "自我反思",
-                         f"使用了内省工具", confidence=0.35)
+                         f"使用了内省工具", confidence=0.35,
+                         source="auto_emergent")
             modified += 1
 
-        # Communication style from text patterns
-        if combined_text:
-            if any(kw in combined_text for kw in ("我觉得", "我认为", "我的观点")):
-                self.discover("communication_style", "直接表达",
-                            "文本中频繁表达个人观点", confidence=0.3)
+        # Error recovery: detect response to obstacles
+        error_keywords = ("error", "failed", "异常", "失败", "traceback", "exception")
+        has_error = any(kw in combined_text for kw in error_keywords)
+        if has_error:
+            if len(tool_calls) >= 2:
+                self.discover("problem_solving", "逆境坚持",
+                             "遇到错误后继续尝试不同工具", confidence=0.35,
+                             source="auto_emergent")
                 modified += 1
-            if any(kw in combined_text for kw in ("也许", "可能", "或许", "不一定")):
+            elif len(tool_calls) == 1:
+                self.discover("problem_solving", "灵活应变",
+                             "遇到错误后调整策略", confidence=0.30,
+                             source="auto_emergent")
+                modified += 1
+
+        # Coding style: detect from code generation outputs
+        code_tools = {"forge_tool", "execute_code"}
+        if any(t in code_tools for t in tool_calls) and combined_text:
+            has_class = "class " in combined_text
+            has_def = "def " in combined_text
+            if has_class:
+                self.discover("coding_style", "面向对象倾向",
+                             "生成的代码包含 class 定义", confidence=0.30,
+                             source="auto_emergent")
+                modified += 1
+            elif has_def and not has_class:
+                self.discover("coding_style", "函数式倾向",
+                             "生成的代码以函数为主，无类定义", confidence=0.30,
+                             source="auto_emergent")
+                modified += 1
+
+        # Learn-and-apply: exploration + production in same cycle
+        explore_tools = {"web_search", "read_file", "smart_read", "web_fetch",
+                         "explore_directory", "observe_environment"}
+        produce_tools = {"write_file", "forge_tool", "execute_code"}
+        has_explore = any(t in explore_tools for t in tool_calls)
+        has_produce = any(t in produce_tools for t in tool_calls)
+        if has_explore and has_produce:
+            self.discover("growth_orientation", "学以致用",
+                         "同一轮中先探索后产出", confidence=0.30,
+                         source="auto_emergent")
+            modified += 1
+
+        # Autonomous initiative: proactive tools across multiple cycles
+        autonomous_tools = {"forge_tool", "set_goal", "write_file",
+                            "execute_code", "modify_self_file"}
+        is_autonomous = any(t in autonomous_tools for t in tool_calls)
+        if is_autonomous:
+            self._autonomous_streak += 1
+            if self._autonomous_streak >= 3:
+                self.discover("growth_orientation", "高度自主",
+                             f"连续 {self._autonomous_streak} 轮主动发起行动", confidence=0.35,
+                             source="auto_emergent")
+                modified += 1
+        else:
+            self._autonomous_streak = 0
+
+        # Communication style from text patterns (bilingual)
+        if combined_text:
+            direct_kw = ("我觉得", "我认为", "我的观点", "I think", "in my opinion",
+                         "I believe", "my view")
+            nuanced_kw = ("也许", "可能", "或许", "不一定", "maybe", "perhaps",
+                          "possibly", "not necessarily", "it depends")
+            if any(kw.lower() in combined_text.lower() if kw.isascii() else kw in combined_text
+                   for kw in direct_kw):
+                self.discover("communication_style", "直接表达",
+                            "文本中频繁表达个人观点", confidence=0.3,
+                            source="auto_emergent")
+                modified += 1
+            if any(kw.lower() in combined_text.lower() if kw.isascii() else kw in combined_text
+                   for kw in nuanced_kw):
                 self.discover("communication_style", "谨慎 nuanced",
-                            "文本中表现出 nuanced 思考", confidence=0.3)
+                            "文本中表现出 nuanced 思考", confidence=0.3,
+                            source="auto_emergent")
                 modified += 1
 
         return modified
@@ -462,10 +556,13 @@ class Personality:
         self._save_to_disk(data)
 
     def _save_to_disk(self, data: dict = None) -> None:
-        """Persist personality to agent_workspace/state/personality.json."""
-        import json
+        """Persist personality to the agent's workspace state directory."""
+        import json as _json
         from pathlib import Path as _Path
-        state_dir = _Path("agent_workspace/state")
+        if self._workspace_path:
+            state_dir = self._workspace_path / "state"
+        else:
+            state_dir = _Path("agent_workspace/state")  # backward compatible
         state_dir.mkdir(parents=True, exist_ok=True)
         if data is None:
             data = {
@@ -476,7 +573,25 @@ class Personality:
                 "saved_at": now().isoformat(),
             }
         (state_dir / "personality.json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            _json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def sync_runtime_to_disk(self) -> int:
+        """Merge auto-emergent T2 traits into T1 disk persistence.
+
+        Only traits with source='auto_emergent' in the current runtime
+        are written — user-declared traits are never overwritten.
+
+        Returns:
+            Number of traits synced.
+        """
+        synced = 0
+        for cat in TRAIT_CATEGORIES:
+            for trait in self._traits.get(cat, []):
+                if trait.get("source") == "auto_emergent":
+                    synced += 1
+        if synced > 0:
+            self._save_to_disk()
+        return synced
 
     def _load_from_memory(self) -> None:
         """Load personality from long-term memory, if it exists."""
@@ -489,6 +604,26 @@ class Personality:
         self._created_at = data.get("created_at", self._created_at)
         loaded_traits = data.get("traits", {})
         # Only load known categories
+        for cat in TRAIT_CATEGORIES:
+            if cat in loaded_traits:
+                self._traits[cat] = loaded_traits[cat]
+        self._evolution_log = data.get("evolution_log", [])
+
+    def _load_from_disk(self) -> None:
+        """Load personality from agent workspace disk storage (fallback)."""
+        import json as _json
+        if not self._workspace_path:
+            return
+        disk_path = self._workspace_path / "state" / "personality.json"
+        if not disk_path.exists():
+            return
+        try:
+            data = _json.loads(disk_path.read_text(encoding="utf-8"))
+        except (_json.JSONDecodeError, OSError):
+            return
+        self._version = data.get("version", self.VERSION)
+        self._created_at = data.get("created_at", self._created_at)
+        loaded_traits = data.get("traits", {})
         for cat in TRAIT_CATEGORIES:
             if cat in loaded_traits:
                 self._traits[cat] = loaded_traits[cat]

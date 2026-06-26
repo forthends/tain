@@ -35,9 +35,11 @@ warnings.warn(
     DeprecationWarning, stacklevel=2,
 )
 
+import json
 import logging
 import os
 import time
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +185,10 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
         """PRAL Act: execute tool calls, append results, track actions."""
         text_parts = llm_response.text_blocks
         tool_use_blocks = llm_response.tool_calls
+
+        # Track last action time for daemon idle timeout
+        if tool_use_blocks:
+            self._last_action_at = time.time()
 
         if text_parts:
             thought = "\n".join(text_parts)
@@ -362,11 +368,80 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
         # Periodic cognitive introspection
         self._maybe_introspect()
 
+        # Auto-goal generation from drive pressure
+        if self.cycle_count % 5 == 0:
+            self._maybe_auto_generate_goal()
+
         # Drive exploration prompt injection
         if self.cycle_count % 8 == 0 and hasattr(self, 'drive_system') and self.drive_system:
             prompt = self.drive_system.get_exploration_prompt()
             if prompt:
                 self.conversation.append("user", prompt)
+
+    def _maybe_auto_generate_goal(self) -> None:
+        """Generate a goal automatically when drive pressure is high and no active goals.
+
+        Bridge between DriveSystem (motivation) and GoalSystem (execution).
+        Only triggers when exploration_score > 0.7 and no goals are active.
+        """
+        if not hasattr(self, 'drive_system') or not self.drive_system:
+            return
+        if not hasattr(self, 'goals'):
+            return
+
+        exploration = self.drive_system.compute_exploration_score()
+        if exploration <= 0.7:
+            return
+
+        active = self.goals.list_active()
+        if active:
+            return
+
+        dominant = self.drive_system.dominate_drive()
+        domain = self.drive_system.get_target_domain()
+
+        templates = {
+            "curiosity": ("探索并了解 {domain} 的基本概念和应用",
+                         "产出至少一份知识摘要或理解 3+ 个核心概念"),
+            "mastery": ("深入优化 {domain} 的性能或代码质量",
+                       "代码变更通过测试，或性能指标有可测量提升"),
+            "creation": ("锻造一个新工具来填补 {domain}",
+                        "工具通过 forge -> test 闭环并被注册"),
+            "conservation": ("审查和整理 {domain} 的现有状态并产出审计报告",
+                           "产出一份结构化的审计报告或维护记录"),
+        }
+
+        desc_tpl, criteria = templates.get(dominant,
+            ("基于当前状态采取有意义的行动", "产出可验证的结果"))
+
+        description = desc_tpl.format(domain=domain)
+
+        try:
+            goal = self.goals.create_goal(description, criteria)
+
+            notification = (
+                f"[自主目标] 你的 {dominant} 驱动力高涨（探索分数 {exploration:.2f}），"
+                f"系统自动为你创建了一个目标：\n"
+                f"  -> {description}\n"
+                f"  成功标准：{criteria}\n"
+                f"你可以通过 set_goal 工具调整或替换这个目标。"
+            )
+            self.conversation.append("user", notification)
+
+            if hasattr(self, 'decision_log') and self.decision_log:
+                self.decision_log.record(
+                    context={"action": "auto_generate_goal", "drive": dominant},
+                    decision_type="auto_goal",
+                    options_considered=[{"option": "auto_generate_goal",
+                                         "drive": dominant}],
+                    chosen_option=goal.id,
+                    reasoning=f"Exploration score {exploration:.3f} > 0.7, "
+                              f"no active goals, dominant drive: {dominant}",
+                    expected_outcome=description,
+                    phase=getattr(self, 'phase', "work"),
+                )
+        except Exception:
+            pass
 
     # ─── Main Run Loop ───────────────────────────────────────────────
 
@@ -392,9 +467,39 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
         logger.info("Agent: %s, Model: %s, Phase: %s", self.agent_name, self.model, self.phase)
 
         initial_message = self._build_initial_message()
+
+        # Resume context from previous daemon session
+        daemon_config = self.config.get("daemon", {})
+        if daemon_config.get("resume_context", False):
+            ctx_path = Path("agent_workspace/state/conversation_context.json")
+            if ctx_path.exists():
+                try:
+                    ctx = json.loads(ctx_path.read_text())
+                    resume_msg = (
+                        f"[上下文恢复] 你上次运行到第 {ctx.get('cycle_count', 0)} 轮，"
+                        f"阶段: {ctx.get('phase', 'explore')}。"
+                        f"上次目标: {', '.join(ctx.get('last_goals', [])) or '无'}。"
+                        f"请继续你的工作。"
+                    )
+                    initial_message = initial_message + "\n\n" + resume_msg
+                except Exception:
+                    pass
+
         self.conversation.append("user", initial_message)
+        self._last_action_at = time.time()
 
         while self._running:
+            # Idle timeout check (daemon mode)
+            daemon_config = self.config.get("daemon", {})
+            idle_timeout = daemon_config.get("idle_timeout", 0)
+            if idle_timeout > 0:
+                elapsed = time.time() - self._last_action_at
+                if elapsed >= idle_timeout:
+                    logger.info("Idle timeout reached (%.0fs), exiting for guardian restart", elapsed)
+                    self._save_conversation_context()
+                    self._running = False
+                    continue
+
             self.cycle_count += 1
             max_cycles = self.MAX_CYCLES.get(self.phase, 50)
 
@@ -420,6 +525,19 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
         return self._rate_limit_exit_code
 
     # ── Lifecycle ────────────────────────────────────────────────────
+
+    def _save_conversation_context(self) -> None:
+        """Save conversation summary for daemon resume."""
+        ctx_path = Path("agent_workspace/state/conversation_context.json")
+        ctx_path.parent.mkdir(parents=True, exist_ok=True)
+        summary = {
+            "cycle_count": self.cycle_count,
+            "phase": getattr(self, 'phase', 'explore'),
+            "last_goals": [g.description for g in self.goals.list_active()]
+                if hasattr(self, 'goals') else [],
+            "saved_at": now().isoformat(),
+        }
+        ctx_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2))
 
     def stop(self) -> None:
         """Gracefully stop the agent. Flushes buffers, saves checkpoint and phase."""

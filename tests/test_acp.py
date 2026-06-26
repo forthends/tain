@@ -123,7 +123,7 @@ class TestACPPrompt:
         monkeypatch.setattr(ACPServer, "_send_event", capture_send)
 
         async def fake_run_turn(self, messages, cancel_event):
-            return fake_turn
+            yield {"type": "done", "turn": fake_turn}
 
         monkeypatch.setattr("tain_agent.core.chat.ChatEngine.run_turn", fake_run_turn)
 

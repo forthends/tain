@@ -75,7 +75,7 @@ document.addEventListener('alpine:init', () => {
     streaming: false,
     streamText: '',
     status: '',
-    activeTools: [],
+    toolName: '',
     cancelMessageId: null,
 
     async init() {
@@ -117,7 +117,7 @@ document.addEventListener('alpine:init', () => {
             this.streamText = '';
         }
         this.status = '';
-        this.activeTools = [];
+        this.toolName = '';
     },
 
     async sendMessage() {
@@ -127,7 +127,7 @@ document.addEventListener('alpine:init', () => {
         this.streaming = true;
         this.streamText = '';
         this.status = '';
-        this.activeTools = [];
+        this.toolName = '';
         this.cancelMessageId = null;
 
         this.messages.push({
@@ -180,7 +180,7 @@ document.addEventListener('alpine:init', () => {
                                     this.streamText = '';
                                 }
                                 this.status = '';
-                                this.activeTools = [];
+                                this.toolName = '';
                                 return;
                             } else if (data.status === 'thinking') {
                                 this.status = 'thinking';
@@ -188,14 +188,9 @@ document.addEventListener('alpine:init', () => {
                                 this.status = 'text';
                             } else if (data.text) {
                                 this.streamText += data.text;
-                            } else if (data.tool_start) {
-                                this.activeTools.push({
-                                    name: data.tool_start.name,
-                                    input_preview: data.tool_start.input_preview,
-                                    done: false,
-                                });
-                            } else if (data.tool_done) {
-                                this.activeTools.forEach(t => t.done = true);
+                            } else if (data.status === 'tool') {
+                                this.status = 'tool';
+                                this.toolName = data.tool_name || '';
                             } else if (data.done) {
                                 if (this.streamText) {
                                     this.messages.push({
@@ -209,7 +204,7 @@ document.addEventListener('alpine:init', () => {
                                     this.streamText = '';
                                 }
                                 this.status = '';
-                                this.activeTools = [];
+                                this.toolName = '';
                             }
                         } catch (e) {}
                     }

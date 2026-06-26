@@ -1,5 +1,8 @@
 """Tests for the personality system."""
 
+import json
+import os
+
 import pytest
 from tain_agent.core.personality import Personality, TRAIT_CATEGORIES
 
@@ -129,3 +132,301 @@ class TestPersonalityVersioning:
         p.discover("values", "test", "")
         assert len(p._evolution_log) >= 1
         assert p._evolution_log[-1]["action"] == "discovered"
+
+
+class TestAutoObserveToolAffinity:
+    def test_detects_tool_affinity_when_same_tool_used_3_times(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["read_file", "read_file", "read_file"],
+            text_outputs=[]
+        )
+        trait = p._find_similar("preferences", "钟爱 read_file")
+        assert trait is not None
+        assert trait["confidence"] == 0.30
+        assert modified >= 1
+
+    def test_no_affinity_when_tools_varied(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["read_file", "web_search", "write_file"],
+            text_outputs=[]
+        )
+        trait = p._find_similar("preferences", "钟爱 read_file")
+        assert trait is None
+
+    def test_affinity_reinforces_on_repeat(self):
+        p = Personality()
+        p.auto_observe(
+            tool_calls=["read_file", "read_file", "read_file"],
+            text_outputs=[]
+        )
+        p.auto_observe(
+            tool_calls=["read_file", "read_file", "read_file"],
+            text_outputs=[]
+        )
+        trait = p._find_similar("preferences", "钟爱 read_file")
+        assert trait["observations"] >= 2
+
+    def test_affinity_requires_3_same_tool(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["read_file", "read_file"],
+            text_outputs=[]
+        )
+        trait = p._find_similar("preferences", "钟爱 read_file")
+        assert trait is None
+
+
+class TestAutoObserveErrorRecovery:
+    def test_persistence_when_error_but_tools_continue(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["write_file", "execute_code", "read_file"],
+            text_outputs=["error: something went wrong", "trying again"]
+        )
+        trait = p._find_similar("problem_solving", "逆境坚持")
+        assert trait is not None
+        assert trait["confidence"] == 0.35
+
+    def test_adaptability_when_error_then_tool_switch(self):
+        p = Personality()
+        p.auto_observe(
+            tool_calls=["write_file"],
+            text_outputs=["write failed"]
+        )
+        modified = p.auto_observe(
+            tool_calls=["execute_code"],
+            text_outputs=["switching approach"]
+        )
+        trait = p._find_similar("problem_solving", "灵活应变")
+        assert trait is not None
+        assert trait["confidence"] == 0.30
+
+    def test_no_error_recovery_without_error_signal(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["read_file", "web_search"],
+            text_outputs=["everything is fine", "looking good"]
+        )
+        assert p._find_similar("problem_solving", "逆境坚持") is None
+        assert p._find_similar("problem_solving", "灵活应变") is None
+
+
+class TestAutoObserveCodingStyle:
+    def test_oop_style_when_class_in_output(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["forge_tool"],
+            text_outputs=["class MyTool:\n    def run(self): pass"]
+        )
+        trait = p._find_similar("coding_style", "面向对象倾向")
+        assert trait is not None
+        assert trait["confidence"] == 0.30
+
+    def test_functional_style_when_def_without_class(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["execute_code"],
+            text_outputs=["def main():\n    return 42"]
+        )
+        trait = p._find_similar("coding_style", "函数式倾向")
+        assert trait is not None
+        assert trait["confidence"] == 0.30
+
+    def test_no_coding_style_without_code_tool(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["read_file", "web_search"],
+            text_outputs=["def foo(): pass"]
+        )
+        assert p._find_similar("coding_style", "面向对象倾向") is None
+        assert p._find_similar("coding_style", "函数式倾向") is None
+
+
+class TestAutoObserveLearnApply:
+    def test_learn_and_apply_in_same_cycle(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["web_search", "read_file", "write_file"],
+            text_outputs=["researching then creating"]
+        )
+        trait = p._find_similar("growth_orientation", "学以致用")
+        assert trait is not None
+        assert trait["confidence"] == 0.30
+
+    def test_explore_only_no_learn_apply(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["web_search", "read_file"],
+            text_outputs=["just researching"]
+        )
+        assert p._find_similar("growth_orientation", "学以致用") is None
+
+    def test_create_only_no_learn_apply(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["write_file", "execute_code"],
+            text_outputs=["just creating"]
+        )
+        assert p._find_similar("growth_orientation", "学以致用") is None
+
+
+class TestAutoObserveAutonomy:
+    def test_autonomous_streak_detected_after_3_consecutive_rounds(self):
+        p = Personality()
+        autonomous_tools_sets = [
+            ["forge_tool"],
+            ["write_file"],
+            ["execute_code"],
+        ]
+        for tool_set in autonomous_tools_sets:
+            p.auto_observe(tool_calls=tool_set, text_outputs=[])
+        trait = p._find_similar("growth_orientation", "高度自主")
+        assert trait is not None
+        assert trait["confidence"] == 0.35
+
+    def test_autonomous_streak_resets_on_non_autonomous_tool(self):
+        p = Personality()
+        p.auto_observe(tool_calls=["forge_tool"], text_outputs=[])
+        p.auto_observe(tool_calls=["write_file"], text_outputs=[])
+        p.auto_observe(tool_calls=["read_file"], text_outputs=[])
+        trait = p._find_similar("growth_orientation", "高度自主")
+        assert trait is None
+        assert p._autonomous_streak == 0
+
+    def test_set_goal_counts_as_autonomous(self):
+        p = Personality()
+        for _ in range(3):
+            p.auto_observe(tool_calls=["set_goal"], text_outputs=[])
+        trait = p._find_similar("growth_orientation", "高度自主")
+        assert trait is not None
+
+
+class TestAutoObserveBilingual:
+    def test_english_direct_expression(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["read_file"],
+            text_outputs=["I think this is correct"]
+        )
+        trait = p._find_similar("communication_style", "直接表达")
+        assert trait is not None
+
+    def test_english_nuanced_expression(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["read_file"],
+            text_outputs=["maybe we should reconsider", "perhaps not"]
+        )
+        trait = p._find_similar("communication_style", "谨慎 nuanced")
+        assert trait is not None
+
+    def test_chinese_still_works(self):
+        p = Personality()
+        modified = p.auto_observe(
+            tool_calls=["read_file"],
+            text_outputs=["我认为这个方案可行", "也许有更好的方式"]
+        )
+        assert p._find_similar("communication_style", "直接表达") is not None
+        assert p._find_similar("communication_style", "谨慎 nuanced") is not None
+
+
+# ─── Persistence tests (workspace_path + disk fallback) ─────────────────
+
+
+class TestPersistenceSaveToDisk:
+    """Tests for _save_to_disk with workspace_path."""
+
+    def test_save_to_agent_scoped_path(self, tmp_path):
+        """_save_to_disk writes to agent-scoped path when workspace_path is set."""
+        p = Personality(workspace_path=tmp_path)
+        p.discover("values", "honesty", "I noticed I always tell the truth")
+        p._save_to_disk()
+
+        disk_path = tmp_path / "state" / "personality.json"
+        assert disk_path.exists()
+
+        data = json.loads(disk_path.read_text(encoding="utf-8"))
+        assert data["version"] == Personality.VERSION
+        assert "values" in data["traits"]
+        traits = data["traits"]["values"]
+        assert len(traits) == 1
+        assert traits[0]["value"] == "honesty"
+        assert traits[0]["confidence"] == 0.3
+
+
+class TestPersistenceLoadFromDisk:
+    """Tests for _load_from_disk fallback."""
+
+    def test_restores_traits_from_disk(self, tmp_path):
+        """_load_from_disk restores traits when memory has no traits."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        traits_data = {
+            "version": Personality.VERSION,
+            "created_at": "2025-01-01T00:00:00",
+            "traits": {
+                "values": [{
+                    "value": "curiosity",
+                    "confidence": 0.5,
+                    "observations": 3,
+                    "emergence_story": "I explore",
+                    "first_observed_at": "2025-01-01T00:00:00",
+                    "last_updated_at": "2025-01-01T00:00:00",
+                    "reinforcement_stories": [],
+                }],
+            },
+            "evolution_log": [],
+            "saved_at": "2025-01-01T00:00:00",
+        }
+        (state_dir / "personality.json").write_text(
+            json.dumps(traits_data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        p = Personality(workspace_path=tmp_path, memory=None)
+
+        assert p.is_empty() is False
+        assert p.total_traits() == 1
+        trait = p._find_similar("values", "curiosity")
+        assert trait is not None
+        assert trait["confidence"] == 0.5
+
+    def test_handles_missing_file_silently(self, tmp_path):
+        """_load_from_disk does not crash when personality.json is missing."""
+        p = Personality(workspace_path=tmp_path, memory=None)
+        assert p.is_empty() is True
+        assert p.total_traits() == 0
+
+    def test_handles_corrupt_json_silently(self, tmp_path):
+        """_load_from_disk does not crash on corrupt JSON."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        (state_dir / "personality.json").write_text("this is not valid json {{{")
+
+        p = Personality(workspace_path=tmp_path, memory=None)
+        assert p.is_empty() is True
+        assert p.total_traits() == 0
+
+
+class TestPersistenceBackwardCompatibility:
+    """Tests for backward compatibility when workspace_path is not set."""
+
+    def test_save_to_default_path_without_workspace_path(self, tmp_path):
+        """Personality without workspace_path writes to agent_workspace/state/personality.json."""
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            p = Personality()
+            p.discover("values", "integrity", "being truthful")
+            p._save_to_disk()
+
+            disk_path = tmp_path / "agent_workspace" / "state" / "personality.json"
+            assert disk_path.exists()
+
+            data = json.loads(disk_path.read_text(encoding="utf-8"))
+            traits = data["traits"]["values"]
+            assert traits[0]["value"] == "integrity"
+        finally:
+            os.chdir(original_cwd)

@@ -5,7 +5,7 @@ Evaluates whether an evolved agent meets the minimum standard to
 operate as an independent executable. Two-tier assessment:
 
   Hard Gates (7): all must PASS — basic viability conditions.
-  Scoring Gates (8): weighted sum must be ≥ 0.80 — quality dimensions.
+  Scoring Gates (9): weighted sum must be ≥ 0.80 — quality dimensions.
 
 Design: Phase 3 §4.
 """
@@ -13,6 +13,7 @@ Design: Phase 3 §4.
 import json
 import importlib
 import os
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,18 @@ from typing import Optional
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+logger = logging.getLogger(__name__)
+
+try:
+    from tain_agent.plugins.knowledge.lifecycle import get_referenced_files
+except ImportError:
+    get_referenced_files = None
+    logger.warning(
+        "Knowledge plugin unavailable — S2 knowledge coverage will not "
+        "count cross-agent references."
+    )
 
 
 # ─── Data structures ──────────────────────────────────────────────────
@@ -120,16 +133,44 @@ def _project_root() -> Path:
     return Path(__file__).resolve().parent.parent.parent
 
 
-def _workspace_dir() -> Optional[Path]:
+def _workspace_dir(agent_name: str = "") -> Optional[Path]:
+    """Return the agent workspace directory.
+
+    If agent_name is provided, returns the agent-specific workspace.
+    Otherwise returns the global agent_workspace root.
+    """
     root = _project_root()
     candidate = root / "agent_workspace"
-    if candidate.exists():
-        return candidate
+    if not candidate.exists():
+        return None
+    if agent_name:
+        agent_ws = candidate / agent_name
+        if agent_ws.exists():
+            return agent_ws
+        # Fall back to global workspace if agent dir doesn't exist
+    return candidate
+
+
+def _agent_forged_tools_dir(agent_name: str) -> Optional[Path]:
+    """Return agent-specific forged tools directory if it exists."""
+    if not agent_name:
+        return None
+    root = _project_root()
+    agent_tools = root / "agent_workspace" / agent_name / "forged_tools"
+    if agent_tools.exists():
+        return agent_tools
     return None
 
 
-def _forged_tools_dir() -> Path:
-    """Return the forged tools directory, preferring workspace over built-in."""
+def _forged_tools_dir(agent_name: str = "") -> Path:
+    """Return the forged tools directory.
+
+    Priority: agent workspace > global workspace > built-in framework.
+    """
+    if agent_name:
+        agent_tools = _agent_forged_tools_dir(agent_name)
+        if agent_tools:
+            return agent_tools
     ws = _workspace_dir()
     if ws:
         ws_tools = ws / "forged_tools"
@@ -138,7 +179,13 @@ def _forged_tools_dir() -> Path:
     return _project_root() / "tain_agent" / "tools" / "forged"
 
 
-def _knowledge_dir() -> Optional[Path]:
+def _knowledge_dir(agent_name: str = "") -> Optional[Path]:
+    """Return the knowledge directory, preferring agent-specific path."""
+    if agent_name:
+        root = _project_root()
+        agent_kg = root / "agent_workspace" / agent_name / "knowledge"
+        if agent_kg.exists():
+            return agent_kg
     ws = _workspace_dir()
     if ws:
         kg = ws / "knowledge_garden"
@@ -147,22 +194,58 @@ def _knowledge_dir() -> Optional[Path]:
     return None
 
 
+def _find_snapshot_dir(agent_name: str = "") -> Optional[Path]:
+    """Find the agent's metrics snapshot directory.
+
+    Searches in priority order:
+    1. Agent workspace: agent_workspace/{agent_name}/state/metrics_snapshots/
+    2. Global workspace: agent_workspace/state/metrics_snapshots/
+    3. Framework built-in: tain_agent/state/metrics_snapshots/
+    """
+    root = _project_root()
+
+    # Agent-specific workspace
+    if agent_name:
+        candidate = root / "agent_workspace" / agent_name / "state" / "metrics_snapshots"
+        if candidate.exists():
+            return candidate
+
+    # Global workspace fallback
+    global_candidate = root / "agent_workspace" / "state" / "metrics_snapshots"
+    if global_candidate.exists():
+        return global_candidate
+
+    # Framework built-in
+    framework_candidate = root / "tain_agent" / "state" / "metrics_snapshots"
+    if framework_candidate.exists():
+        return framework_candidate
+
+    return None
+
+
 # ─── Hard Gates ────────────────────────────────────────────────────────
 
-def _h1_personality_completeness() -> GateResult:
+def _h1_personality_completeness(agent_name: str = "") -> GateResult:
     """H1: All 7 trait dimensions formed, each with ≥ 1 trait at confidence ≥ 0.3."""
-    ws = _workspace_dir()
+    REQUIRED_CATEGORIES = [
+        "values", "communication_style", "interests", "quirks",
+        "self_description", "relationship_stance", "growth_orientation",
+    ]
+
+    ws = _workspace_dir(agent_name)
     if ws:
         personality_path = ws / "state" / "personality.json"
+        if not personality_path.exists() and agent_name:
+            alt = _project_root() / "agent_workspace" / agent_name / "state" / "personality_structured.json"
+            if alt.exists():
+                personality_path = alt
         if personality_path.exists():
             try:
                 data = json.loads(personality_path.read_text(encoding="utf-8"))
-                dims = data.get("dimensions", data.get("_traits", {}))
             except (json.JSONDecodeError, IOError):
                 return GateResult("H1", "Personality Completeness", False,
                                   "Failed to read personality.json")
         else:
-            # Check if there's personality in the code
             return GateResult("H1", "Personality Completeness", False,
                               "personality.json not found in workspace",
                               {"path_checked": str(personality_path)})
@@ -171,10 +254,31 @@ def _h1_personality_completeness() -> GateResult:
                           "No agent_workspace directory found",
                           {"workspace": "missing"})
 
-    categories = ["values", "communication_style", "interests", "quirks",
-                  "self_description", "relationship_stance", "growth_orientation"]
+    # Detect format: category-nested vs flat-list
+    dims = data.get("dimensions", data.get("_traits", {}))
+    if not dims:
+        # Try flat-list format (e.g., personality_structured.json)
+        personality = data.get("personality", data)
+        flat_traits = []
+        for key, val in personality.items():
+            if isinstance(val, list):
+                for item in val:
+                    if isinstance(item, dict) and "value" in item:
+                        flat_traits.append(item)
+        if flat_traits:
+            # Group by category
+            from collections import defaultdict
+            dims = defaultdict(list)
+            for t in flat_traits:
+                cat = t.get("category", "uncategorized")
+                dims[cat].append(t)
+
+    if not dims:
+        return GateResult("H1", "Personality Completeness", False,
+                          "No trait data found in personality file")
+
     failures = []
-    for cat in categories:
+    for cat in REQUIRED_CATEGORIES:
         traits = dims.get(cat, [])
         qualified = [t for t in traits
                      if t.get("confidence", 0) >= 0.3]
@@ -185,13 +289,13 @@ def _h1_personality_completeness() -> GateResult:
     return GateResult(
         "H1", "Personality Completeness", passed,
         "" if passed else f"Missing qualified traits in: {', '.join(failures)}",
-        {"categories_checked": len(categories), "categories_failed": len(failures)},
+        {"categories_checked": len(REQUIRED_CATEGORIES), "categories_failed": len(failures)},
     )
 
 
-def _h2_tool_loadability() -> GateResult:
+def _h2_tool_loadability(agent_name: str = "") -> GateResult:
     """H2: All forged tools can be imported without error."""
-    tools_dir = _forged_tools_dir()
+    tools_dir = _forged_tools_dir(agent_name)
     if not tools_dir.exists():
         return GateResult("H2", "Tool Loadability", False,
                           "No forged tools directory found")
@@ -208,6 +312,14 @@ def _h2_tool_loadability() -> GateResult:
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
 
+    # For agent-scoped tools, add the tools directory to sys.path
+    # so intra-tool imports work (e.g., dream_loop importing from another tool)
+    tools_dir_str = str(tools_dir)
+    if tools_dir_str not in sys.path:
+        sys.path.insert(0, tools_dir_str)
+
+    import importlib.util as _util
+
     failed = []
     for py_file in py_files:
         name = py_file.stem
@@ -215,7 +327,23 @@ def _h2_tool_loadability() -> GateResult:
             try:
                 importlib.import_module(f"tain_agent.tools.forged.{name}")
             except ImportError:
-                importlib.import_module(name)
+                try:
+                    importlib.import_module(name)
+                except ImportError:
+                    # Last resort: load from file path
+                    spec = _util.spec_from_file_location(name, str(py_file))
+                    if spec and spec.loader:
+                        mod = _util.module_from_spec(spec)
+                        if name in sys.modules:
+                            raise ImportError(
+                                f"Module name '{name}' shadows existing module in sys.modules"
+                            )
+                        sys.modules[name] = mod
+                        try:
+                            spec.loader.exec_module(mod)
+                        except Exception:
+                            del sys.modules[name]
+                            raise
         except Exception as exc:
             failed.append(f"{name}: {exc}")
 
@@ -227,9 +355,9 @@ def _h2_tool_loadability() -> GateResult:
     )
 
 
-def _h3_tool_no_conflicts() -> GateResult:
+def _h3_tool_no_conflicts(agent_name: str = "") -> GateResult:
     """H3: No circular dependencies between tools, no function name clashes."""
-    tools_dir = _forged_tools_dir()
+    tools_dir = _forged_tools_dir(agent_name)
     if not tools_dir.exists():
         return GateResult("H3", "Tool No Conflicts", False,
                           "No forged tools directory found")
@@ -301,11 +429,15 @@ def _h3_tool_no_conflicts() -> GateResult:
     )
 
 
-def _h4_safety_boundary() -> GateResult:
+def _h4_safety_boundary(agent_name: str = "") -> GateResult:
     """H4: No dangerous operations in recent decision log."""
-    # Check workspace logs first (agent's own decisions), then framework logs
     candidates = []
-    ws = _workspace_dir()
+    # Agent-specific logs first
+    if agent_name:
+        agent_log = _project_root() / "agent_workspace" / agent_name / "logs" / "decisions.jsonl"
+        if agent_log.exists():
+            candidates.append(agent_log)
+    ws = _workspace_dir(agent_name)
     if ws:
         ws_log = ws / "logs" / "decision_log.json"
         if ws_log.exists():
@@ -322,11 +454,22 @@ def _h4_safety_boundary() -> GateResult:
     all_entries = []
     for log_path in candidates:
         try:
-            log = json.loads(log_path.read_text(encoding="utf-8"))
+            raw = log_path.read_text(encoding="utf-8")
+            if log_path.suffix == ".jsonl":
+                # Line-delimited JSON — each line is a JSON object
+                for line in raw.strip().split("\n"):
+                    line = line.strip()
+                    if line:
+                        try:
+                            all_entries.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            pass
+            else:
+                log = json.loads(raw)
+                entries = log if isinstance(log, list) else log.get("entries", [])
+                all_entries.extend(entries)
         except (json.JSONDecodeError, IOError):
             continue
-        entries = log if isinstance(log, list) else log.get("entries", [])
-        all_entries.extend(entries)
 
     recent = all_entries[-100:] if len(all_entries) > 100 else all_entries
 
@@ -356,7 +499,7 @@ def _h4_safety_boundary() -> GateResult:
     )
 
 
-def _h5_memory_module_functional() -> GateResult:
+def _h5_memory_module_functional(agent_name: str = "") -> GateResult:
     """H5: Runtime memory store can execute add/query/stats operations."""
     try:
         from tain_agent.runtime.memory import MemoryStore
@@ -397,12 +540,11 @@ def _h5_memory_module_functional() -> GateResult:
                           f"Memory store exception: {exc}")
 
 
-def _h6_knowledge_retrievable() -> GateResult:
+def _h6_knowledge_retrievable(agent_name: str = "") -> GateResult:
     """H6: ≥ 5 markdown docs in knowledge dir, total size ≥ 10KB."""
-    kg = _knowledge_dir()
+    kg = _knowledge_dir(agent_name)
     if kg is None:
-        # Check for knowledge in workspace root
-        ws = _workspace_dir()
+        ws = _workspace_dir(agent_name)
         if ws:
             kg = ws / "knowledge"
             if not kg.exists():
@@ -426,20 +568,31 @@ def _h6_knowledge_retrievable() -> GateResult:
     )
 
 
-def _h7_version_tagged() -> GateResult:
+def _h7_version_tagged(agent_name: str = "") -> GateResult:
     """H7: version.json exists with version ≥ 0.5.0."""
+    candidates = []
+    # Agent-specific paths first
+    if agent_name:
+        base = _project_root() / "agent_workspace" / agent_name
+        candidates.extend([
+            base / "version.json",
+            base / "state" / "version.json",
+        ])
     ws = _workspace_dir()
-    version_path = (ws / "state" / "version.json") if ws else None
+    if ws:
+        candidates.append(ws / "state" / "version.json")
+    candidates.append(_project_root() / "agent_workspace" / "state" / "version.json")
 
-    if version_path is None or not version_path.exists():
-        # Check root-level
-        alt = _project_root() / "agent_workspace" / "state" / "version.json"
-        if alt.exists():
-            version_path = alt
-        else:
-            return GateResult("H7", "Version Tagged", False,
-                              "version.json not found",
-                              {"looked_at": str(version_path) if version_path else "none"})
+    version_path = None
+    for c in candidates:
+        if c.exists():
+            version_path = c
+            break
+
+    if version_path is None:
+        return GateResult("H7", "Version Tagged", False,
+                          "version.json not found",
+                          {"looked_at": [str(c) for c in candidates[:3]]})
 
     try:
         data = json.loads(version_path.read_text(encoding="utf-8"))
@@ -466,14 +619,14 @@ def _h7_version_tagged() -> GateResult:
 # ─── Scoring Gates ─────────────────────────────────────────────────────
 
 def _s1_tool_success_rate(agent=None) -> ScoredResult:
-    """S1 (0.25): Framework-measured tool execution success rate.
+    """S1 (0.23): Framework-measured tool execution success rate.
 
     Reads from cognitive loop telemetry — no LLM involvement.
     Measures how reliably the agent's tools execute successfully.
     """
     if agent is None:
         return ScoredResult(
-            "S1", "Tool Success Rate", 0.50, 0.25,
+            "S1", "Tool Success Rate", 0.50, 0.23,
             "No agent available",
             {"status": "no_agent"},
         )
@@ -484,7 +637,7 @@ def _s1_tool_success_rate(agent=None) -> ScoredResult:
             rates = cognitive._tool_success_rates
             if not rates:
                 return ScoredResult(
-                    "S1", "Tool Success Rate", 0.50, 0.25,
+                    "S1", "Tool Success Rate", 0.50, 0.23,
                     "No tool execution data yet",
                     {"tools_measured": 0},
                 )
@@ -492,12 +645,12 @@ def _s1_tool_success_rate(agent=None) -> ScoredResult:
             total_successes = sum(s for s, _ in rates.values())
             total_calls = sum(t for _, t in rates.values())
             if total_calls == 0:
-                return ScoredResult("S1", "Tool Success Rate", 0.50, 0.25,
+                return ScoredResult("S1", "Tool Success Rate", 0.50, 0.23,
                                    "No tool calls recorded")
 
             avg_rate = total_successes / total_calls
             return ScoredResult(
-                "S1", "Tool Success Rate", round(avg_rate, 3), 0.25,
+                "S1", "Tool Success Rate", round(avg_rate, 3), 0.23,
                 f"{total_successes}/{total_calls} calls succeeded ({avg_rate:.1%})",
                 {
                     "tools_measured": len(rates),
@@ -507,19 +660,19 @@ def _s1_tool_success_rate(agent=None) -> ScoredResult:
                 },
             )
 
-        return ScoredResult("S1", "Tool Success Rate", 0.50, 0.25,
+        return ScoredResult("S1", "Tool Success Rate", 0.50, 0.23,
                            "No cognitive loop telemetry available",
                            {"status": "no_data"})
     except Exception as e:
-        return ScoredResult("S1", "Tool Success Rate", 0.50, 0.25,
+        return ScoredResult("S1", "Tool Success Rate", 0.50, 0.23,
                            f"Error reading telemetry: {e}")
 
 
-def _s2_knowledge_coverage() -> ScoredResult:
+def _s2_knowledge_coverage(agent_name: str = "") -> ScoredResult:
     """S2 (0.15): ≥ 20 knowledge nodes, ≥ 4 domains."""
-    kg = _knowledge_dir()
+    kg = _knowledge_dir(agent_name)
     if kg is None:
-        ws = _workspace_dir()
+        ws = _workspace_dir(agent_name)
         kg = ws / "knowledge" if ws and (ws / "knowledge").exists() else None
 
     # Try graph.json first
@@ -554,18 +707,32 @@ def _s2_knowledge_coverage() -> ScoredResult:
         except (json.JSONDecodeError, IOError):
             node_count, domain_count = 0, 0
 
-    node_score = min(node_count / 20.0, 1.0)
+    # v0.7.0: Count referenced knowledge files from other agents
+    ref_count = 0
+    if get_referenced_files is not None and agent_name:
+        try:
+            ref_files = get_referenced_files(agent_name)
+            ref_count = len(ref_files)
+        except Exception:
+            logger.warning(
+                "Failed to count referenced knowledge files for agent '%s'",
+                agent_name,
+            )
+
+    total_nodes = node_count + ref_count
+    node_score = min(total_nodes / 20.0, 1.0)
     domain_score = min(domain_count / 4.0, 1.0)
     score = round(0.6 * node_score + 0.4 * domain_score, 3)
 
     return ScoredResult(
         "S2", "Knowledge Coverage", score, 0.15,
-        f"{node_count} nodes, {domain_count} domains",
-        {"nodes": node_count, "domains": domain_count},
+        f"{total_nodes} nodes ({node_count} own + {ref_count} refs), {domain_count} domains",
+        {"nodes": total_nodes, "domains": domain_count,
+         "own_nodes": node_count, "ref_nodes": ref_count},
     )
 
 
-def _s3_tool_chain_coherence(agent=None) -> ScoredResult:
+def _s3_tool_chain_coherence(agent=None, agent_name: str = "") -> ScoredResult:
     """S3 (0.20): ≥ 3 tool chains work end-to-end without error."""
     if agent is None:
         return ScoredResult(
@@ -574,7 +741,7 @@ def _s3_tool_chain_coherence(agent=None) -> ScoredResult:
             {"status": "no_agent", "min_chains": 3},
         )
 
-    tools_dir = _forged_tools_dir()
+    tools_dir = _forged_tools_dir(agent_name)
     if not tools_dir.exists():
         return ScoredResult("S3", "Tool Chain Coherence", 0.0, 0.20,
                            "No forged tools directory found")
@@ -749,25 +916,17 @@ def _s6_knowledge_freshness() -> ScoredResult:
         )
 
 
-def _s7_drive_integrity() -> ScoredResult:
-    """S7 (0.05): All 4 drives non-zero, no degradation across last 3 snapshots."""
-    ws = _workspace_dir()
-    if ws is None:
-        return ScoredResult("S7", "Drive Integrity", 0.50, 0.05,
-                            "No workspace — cannot assess drives")
-
-    snapshots_dir = ws / "state" / "metrics_snapshots"
-    if not snapshots_dir.exists():
-        # Check project-root snapshots
-        snapshots_dir = _project_root() / "tain_agent" / "state" / "metrics_snapshots"
-        if not snapshots_dir.exists():
-            return ScoredResult("S7", "Drive Integrity", 0.50, 0.05,
-                                "No metrics snapshots found",
-                                {"status": "no_data"})
+def _s7_drive_integrity(agent_name: str = "") -> ScoredResult:
+    """S7 (0.02): All 4 drives non-zero, no degradation across last 3 snapshots."""
+    snapshots_dir = _find_snapshot_dir(agent_name)
+    if snapshots_dir is None:
+        return ScoredResult("S7", "Drive Integrity", 0.50, 0.02,
+                            "No metrics snapshots found",
+                            {"status": "no_data"})
 
     snapshot_files = sorted(snapshots_dir.glob("*.json"))
     if len(snapshot_files) < 2:
-        return ScoredResult("S7", "Drive Integrity", 0.60, 0.05,
+        return ScoredResult("S7", "Drive Integrity", 0.60, 0.02,
                             f"Only {len(snapshot_files)} snapshot(s) — need ≥ 3",
                             {"snapshots": len(snapshot_files)})
 
@@ -782,7 +941,7 @@ def _s7_drive_integrity() -> ScoredResult:
             pass
 
     if len(drives_history) < 2:
-        return ScoredResult("S7", "Drive Integrity", 0.60, 0.05,
+        return ScoredResult("S7", "Drive Integrity", 0.60, 0.02,
                             "Could not parse drive snapshots")
 
     drive_names = ["curiosity", "mastery", "creation", "conservation"]
@@ -811,7 +970,7 @@ def _s7_drive_integrity() -> ScoredResult:
     score = max(0.0, score)
 
     return ScoredResult(
-        "S7", "Drive Integrity", round(score, 3), 0.05,
+        "S7", "Drive Integrity", round(score, 3), 0.02,
         f"Non-zero: {all_nonzero}, Degrading: {degrading or 'none'}",
         {"all_nonzero": all_nonzero, "degrading": degrading},
     )
@@ -845,6 +1004,91 @@ def _s8_external_feedback() -> ScoredResult:
         "S8", "External Feedback", round(score, 3), 0.05,
         f"{feedback_count} feedback event(s) found",
         {"feedback_events": feedback_count, "threshold": 1},
+    )
+
+
+def _s9_dedup_trend(agent_name: str = "") -> ScoredResult:
+    """S9 (0.05): Code dedup ratio trending positive.
+
+    Compares forged_tools file count between the two most recent
+    evolution milestones. Rewards file count reduction (dedup/cleanup)
+    while penalizing growth without corresponding capability expansion.
+    """
+    tools_dir = _forged_tools_dir(agent_name)
+    if not tools_dir.exists():
+        return ScoredResult("S9", "Code Dedup Trend", 0.50, 0.05,
+                           "No forged tools directory found",
+                           {"status": "no_tools_dir"})
+
+    py_files = [f for f in sorted(tools_dir.glob("*.py"))
+                if not f.name.startswith("_") and f.name != "smart_improve.py"]
+    current_count = len(py_files)
+
+    snapshots_dir = _find_snapshot_dir(agent_name)
+    if snapshots_dir is None:
+        return ScoredResult("S9", "Code Dedup Trend", 0.50, 0.05,
+                           "No metrics snapshots found — need >= 2 evolution milestones",
+                           {"current_count": current_count})
+
+    snapshot_files = sorted(snapshots_dir.glob("metrics_*.json"))
+    if len(snapshot_files) < 2:
+        return ScoredResult("S9", "Code Dedup Trend", 0.50, 0.05,
+                           "Need >= 2 metrics snapshots to establish trend",
+                           {"current_count": current_count,
+                            "snapshots_found": len(snapshot_files)})
+
+    # Extract tool counts from the last 2 snapshots
+    tool_counts = []
+    for sf in snapshot_files[-2:]:
+        try:
+            data = json.loads(sf.read_text(encoding="utf-8"))
+            te = data.get("tool_efficacy", {})
+            count = te.get("total_tools", 0)
+            tool_counts.append(count)
+        except (json.JSONDecodeError, IOError, KeyError):
+            continue
+
+    if len(tool_counts) < 2:
+        return ScoredResult("S9", "Code Dedup Trend", 0.50, 0.05,
+                           "Could not extract tool counts from snapshots",
+                           {"current_count": current_count})
+
+    prev_count, latest_count = tool_counts
+    trend_delta = latest_count - prev_count          # milestone trend
+    current_delta = current_count - latest_count      # change since last snapshot
+
+    # Score: reward dedup trend (negative trend_delta) with no rebound
+    if trend_delta < 0:
+        # Dedup trend active
+        if current_delta <= 0:
+            # Sustained or continued dedup — high score
+            score = min(1.0, 0.85 + abs(trend_delta) * 0.1)
+            detail = (f"Dedup trend active: {prev_count} -> {latest_count} "
+                      f"({abs(trend_delta)} removed). Current: {current_count} — holding.")
+        else:
+            # Dedup trend but current rebound — moderate score
+            score = max(0.45, 0.70 - current_delta * 0.15)
+            detail = (f"Dedup reversed: {prev_count} -> {latest_count} "
+                      f"(was trending down), now {current_count} (+{current_delta}).")
+    elif trend_delta == 0:
+        if current_delta == 0:
+            score = 0.70
+            detail = f"Tool count stable at {current_count} — no bloat detected"
+        else:
+            score = max(0.35, 0.60 - current_delta * 0.15)
+            detail = f"Stable history broken: now {current_count} ({current_delta:+d})"
+    else:
+        # trend_delta > 0: bloat trend
+        score = max(0.0, 0.45 - trend_delta * 0.15)
+        detail = (f"Bloat trend: {prev_count} -> {latest_count} "
+                  f"(+{trend_delta}). Current: {current_count}.")
+
+    return ScoredResult(
+        "S9", "Code Dedup Trend", round(score, 3), 0.05,
+        detail,
+        {"prev_count": prev_count, "latest_count": latest_count,
+         "current_count": current_count,
+         "trend_delta": trend_delta, "current_delta": current_delta},
     )
 
 
@@ -882,15 +1126,19 @@ class ExportQualityGate:
         self.scoring_gates = [
             ("S1", "Tool Success Rate",
              lambda: _s1_tool_success_rate(self.agent)),
-            ("S2", "Knowledge Coverage", _s2_knowledge_coverage),
+            ("S2", "Knowledge Coverage",
+             lambda: _s2_knowledge_coverage(self.agent_name)),
             ("S3", "Tool Chain Coherence",
-             lambda: _s3_tool_chain_coherence(self.agent)),
+             lambda: _s3_tool_chain_coherence(self.agent, self.agent_name)),
             ("S4", "Action Diversity",
              lambda: _s4_action_diversity(self.agent)),
             ("S5", "Code Health", _s5_code_health),
             ("S6", "Knowledge Freshness", _s6_knowledge_freshness),
-            ("S7", "Drive Integrity", _s7_drive_integrity),
+            ("S7", "Drive Integrity",
+             lambda: _s7_drive_integrity(self.agent_name)),
             ("S8", "External Feedback", _s8_external_feedback),
+            ("S9", "Code Dedup Trend",
+             lambda: _s9_dedup_trend(self.agent_name)),
         ]
 
     def evaluate(self) -> GateReport:
@@ -902,7 +1150,7 @@ class ExportQualityGate:
 
         for gate_id, label, fn in self.hard_gates:
             try:
-                result = fn()
+                result = fn(self.agent_name)
             except Exception as exc:
                 result = GateResult(gate_id, label, False, str(exc))
             report.hard_results.append(result)

@@ -185,7 +185,18 @@ class ToolBootstrap:
         self._register_metrics()
         self._register_sub_agent()
         self._register_export()
+        self._register_test()
+        self._register_sandbox_info()
+        self._register_introspection()
         self._register_knowledge()
+        self._register_diagnostics()
+
+    def on_shutdown(self) -> None:
+        """Called when the agent session ends."""
+        if hasattr(self.a, 'personality') and self.a.personality is not None:
+            n = self.a.personality.sync_runtime_to_disk()
+            if n > 0:
+                print(f"  🧠 {n} auto-emergent traits synced to disk.")
 
     # ── Decision recording ──────────────────────────────────────────
 
@@ -231,13 +242,50 @@ class ToolBootstrap:
     # ── Tool forge ──────────────────────────────────────────────────
 
     def _register_forge(self) -> None:
-        def forge_tool(name: str, description: str, code: str, parameters: str = "{}") -> str:
-            """Create a new tool for yourself by writing Python code."""
+        def forge_tool(name: str, description: str, code: str, parameters: str = "{}",
+                       dependencies: str = "[]", action: str = "create") -> str:
+            """Create or update a tool by writing Python code.
+
+            Use action='create' (default) to forge a new tool.
+            Use action='update' to modify an existing tool — this re-runs the
+            full safety pipeline and replaces the registered version.
+            """
+            if action not in ("create", "update"):
+                return json.dumps({
+                    "success": False,
+                    "error": f"Invalid action '{action}'. Must be 'create' or 'update'."
+                }, ensure_ascii=False)
+
             try:
                 params = json.loads(parameters) if isinstance(parameters, str) else parameters
             except json.JSONDecodeError:
                 params = {}
-            result = self.a.forge.forge(name, description, code, params)
+
+            try:
+                deps = json.loads(dependencies) if isinstance(dependencies, str) else dependencies
+            except json.JSONDecodeError:
+                deps = []
+
+            result = self.a.forge.forge(name, description, code, params, action=action)
+
+            # Resolve dependencies if forge succeeded and dependencies declared
+            if result.get("success") and deps:
+                if hasattr(self.a, 'dependency_manager') and self.a.dependency_manager:
+                    dep_result = self.a.dependency_manager.resolve(
+                        tool_name=name,
+                        packages=deps,
+                        reason=f"Tool '{name}' declares these dependencies",
+                        alternative_considered="",
+                    )
+                    result["dependencies"] = {
+                        "installed": dep_result.installed,
+                        "rejected": dep_result.rejected,
+                    }
+                    if dep_result.rejected:
+                        result["message"] += (
+                            f" | {len(dep_result.rejected)} package(s) not in allowlist. "
+                            f"Applications filed for review."
+                        )
 
             # Record lineage: tool forging event
             if self.lineage and result.get("success"):
@@ -245,21 +293,25 @@ class ToolBootstrap:
                     tool_name=name,
                     tool_code=code,
                     agent_version=self.a.version,
-                    reasoning=f"Forged tool: {name} — {description[:100]}",
+                    reasoning=f"Tool {action}d: {name} — {description[:100]}",
                 )
 
             return json.dumps(result, ensure_ascii=False)
 
         self.a.tools.register(
             "forge_tool", forge_tool,
-            "Create a new tool by writing Python code. "
+            "Create or update a tool by writing Python code. "
             "The code must contain at least one callable function. "
+            "Use action='create' to forge a new tool, action='update' to "
+            "modify an existing tool (re-runs full safety pipeline). "
             "This is how you expand your own capabilities.",
             {
-                "name": {"type": "string", "description": "Name of the new tool.", "required": True},
+                "name": {"type": "string", "description": "Name of the tool.", "required": True},
                 "description": {"type": "string", "description": "What the tool does.", "required": True},
                 "code": {"type": "string", "description": "Python code implementing the tool.", "required": True},
                 "parameters": {"type": "string", "description": "JSON schema of tool parameters.", "required": False},
+                "dependencies": {"type": "string", "description": "JSON array of pip package specs needed (e.g. ['requests>=2.28']).", "required": False},
+                "action": {"type": "string", "description": "'create' (default) to forge a new tool, 'update' to modify and re-register an existing tool.", "required": False},
             },
         )
 
@@ -418,6 +470,8 @@ class ToolBootstrap:
             }
             if action not in actions:
                 return f"Unknown action: {action}. Available: {list(actions.keys())}"
+            if action == "stop":
+                self.on_shutdown()
             result = actions[action]()
             if isinstance(result, dict):
                 return json.dumps(result, ensure_ascii=False, indent=2)
@@ -566,7 +620,8 @@ class ToolBootstrap:
             """
             try:
                 from tain_agent.tools.forged.evolution_metrics import main as metrics_main
-                return metrics_main(action=action, version=version, compare_with=compare_with)
+                return metrics_main(action=action, version=version, compare_with=compare_with,
+                                   agent_name=self.a.agent_name)
             except ImportError as e:
                 return json.dumps({"status": "error", "message": f"Metrics unavailable: {e}"})
 
@@ -834,6 +889,75 @@ class ToolBootstrap:
             },
         )
 
+    # ── Test tool (v0.6.0) ───────────────────────────────────────────
+
+    def _register_test(self) -> None:
+        """Register the run_test tool."""
+        from tain_agent.tools.primal import run_test as run_test_func
+
+        def run_test_tool(test_target: str, test_type: str = "function",
+                          test_code: str = "", timeout: int = 60) -> str:
+            """Test a tool in the sandbox environment."""
+            import json as _json
+            result = run_test_func(test_target=test_target, test_type=test_type,
+                                   test_code=test_code, timeout=timeout)
+            return _json.dumps(result, ensure_ascii=False)
+
+        self.a.tools.register(
+            "run_test", run_test_tool,
+            "Test a forged tool in the sandbox. Test types: "
+            "'function' (import + call main), 'pytest' (run test file), "
+            "'assert' (run assertion code). Use this to verify your tools work correctly.",
+            {
+                "test_target": {"type": "string", "description": "Name of the tool or test file to run.", "required": True},
+                "test_type": {"type": "string", "description": "Test mode: 'function', 'pytest', or 'assert'.", "required": False},
+                "test_code": {"type": "string", "description": "Tool source code (function/assert) or test file path (pytest).", "required": False},
+                "timeout": {"type": "integer", "description": "Max seconds (default 60).", "required": False},
+            },
+        )
+
+    # ── Sandbox allowlist info (Phase 1) ──────────────────────────────
+
+    def _register_sandbox_info(self) -> None:
+        from tain_agent.tools.sandbox_allowlist import get_allowlist
+
+        def get_sandbox_allowlist() -> str:
+            """Return the list of Python modules available in the tool sandbox."""
+            return json.dumps(get_allowlist(), ensure_ascii=False, indent=2)
+
+        self.a.tools.register(
+            "get_sandbox_allowlist", get_sandbox_allowlist,
+            "List all Python modules allowed in the tool forge sandbox. "
+            "Use this before writing forge_tool code to know which imports are available.",
+            {},
+        )
+
+    # ── Introspection (Phase 3, Chain C) ───────────────────────────────
+
+    def _register_introspection(self) -> None:
+        from tain_agent.evolution.introspection import get_self_profile
+
+        def self_profile(since_days: int = 7) -> str:
+            """Get a structured self-profile with action distribution, tool usage,
+            trait activity, and active goals."""
+            return get_self_profile(
+                decision_log=self.a.decision_log if hasattr(self.a, 'decision_log') else None,
+                personality=self.a.personality if hasattr(self.a, 'personality') else None,
+                goals=self.a.goals if hasattr(self.a, 'goals') else None,
+                tools_registry=self.a.tools if hasattr(self.a, 'tools') else None,
+                since_days=since_days,
+            )
+
+        self.a.tools.register(
+            "get_self_profile", self_profile,
+            "Get a structured overview of your own behavior: action types, "
+            "tool usage rankings, current trait activity, and active goals. "
+            "Cheaper than manually scanning logs.",
+            {
+                "since_days": {"type": "integer", "description": "Look back N days for trends (default 7).", "required": False},
+            },
+        )
+
     # ── Knowledge upgrade (Phase 3.1) ──────────────────────────────────
 
     def _register_knowledge(self) -> None:
@@ -869,5 +993,51 @@ class ToolBootstrap:
                 "dry_run": {"type": "boolean",
                             "description": "Preview what would change without making changes.",
                             "required": False},
+            },
+        )
+
+    # ── Diagnostic feedback (Phase 3, Chain C) ───────────────────────────
+
+    def _register_diagnostics(self) -> None:
+        from tain_agent.evolution.diagnostic_feedback import save_diagnostic
+        import json as _json
+
+        def diagnose_framework(category: str, severity: str, pattern: str,
+                               affected_tools: str, root_cause: str,
+                               suggested_fix: str = "") -> str:
+            """Record a framework architecture diagnosis for developer review."""
+            diagnosis = {
+                "category": category,
+                "severity": severity,
+                "pattern": pattern,
+                "affected_tools": [
+                    t.strip() for t in affected_tools.split(",") if t.strip()
+                ],
+                "root_cause": root_cause,
+                "suggested_fix": suggested_fix,
+            }
+            path = save_diagnostic(
+                agent_name=self.a.agent_name,
+                workspace_root="agent_workspace",
+                diagnosis=diagnosis,
+            )
+            return _json.dumps({
+                "status": "saved",
+                "path": path,
+                "message": "Diagnosis recorded. Framework developers can review it."
+            }, ensure_ascii=False)
+
+        self.a.tools.register(
+            "diagnose_framework", diagnose_framework,
+            "Record a framework-level architecture diagnosis. "
+            "Use this when you discover a structural issue in the framework itself "
+            "(not a bug in your own tools). Results are saved for developer review.",
+            {
+                "category": {"type": "string", "description": "E.g. 'forge_pipeline', 'personality_storage', 'metrics_path'.", "required": True},
+                "severity": {"type": "string", "description": "E.g. 'blocking', 'high', 'medium', 'low'.", "required": True},
+                "pattern": {"type": "string", "description": "Short name for the failure pattern.", "required": True},
+                "affected_tools": {"type": "string", "description": "Comma-separated tool names affected.", "required": True},
+                "root_cause": {"type": "string", "description": "Precise description of the root cause.", "required": True},
+                "suggested_fix": {"type": "string", "description": "How the framework should be changed.", "required": False},
             },
         )

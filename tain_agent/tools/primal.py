@@ -282,7 +282,9 @@ def execute_code(code: str, timeout: int = 30) -> str:
     _original_open = _builtins.open
     _original_import = _builtins.__import__
 
-    # Stdlib whitelist for execute_code sandbox
+    # Stdlib whitelist for execute_code sandbox.
+    # Note: forge_tool sandbox uses tain_agent.tools.sandbox_allowlist.SANDBOX_ALLOWED_MODULES.
+    # This whitelist is specific to execute_code and may diverge intentionally.
     _STDLIB_WHITELIST = frozenset({
         "json", "re", "pathlib", "datetime", "collections", "functools",
         "itertools", "math", "statistics", "textwrap", "hashlib",
@@ -295,8 +297,15 @@ def execute_code(code: str, timeout: int = 30) -> str:
     def _sandboxed_import(name, *args, **kwargs):
         if name in _STDLIB_WHITELIST or name.startswith("tain_agent."):
             return _original_import(name, *args, **kwargs)
+        hint = ""
+        if name == "os":
+            hint = " Use 'pathlib.Path' instead of 'os.path' for file operations."
+        elif name == "sys":
+            hint = " Use 'pathlib' and environment-agnostic patterns instead."
+        elif name in ("subprocess", "shutil"):
+            hint = " Subprocess and shell operations are not available in the sandbox."
         raise ImportError(
-            f"Module '{name}' is not in the execute_code whitelist. "
+            f"Module '{name}' is not in the execute_code whitelist.{hint}\n"
             f"Allowed: {sorted(_STDLIB_WHITELIST)}"
         )
 
@@ -392,6 +401,219 @@ def execute_code(code: str, timeout: int = 30) -> str:
         sys.stdout = old_stdout
 
 
+def _run_function_test(test_target: str, test_code: str,
+                       timeout: int, started_at: float) -> dict:
+    """Import the tool code and call main(), return result."""
+    import time as _time
+    from io import StringIO
+    import sys as _sys
+    import signal
+
+    old_stdout = _sys.stdout
+    _sys.stdout = StringIO()
+
+    # Timeout enforcement via SIGALRM (Unix only)
+    def _handle_timeout(signum, frame):
+        raise TimeoutError(f"Function test exceeded {timeout}s timeout.")
+
+    old_handler = None
+    old_alarm = 0
+    use_alarm = hasattr(signal, 'SIGALRM') and timeout > 0
+    if use_alarm:
+        old_handler = signal.signal(signal.SIGALRM, _handle_timeout)
+        old_alarm = signal.alarm(int(timeout) if timeout >= 1 else 1)
+
+    try:
+        ns = {}
+        exec(test_code, ns)
+        func = ns.get("main") or ns.get(test_target)
+        if func is None:
+            candidates = {k: v for k, v in ns.items()
+                          if callable(v) and not k.startswith("_") and not isinstance(v, type)}
+            if candidates:
+                func = list(candidates.values())[0]
+        if func is None or not callable(func):
+            return {
+                "passed": False, "total": 1, "failures": 1,
+                "errors": f"No callable function found. Defined: {list(ns.keys())}",
+                "output": _sys.stdout.getvalue(),
+                "duration_ms": (_time.monotonic() - started_at) * 1000,
+            }
+        output = func()
+        stdout_output = _sys.stdout.getvalue()
+        full_output = stdout_output + ("\n" + str(output) if output else "")
+        return {
+            "passed": True, "total": 1, "failures": 0,
+            "errors": "", "output": full_output.strip() or "(no output)",
+            "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+    except TimeoutError:
+        return {
+            "passed": False, "total": 1, "failures": 1,
+            "errors": f"Function test exceeded {timeout}s timeout.",
+            "output": _sys.stdout.getvalue(),
+            "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+    except Exception as e:
+        return {
+            "passed": False, "total": 1, "failures": 1,
+            "errors": f"{type(e).__name__}: {e}",
+            "output": _sys.stdout.getvalue(),
+            "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+    finally:
+        if use_alarm:
+            signal.alarm(0)
+            if old_handler is not None:
+                signal.signal(signal.SIGALRM, old_handler)
+        _sys.stdout = old_stdout
+
+
+def _run_assert_test(test_code: str, timeout: int, started_at: float) -> dict:
+    """Execute assertion code and return pass/fail."""
+    import time as _time
+    import signal
+
+    def _handle_timeout(signum, frame):
+        raise TimeoutError(f"Assert test exceeded {timeout}s timeout.")
+
+    old_handler = None
+    old_alarm = 0
+    use_alarm = hasattr(signal, 'SIGALRM') and timeout > 0
+    if use_alarm:
+        old_handler = signal.signal(signal.SIGALRM, _handle_timeout)
+        old_alarm = signal.alarm(int(timeout) if timeout >= 1 else 1)
+
+    try:
+        exec(test_code, {})
+        return {
+            "passed": True, "total": 1, "failures": 0,
+            "errors": "", "output": "All assertions passed.",
+            "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+    except TimeoutError:
+        return {
+            "passed": False, "total": 1, "failures": 1,
+            "errors": f"Assert test exceeded {timeout}s timeout.",
+            "output": "",
+            "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+    except AssertionError as e:
+        return {
+            "passed": False, "total": 1, "failures": 1,
+            "errors": f"AssertionError: {e}",
+            "output": "",
+            "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+    except Exception as e:
+        return {
+            "passed": False, "total": 1, "failures": 1,
+            "errors": f"{type(e).__name__}: {e}",
+            "output": "",
+            "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+    finally:
+        if use_alarm:
+            signal.alarm(0)
+            if old_handler is not None:
+                signal.signal(signal.SIGALRM, old_handler)
+
+
+def _run_pytest_test(test_target: str, test_code: str,
+                     timeout: int, started_at: float,
+                     workspace: "Path") -> dict:
+    """Run pytest against a test file in the workspace."""
+    import time as _time
+    import subprocess
+    import re
+
+    test_file = workspace / test_code.lstrip("/")
+    if not test_file.exists():
+        return {
+            "passed": False, "total": 0, "failures": 1,
+            "errors": f"Test file not found: {test_file}",
+            "output": "", "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+
+    venv_dir = workspace / ".forge_venv"
+    pytest_bin = venv_dir / "bin" / "pytest"
+    if not pytest_bin.exists():
+        return {
+            "passed": False, "total": 0, "failures": 1,
+            "errors": "pytest not installed in .forge_venv/. Install pytest via forge dependencies.",
+            "output": "", "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+
+    try:
+        proc = subprocess.run(
+            [str(pytest_bin), str(test_file), "-v"],
+            capture_output=True, text=True, timeout=timeout,
+            cwd=str(workspace),
+        )
+        output = proc.stdout + "\n" + proc.stderr
+        passed = proc.returncode == 0
+        total = 0
+        failures = 0
+        match = re.search(r'(\d+) passed', output)
+        if match:
+            total += int(match.group(1))
+        match = re.search(r'(\d+) failed', output)
+        if match:
+            failures = int(match.group(1))
+            total += failures
+        if total == 0:
+            total = 1 if passed else 0
+        return {
+            "passed": passed,
+            "total": total,
+            "failures": failures,
+            "errors": "" if passed else f"pytest exited with code {proc.returncode}",
+            "output": output[:5000],
+            "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "passed": False, "total": 0, "failures": 1,
+            "errors": f"pytest exceeded {timeout}s timeout.",
+            "output": "", "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+
+
+def run_test(test_target: str, test_type: str = "function",
+             test_code: str = "", timeout: int = 60) -> dict:
+    """Run a test against a tool in the sandboxed workspace.
+
+    Args:
+        test_target: Name of the tool or test to run.
+        test_type: "function" (import + call main), "pytest" (run pytest file),
+                   or "assert" (run assertion code).
+        test_code: Tool source code (function/assert mode) or test file path (pytest).
+        timeout: Max seconds before timeout (default 60).
+
+    Returns:
+        dict with keys: passed (bool), total (int), failures (int),
+             errors (str), output (str), duration_ms (float)
+    """
+    import time as _time
+    from pathlib import Path as _PathLibPath
+
+    started_at = _time.monotonic()
+    ws = _WORKSPACE_DIR.resolve() if _WORKSPACE_DIR else _PathLibPath.cwd()
+
+    if test_type == "function":
+        return _run_function_test(test_target, test_code, timeout, started_at)
+    elif test_type == "assert":
+        return _run_assert_test(test_code, timeout, started_at)
+    elif test_type == "pytest":
+        return _run_pytest_test(test_target, test_code, timeout, started_at, ws)
+    else:
+        return {
+            "passed": False, "total": 0, "failures": 1,
+            "errors": f"Unknown test_type: {test_type}. Use 'function', 'pytest', or 'assert'.",
+            "output": "", "duration_ms": (_time.monotonic() - started_at) * 1000,
+        }
+
+
 def resolve_storage_path(content_type: str, filename: str) -> str:
     """Resolve a semantic content type + filename to a workspace path.
 
@@ -428,8 +650,38 @@ def list_available_tools(tool_registry) -> str:
     tools = tool_registry.list_tools()
     lines = [f"Available tools ({len(tools)}):"]
     for name, info in tools.items():
-        lines.append(f"  • {name}: {info['description']}")
+        lines.append(f"  - {name}: {info['description']}")
     return "\n".join(lines)
+
+
+def describe_tool(tool_registry, tool_name: str) -> str:
+    """Get detailed information about a specific tool.
+
+    Args:
+        tool_registry: ToolRegistry instance.
+        tool_name: Name of the tool to describe.
+
+    Returns:
+        Formatted string with tool name, description, parameters, and readonly status.
+    """
+    tools = tool_registry.list_tools()
+    if tool_name not in tools:
+        return f"Tool '{tool_name}' not found. Use list_available_tools to see all tools."
+    info = tools[tool_name]
+    params = info.get("parameters", {})
+    param_lines = []
+    if params:
+        for pname, pspec in params.items():
+            req = "(required)" if pspec.get("required") else "(optional)"
+            param_lines.append(f"    - {pname} ({pspec.get('type', 'any')}) {req}: {pspec.get('description', '')}")
+    param_str = "\n".join(param_lines) if param_lines else "    (no parameters)"
+    readonly = "yes" if info.get("is_readonly") else "no"
+    return (
+        f"Tool: {tool_name}\n"
+        f"Description: {info['description']}\n"
+        f"Parameters:\n{param_str}\n"
+        f"Read-only: {readonly}"
+    )
 
 
 # ─── Memory note tools ────────────────────────────────────────────────────
@@ -446,12 +698,16 @@ def _get_notes_path() -> Path:
     return memory_dir / _NOTES_FILENAME
 
 
-def remember_note(category: str, content: str) -> dict:
+def remember_note(category: str = "", content: str = "", **kwargs) -> dict:
     """Record a note to persistent memory.
 
     Notes are stored as JSONL entries in the agent's workspace memory directory.
     Use this to save important discoveries, patterns, or user preferences
     that should persist across sessions.
+
+    Accepts flexible parameter formats to be robust against LLM variations:
+      - Flat: {\"category\": \"...\", \"content\": \"...\"}
+      - Keyword: category=\"...\", content=\"...\"
 
     Args:
         category: Category label (e.g. 'discovery', 'user_preference', 'pattern', 'reflection').
@@ -462,10 +718,33 @@ def remember_note(category: str, content: str) -> dict:
     """
     import json as _json
 
+    # Handle nested/wrapped formats that LLMs sometimes produce
+    if not category and not content:
+        for wrapper_key in ("note", "params", "arguments", "object"):
+            if wrapper_key in kwargs and isinstance(kwargs[wrapper_key], dict):
+                inner = kwargs[wrapper_key]
+                category = str(inner.get("category", inner.get("cat", "")))
+                content = str(inner.get("content", inner.get("text", inner.get("body", ""))))
+                break
+
+    # Still empty? Try kwargs directly
+    if not category:
+        category = str(kwargs.get("category", kwargs.get("cat", "")))
+    if not content:
+        content = str(kwargs.get("content", kwargs.get("text", kwargs.get("body", ""))))
+
+    category = category.strip().lower()
+    content = content.strip()
+
+    if not category:
+        return {"status": "error", "error": "category is required", "hint": "Provide a category like 'discovery', 'user_preference', 'pattern', 'reflection', 'idea', 'decision', 'milestone'."}
+    if not content:
+        return {"status": "error", "error": "content is required", "hint": "Provide the note content to save."}
+
     note = {
         "timestamp": now().isoformat(),
-        "category": category.strip().lower(),
-        "content": content.strip(),
+        "category": category,
+        "content": content,
     }
 
     notes_path = _get_notes_path()
@@ -642,4 +921,16 @@ def register_primal_tools(registry, workspace_dir: str = None) -> None:
                 "required": False,
             },
         },
+    )
+    # Tool discovery — let agent query its own capabilities at runtime
+    registry.register(
+        "list_available_tools", lambda **kw: list_available_tools(registry),
+        "List all tools currently available to you. Use this when you need "
+        "to know what capabilities you have at runtime.",
+    )
+    registry.register(
+        "describe_tool", lambda tool_name, **kw: describe_tool(registry, tool_name),
+        "Get detailed information about a specific tool including its parameters "
+        "and whether it is read-only.",
+        {"tool_name": {"type": "string", "description": "Name of the tool to describe.", "required": True}},
     )

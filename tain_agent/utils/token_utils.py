@@ -22,7 +22,7 @@ def estimate_tokens(text: str, model: str = "cl100k_base") -> int:
     try:
         import tiktoken
         enc = tiktoken.get_encoding(model)
-        return len(enc.encode(text))
+        return max(1, len(enc.encode(text)))
     except (ImportError, Exception):
         return max(1, len(text) * 2 // 5)
 

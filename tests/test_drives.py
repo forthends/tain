@@ -128,3 +128,29 @@ class TestDriveSuggestions:
         ds = DriveSystem()
         dominant = ds.dominate_drive()
         assert dominant in DRIVE_DEFINITIONS
+
+
+class TestTargetDomain:
+    def test_returns_domain_for_curiosity(self):
+        ds = DriveSystem(drives_config={
+            "curiosity": 0.9, "mastery": 0.3, "creation": 0.4, "conservation": 0.2,
+        })
+        domain = ds.get_target_domain()
+        assert len(domain) > 0
+        assert isinstance(domain, str)
+
+    def test_returns_domain_for_mastery(self):
+        ds = DriveSystem(drives_config={
+            "curiosity": 0.3, "mastery": 0.9, "creation": 0.4, "conservation": 0.2,
+        })
+        domain = ds.get_target_domain()
+        assert len(domain) > 0
+
+    def test_each_drive_has_unique_domain(self):
+        domains = set()
+        for drive_name in ("curiosity", "mastery", "creation", "conservation"):
+            config = {d: 0.3 for d in ("curiosity", "mastery", "creation", "conservation")}
+            config[drive_name] = 0.9
+            ds = DriveSystem(drives_config=config)
+            domains.add(ds.get_target_domain())
+        assert len(domains) == 4
