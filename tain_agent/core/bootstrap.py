@@ -189,6 +189,13 @@ class ToolBootstrap:
         self._register_sandbox_info()
         self._register_knowledge()
 
+    def on_shutdown(self) -> None:
+        """Called when the agent session ends."""
+        if hasattr(self.a, 'personality') and self.a.personality is not None:
+            n = self.a.personality.sync_runtime_to_disk()
+            if n > 0:
+                print(f"  🧠 {n} auto-emergent traits synced to disk.")
+
     # ── Decision recording ──────────────────────────────────────────
 
     def _register_decision(self) -> None:
@@ -461,6 +468,8 @@ class ToolBootstrap:
             }
             if action not in actions:
                 return f"Unknown action: {action}. Available: {list(actions.keys())}"
+            if action == "stop":
+                self.on_shutdown()
             result = actions[action]()
             if isinstance(result, dict):
                 return json.dumps(result, ensure_ascii=False, indent=2)

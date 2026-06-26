@@ -174,7 +174,10 @@ class AgentSubsystemsMixin:
             )
 
         # ── Personality — emergent self-identity ──────────────────────
-        self.personality = Personality(memory=self.memory)
+        self.personality = Personality(
+            memory=self.memory,
+            workspace_path=str(self._workspace_path),
+        )
 
         # ── Phase 2: Drive System — intrinsic motivation engine ──────
         self.drive_system = DriveSystem(

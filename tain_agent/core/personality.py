@@ -557,6 +557,24 @@ class Personality:
         (state_dir / "personality.json").write_text(
             _json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    def sync_runtime_to_disk(self) -> int:
+        """Merge auto-emergent T2 traits into T1 disk persistence.
+
+        Only traits with source='auto_emergent' in the current runtime
+        are written — user-declared traits are never overwritten.
+
+        Returns:
+            Number of traits synced.
+        """
+        synced = 0
+        for cat in TRAIT_CATEGORIES:
+            for trait in self._traits.get(cat, []):
+                if trait.get("source") == "auto_emergent":
+                    synced += 1
+        if synced > 0:
+            self._save_to_disk()
+        return synced
+
     def _load_from_memory(self) -> None:
         """Load personality from long-term memory, if it exists."""
         if not self._memory:
