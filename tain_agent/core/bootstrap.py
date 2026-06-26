@@ -189,6 +189,7 @@ class ToolBootstrap:
         self._register_sandbox_info()
         self._register_introspection()
         self._register_knowledge()
+        self._register_diagnostics()
 
     def on_shutdown(self) -> None:
         """Called when the agent session ends."""
@@ -992,5 +993,51 @@ class ToolBootstrap:
                 "dry_run": {"type": "boolean",
                             "description": "Preview what would change without making changes.",
                             "required": False},
+            },
+        )
+
+    # ── Diagnostic feedback (Phase 3, Chain C) ───────────────────────────
+
+    def _register_diagnostics(self) -> None:
+        from tain_agent.evolution.diagnostic_feedback import save_diagnostic
+        import json as _json
+
+        def diagnose_framework(category: str, severity: str, pattern: str,
+                               affected_tools: str, root_cause: str,
+                               suggested_fix: str = "") -> str:
+            """Record a framework architecture diagnosis for developer review."""
+            diagnosis = {
+                "category": category,
+                "severity": severity,
+                "pattern": pattern,
+                "affected_tools": [
+                    t.strip() for t in affected_tools.split(",") if t.strip()
+                ],
+                "root_cause": root_cause,
+                "suggested_fix": suggested_fix,
+            }
+            path = save_diagnostic(
+                agent_name=self.a.agent_name,
+                workspace_root="agent_workspace",
+                diagnosis=diagnosis,
+            )
+            return _json.dumps({
+                "status": "saved",
+                "path": path,
+                "message": "Diagnosis recorded. Framework developers can review it."
+            }, ensure_ascii=False)
+
+        self.a.tools.register(
+            "diagnose_framework", diagnose_framework,
+            "Record a framework-level architecture diagnosis. "
+            "Use this when you discover a structural issue in the framework itself "
+            "(not a bug in your own tools). Results are saved for developer review.",
+            {
+                "category": {"type": "string", "description": "E.g. 'forge_pipeline', 'personality_storage', 'metrics_path'.", "required": True},
+                "severity": {"type": "string", "description": "E.g. 'blocking', 'high', 'medium', 'low'.", "required": True},
+                "pattern": {"type": "string", "description": "Short name for the failure pattern.", "required": True},
+                "affected_tools": {"type": "string", "description": "Comma-separated tool names affected.", "required": True},
+                "root_cause": {"type": "string", "description": "Precise description of the root cause.", "required": True},
+                "suggested_fix": {"type": "string", "description": "How the framework should be changed.", "required": False},
             },
         )
