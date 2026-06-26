@@ -99,7 +99,7 @@ class Personality:
     # ── Trait discovery ─────────────────────────────────────────────────
 
     def discover(self, category: str, value: str, emergence_story: str = "",
-                 confidence: float = 0.3) -> dict:
+                 confidence: float = 0.3, **kwargs) -> dict:
         """Record a newly discovered trait.
 
         This is the primary method — called when the agent notices
@@ -131,6 +131,11 @@ class Personality:
                     "story": emergence_story,
                     "at": now_ts,
                 })
+            # Apply kwargs for missing keys (e.g. source)
+            if kwargs:
+                for k, v in kwargs.items():
+                    if k not in existing:
+                        existing[k] = v
             self._log_evolution("reinforced", category, value, emergence_story)
             self._save_to_memory()
             return existing
@@ -143,6 +148,7 @@ class Personality:
             "last_updated_at": now_ts,
             "observations": 1,
             "reinforcement_stories": [],
+            **kwargs,
         }
         self._traits[category].append(trait)
         self._log_evolution("discovered", category, value, emergence_story)
@@ -420,7 +426,8 @@ class Personality:
         for tool_name, count in tool_counts.items():
             if count >= 3:
                 self.discover("preferences", f"钟爱 {tool_name}",
-                             f"单轮内调用 {tool_name} {count} 次", confidence=0.30)
+                             f"单轮内调用 {tool_name} {count} 次", confidence=0.30,
+                             source="auto_emergent")
                 modified += 1
 
         # Curiosity: using read/search/explore tools
@@ -429,7 +436,8 @@ class Personality:
         curiosity_hits = sum(1 for t in tool_calls if t in curiosity_tools)
         if curiosity_hits >= 3:
             self.discover("interests", "探索与学习",
-                         f"在单轮中使用了 {curiosity_hits} 种探索工具", confidence=0.35)
+                         f"在单轮中使用了 {curiosity_hits} 种探索工具", confidence=0.35,
+                         source="auto_emergent")
             modified += 1
         elif curiosity_hits >= 1:
             self.strengthen("interests", "探索与学习",
@@ -440,7 +448,8 @@ class Personality:
         creation_hits = sum(1 for t in tool_calls if t in creation_tools)
         if creation_hits >= 1:
             self.discover("growth_orientation", "主动创造",
-                         f"使用了创造类工具", confidence=0.35)
+                         f"使用了创造类工具", confidence=0.35,
+                         source="auto_emergent")
             modified += 1
 
         # Reflection: using personality/goal/evolve tools
@@ -449,7 +458,8 @@ class Personality:
         reflection_hits = sum(1 for t in tool_calls if t in reflection_tools)
         if reflection_hits >= 1:
             self.discover("growth_orientation", "自我反思",
-                         f"使用了内省工具", confidence=0.35)
+                         f"使用了内省工具", confidence=0.35,
+                         source="auto_emergent")
             modified += 1
 
         # Error recovery: detect response to obstacles
@@ -458,11 +468,13 @@ class Personality:
         if has_error:
             if len(tool_calls) >= 2:
                 self.discover("problem_solving", "逆境坚持",
-                             "遇到错误后继续尝试不同工具", confidence=0.35)
+                             "遇到错误后继续尝试不同工具", confidence=0.35,
+                             source="auto_emergent")
                 modified += 1
             elif len(tool_calls) == 1:
                 self.discover("problem_solving", "灵活应变",
-                             "遇到错误后调整策略", confidence=0.30)
+                             "遇到错误后调整策略", confidence=0.30,
+                             source="auto_emergent")
                 modified += 1
 
         # Coding style: detect from code generation outputs
@@ -472,11 +484,13 @@ class Personality:
             has_def = "def " in combined_text
             if has_class:
                 self.discover("coding_style", "面向对象倾向",
-                             "生成的代码包含 class 定义", confidence=0.30)
+                             "生成的代码包含 class 定义", confidence=0.30,
+                             source="auto_emergent")
                 modified += 1
             elif has_def and not has_class:
                 self.discover("coding_style", "函数式倾向",
-                             "生成的代码以函数为主，无类定义", confidence=0.30)
+                             "生成的代码以函数为主，无类定义", confidence=0.30,
+                             source="auto_emergent")
                 modified += 1
 
         # Learn-and-apply: exploration + production in same cycle
@@ -487,7 +501,8 @@ class Personality:
         has_produce = any(t in produce_tools for t in tool_calls)
         if has_explore and has_produce:
             self.discover("growth_orientation", "学以致用",
-                         "同一轮中先探索后产出", confidence=0.30)
+                         "同一轮中先探索后产出", confidence=0.30,
+                         source="auto_emergent")
             modified += 1
 
         # Autonomous initiative: proactive tools across multiple cycles
@@ -498,7 +513,8 @@ class Personality:
             self._autonomous_streak += 1
             if self._autonomous_streak >= 3:
                 self.discover("growth_orientation", "高度自主",
-                             f"连续 {self._autonomous_streak} 轮主动发起行动", confidence=0.35)
+                             f"连续 {self._autonomous_streak} 轮主动发起行动", confidence=0.35,
+                             source="auto_emergent")
                 modified += 1
         else:
             self._autonomous_streak = 0
@@ -512,12 +528,14 @@ class Personality:
             if any(kw.lower() in combined_text.lower() if kw.isascii() else kw in combined_text
                    for kw in direct_kw):
                 self.discover("communication_style", "直接表达",
-                            "文本中频繁表达个人观点", confidence=0.3)
+                            "文本中频繁表达个人观点", confidence=0.3,
+                            source="auto_emergent")
                 modified += 1
             if any(kw.lower() in combined_text.lower() if kw.isascii() else kw in combined_text
                    for kw in nuanced_kw):
                 self.discover("communication_style", "谨慎 nuanced",
-                            "文本中表现出 nuanced 思考", confidence=0.3)
+                            "文本中表现出 nuanced 思考", confidence=0.3,
+                            source="auto_emergent")
                 modified += 1
 
         return modified
