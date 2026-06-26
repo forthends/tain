@@ -201,6 +201,18 @@ class AgentSubsystemsMixin:
             agent_name=self.agent_name,
         )
 
+        # Check for unread inter-agent messages at session start
+        try:
+            if self.tools.has("check_messages"):
+                result = self.tools.call("check_messages")
+                if result.get("success"):
+                    msgs_data = result.get("result", {})
+                    count = msgs_data.get("count", 0) if isinstance(msgs_data, dict) else 0
+                    if count:
+                        print(f"  📬 {count} unread inter-agent message(s).")
+        except Exception:
+            pass  # Message bus may not be available
+
         # Reload any previously forged tools
         forged_count = self.forge.load_forged_tools()
         if forged_count > 0:
