@@ -18,28 +18,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-# ── Whitelist: modules allowed for import ──────────────────────────────
+from tain_agent.tools.sandbox_allowlist import SANDBOX_ALLOWED_MODULES as _ALLOWED_MODULES
 
-_ALLOWED_MODULES = frozenset({
-    "json", "datetime", "pathlib", "typing", "hashlib", "math",
-    "collections", "itertools", "functools", "textwrap", "re", "string",
-    "dataclasses", "enum", "uuid", "statistics", "csv", "base64",
-    "copy", "random", "html", "xml", "argparse", "logging",
-})
-
-# ── Blacklist: call targets that are always rejected ───────────────────
-
-_BLACKLIST_CALLS = frozenset({
-    "eval", "exec", "compile", "__import__", "open",
-})
-
-_BLACKLIST_MODULES = frozenset({
-    "os", "sys", "subprocess", "shutil", "socket", "ctypes",
-    "multiprocessing", "signal", "builtins", "importlib",
-    "urllib", "http", "ftplib", "smtplib", "telnetlib",
-    "requests", "pdb", "code", "traceback", "inspect",
-    "pip", "setuptools", "pkg_resources",
-})
+from tain_agent.tools.sandbox_allowlist import (
+    SANDBOX_BLACKLIST_CALLS as _BLACKLIST_CALLS,
+    SANDBOX_BLACKLIST_MODULES as _BLACKLIST_MODULES,
+)
 
 # ── Sandbox execution timeout ──────────────────────────────────────────
 

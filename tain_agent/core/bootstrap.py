@@ -186,6 +186,7 @@ class ToolBootstrap:
         self._register_sub_agent()
         self._register_export()
         self._register_test()
+        self._register_sandbox_info()
         self._register_knowledge()
 
     # ── Decision recording ──────────────────────────────────────────
@@ -902,6 +903,22 @@ class ToolBootstrap:
                 "test_code": {"type": "string", "description": "Tool source code (function/assert) or test file path (pytest).", "required": False},
                 "timeout": {"type": "integer", "description": "Max seconds (default 60).", "required": False},
             },
+        )
+
+    # ── Sandbox allowlist info (Phase 1) ──────────────────────────────
+
+    def _register_sandbox_info(self) -> None:
+        from tain_agent.tools.sandbox_allowlist import get_allowlist
+
+        def get_sandbox_allowlist() -> str:
+            """Return the list of Python modules available in the tool sandbox."""
+            return json.dumps(get_allowlist(), ensure_ascii=False, indent=2)
+
+        self.a.tools.register(
+            "get_sandbox_allowlist", get_sandbox_allowlist,
+            "List all Python modules allowed in the tool forge sandbox. "
+            "Use this before writing forge_tool code to know which imports are available.",
+            {},
         )
 
     # ── Knowledge upgrade (Phase 3.1) ──────────────────────────────────

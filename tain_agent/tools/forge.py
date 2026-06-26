@@ -152,7 +152,7 @@ class ToolForge:
                 report = result
             else:
                 report = json.loads(result)
-            return {
+            sandbox_report = {
                 "passed": report.get("passed", False),
                 "report": report.get("summary", "No summary."),
                 "warnings": report.get("warnings", []),
@@ -160,6 +160,10 @@ class ToolForge:
                 "functions_found": report.get("functions_found", []),
                 "sandbox_result": report,
             }
+            if not sandbox_report["passed"]:
+                from tain_agent.tools.sandbox_allowlist import get_allowlist
+                sandbox_report["allowlist_hint"] = get_allowlist()
+            return sandbox_report
         except Exception as e:
             return {
                 "passed": False,
