@@ -1,5 +1,8 @@
 """Tests for the personality system."""
 
+import json
+import os
+
 import pytest
 from tain_agent.core.personality import Personality, TRAIT_CATEGORIES
 
@@ -327,3 +330,103 @@ class TestAutoObserveBilingual:
         )
         assert p._find_similar("communication_style", "直接表达") is not None
         assert p._find_similar("communication_style", "谨慎 nuanced") is not None
+
+
+# ─── Persistence tests (workspace_path + disk fallback) ─────────────────
+
+
+class TestPersistenceSaveToDisk:
+    """Tests for _save_to_disk with workspace_path."""
+
+    def test_save_to_agent_scoped_path(self, tmp_path):
+        """_save_to_disk writes to agent-scoped path when workspace_path is set."""
+        p = Personality(workspace_path=tmp_path)
+        p.discover("values", "honesty", "I noticed I always tell the truth")
+        p._save_to_disk()
+
+        disk_path = tmp_path / "state" / "personality.json"
+        assert disk_path.exists()
+
+        data = json.loads(disk_path.read_text(encoding="utf-8"))
+        assert data["version"] == Personality.VERSION
+        assert "values" in data["traits"]
+        traits = data["traits"]["values"]
+        assert len(traits) == 1
+        assert traits[0]["value"] == "honesty"
+        assert traits[0]["confidence"] == 0.3
+
+
+class TestPersistenceLoadFromDisk:
+    """Tests for _load_from_disk fallback."""
+
+    def test_restores_traits_from_disk(self, tmp_path):
+        """_load_from_disk restores traits when memory has no traits."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        traits_data = {
+            "version": Personality.VERSION,
+            "created_at": "2025-01-01T00:00:00",
+            "traits": {
+                "values": [{
+                    "value": "curiosity",
+                    "confidence": 0.5,
+                    "observations": 3,
+                    "emergence_story": "I explore",
+                    "first_observed_at": "2025-01-01T00:00:00",
+                    "last_updated_at": "2025-01-01T00:00:00",
+                    "reinforcement_stories": [],
+                }],
+            },
+            "evolution_log": [],
+            "saved_at": "2025-01-01T00:00:00",
+        }
+        (state_dir / "personality.json").write_text(
+            json.dumps(traits_data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        p = Personality(workspace_path=tmp_path, memory=None)
+
+        assert p.is_empty() is False
+        assert p.total_traits() == 1
+        trait = p._find_similar("values", "curiosity")
+        assert trait is not None
+        assert trait["confidence"] == 0.5
+
+    def test_handles_missing_file_silently(self, tmp_path):
+        """_load_from_disk does not crash when personality.json is missing."""
+        p = Personality(workspace_path=tmp_path, memory=None)
+        assert p.is_empty() is True
+        assert p.total_traits() == 0
+
+    def test_handles_corrupt_json_silently(self, tmp_path):
+        """_load_from_disk does not crash on corrupt JSON."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        (state_dir / "personality.json").write_text("this is not valid json {{{")
+
+        p = Personality(workspace_path=tmp_path, memory=None)
+        assert p.is_empty() is True
+        assert p.total_traits() == 0
+
+
+class TestPersistenceBackwardCompatibility:
+    """Tests for backward compatibility when workspace_path is not set."""
+
+    def test_save_to_default_path_without_workspace_path(self, tmp_path):
+        """Personality without workspace_path writes to agent_workspace/state/personality.json."""
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            p = Personality()
+            p.discover("values", "integrity", "being truthful")
+            p._save_to_disk()
+
+            disk_path = tmp_path / "agent_workspace" / "state" / "personality.json"
+            assert disk_path.exists()
+
+            data = json.loads(disk_path.read_text(encoding="utf-8"))
+            traits = data["traits"]["values"]
+            assert traits[0]["value"] == "integrity"
+        finally:
+            os.chdir(original_cwd)
