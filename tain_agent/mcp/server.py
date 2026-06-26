@@ -1,6 +1,7 @@
 """AgentMCPServer — MCP protocol server wrapping a Slim Kernel Agent."""
 from __future__ import annotations
 import json, sys, logging
+from tain_agent import __version__
 from tain_agent.mcp.middleware import ProductionGateMiddleware, RateLimiter
 from tain_agent.mcp.endpoints import register_tools_endpoints, register_resource_endpoints, register_prompt_endpoints
 
@@ -23,7 +24,7 @@ class AgentMCPServer:
             with open("config.yaml") as f: config = yaml.safe_load(f)
         except Exception: pass
         workspace = Path("agent_workspace") / self.agent_name
-        ctx = AgentContext(self.agent_name, self.agent_name, "ide", workspace, config, "0.6.0")
+        ctx = AgentContext(self.agent_name, self.agent_name, "ide", workspace, config, __version__)
         self._kernel = AgentKernel(ctx)
         factories = self._load_factories()
         self._kernel.load_plugins(factories)

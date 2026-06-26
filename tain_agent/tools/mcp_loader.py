@@ -18,6 +18,8 @@ import asyncio
 import json
 import os
 import subprocess
+
+from tain_agent import __version__
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -156,7 +158,7 @@ class MCPClient:
         init_result = self._send_request("initialize", {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "tain-agent", "version": "0.5.0"},
+            "clientInfo": {"name": "tain-agent", "version": __version__},
         })
         return init_result
 

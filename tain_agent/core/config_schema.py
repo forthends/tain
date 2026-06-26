@@ -2,6 +2,8 @@
 from typing import Optional
 from pydantic import BaseModel, Field
 
+from tain_agent import __version__
+
 
 class RetryConfigSchema(BaseModel):
     enabled: bool = True
@@ -143,7 +145,7 @@ class LoggingSchema(BaseModel):
 
 
 class FrameworkConfigSchema(BaseModel):
-    version: str = "0.5.1"
+    version: str = __version__
     min_agent_version: str = "0.0.1"
 
 
