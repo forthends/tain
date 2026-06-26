@@ -165,6 +165,11 @@ class ToolForge:
                 sandbox_report["allowlist_hint"] = get_allowlist()
             return sandbox_report
         except Exception as e:
+            try:
+                from tain_agent.tools.sandbox_allowlist import get_allowlist
+                hint = get_allowlist()
+            except Exception:
+                hint = None
             return {
                 "passed": False,
                 "report": f"Sandbox internal error: {e}",
@@ -172,6 +177,7 @@ class ToolForge:
                 "errors": [{"type": "sandbox_error", "detail": str(e)}],
                 "functions_found": [],
                 "sandbox_result": None,
+                "allowlist_hint": hint,
             }
 
     # ── Parameter inference from function signatures ──────────────────

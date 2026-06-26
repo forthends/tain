@@ -282,7 +282,9 @@ def execute_code(code: str, timeout: int = 30) -> str:
     _original_open = _builtins.open
     _original_import = _builtins.__import__
 
-    # Stdlib whitelist for execute_code sandbox
+    # Stdlib whitelist for execute_code sandbox.
+    # Note: forge_tool sandbox uses tain_agent.tools.sandbox_allowlist.SANDBOX_ALLOWED_MODULES.
+    # This whitelist is specific to execute_code and may diverge intentionally.
     _STDLIB_WHITELIST = frozenset({
         "json", "re", "pathlib", "datetime", "collections", "functools",
         "itertools", "math", "statistics", "textwrap", "hashlib",

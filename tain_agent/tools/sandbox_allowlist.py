@@ -1,11 +1,10 @@
-"""Shared sandbox allowlist — single source of truth for forge_tool and execute_code."""
+"""Shared sandbox allowlist — single source of truth for forge_tool sandbox validation."""
 
 SANDBOX_ALLOWED_MODULES = frozenset({
     "json", "datetime", "pathlib", "typing", "hashlib", "math",
     "collections", "itertools", "functools", "textwrap", "re", "string",
     "dataclasses", "enum", "uuid", "statistics", "csv", "base64",
     "copy", "random", "html", "xml", "argparse", "logging",
-    "urllib.parse",  # was allowed in execute_code but not in forge_tool
 })
 
 SANDBOX_BLACKLIST_CALLS = frozenset({
