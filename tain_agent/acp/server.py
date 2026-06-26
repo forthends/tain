@@ -19,8 +19,9 @@ import traceback
 import uuid
 from pathlib import Path
 
-from tain_agent import __version__
 from typing import Optional
+
+from tain_agent import __version__
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 

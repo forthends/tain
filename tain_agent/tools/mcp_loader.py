@@ -19,10 +19,11 @@ import json
 import os
 import subprocess
 
-from tain_agent import __version__
 import uuid
 from pathlib import Path
 from typing import Optional
+
+from tain_agent import __version__
 
 from tain_agent.tools.base import Tool
 
