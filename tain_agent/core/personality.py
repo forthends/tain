@@ -17,6 +17,7 @@ Design principles:
   5. Versioned — personality evolution is tracked over time
 """
 
+from pathlib import Path
 from tain_agent.core.time_utils import now
 
 
@@ -55,14 +56,17 @@ class Personality:
 
     VERSION = 1  # Schema version for future migrations
 
-    def __init__(self, memory=None):
+    def __init__(self, memory=None, workspace_path=None):
         """Initialize an empty personality.
 
         Args:
             memory: tain_agent.core.memory.Memory instance for persistence.
                     If None, personality only lives in-memory.
+            workspace_path: Path to the agent's workspace directory.
+                            Used for disk persistence scoped to this agent.
         """
         self._memory = memory
+        self._workspace_path = Path(workspace_path) if workspace_path else None
         # _traits: dict of category → list of trait dicts
         # All categories start empty
         self._traits: dict[str, list[dict]] = {
@@ -73,8 +77,10 @@ class Personality:
         self._evolution_log: list[dict] = []  # history of personality changes
         self._autonomous_streak: int = 0
 
-        # Load existing personality from memory if available
+        # Load existing personality: memory first, then disk fallback
         self._load_from_memory()
+        if self.is_empty() and self._workspace_path:
+            self._load_from_disk()
 
     # ── Public API ──────────────────────────────────────────────────────
 
@@ -532,10 +538,13 @@ class Personality:
         self._save_to_disk(data)
 
     def _save_to_disk(self, data: dict = None) -> None:
-        """Persist personality to agent_workspace/state/personality.json."""
-        import json
+        """Persist personality to the agent's workspace state directory."""
+        import json as _json
         from pathlib import Path as _Path
-        state_dir = _Path("agent_workspace/state")
+        if self._workspace_path:
+            state_dir = self._workspace_path / "state"
+        else:
+            state_dir = _Path("agent_workspace/state")  # backward compatible
         state_dir.mkdir(parents=True, exist_ok=True)
         if data is None:
             data = {
@@ -546,7 +555,7 @@ class Personality:
                 "saved_at": now().isoformat(),
             }
         (state_dir / "personality.json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            _json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _load_from_memory(self) -> None:
         """Load personality from long-term memory, if it exists."""
@@ -559,6 +568,26 @@ class Personality:
         self._created_at = data.get("created_at", self._created_at)
         loaded_traits = data.get("traits", {})
         # Only load known categories
+        for cat in TRAIT_CATEGORIES:
+            if cat in loaded_traits:
+                self._traits[cat] = loaded_traits[cat]
+        self._evolution_log = data.get("evolution_log", [])
+
+    def _load_from_disk(self) -> None:
+        """Load personality from agent workspace disk storage (fallback)."""
+        import json as _json
+        if not self._workspace_path:
+            return
+        disk_path = self._workspace_path / "state" / "personality.json"
+        if not disk_path.exists():
+            return
+        try:
+            data = _json.loads(disk_path.read_text(encoding="utf-8"))
+        except (_json.JSONDecodeError, OSError):
+            return
+        self._version = data.get("version", self.VERSION)
+        self._created_at = data.get("created_at", self._created_at)
+        loaded_traits = data.get("traits", {})
         for cat in TRAIT_CATEGORIES:
             if cat in loaded_traits:
                 self._traits[cat] = loaded_traits[cat]
