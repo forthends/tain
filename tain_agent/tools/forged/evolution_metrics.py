@@ -289,11 +289,13 @@ class MetricsCollector:
 
     def __init__(self, base_dir: str = ".", tool_registry=None,
                  personality=None, improvement_loop=None,
+                 evolution_loop=None,
                  decision_log=None, memory=None, agent_name: str = ""):
         self.base_dir = Path(base_dir).resolve()
         self.tool_registry = tool_registry
         self.personality = personality
-        self.improvement_loop = improvement_loop
+        self.improvement_loop = improvement_loop  # deprecated alias
+        self.evolution_loop = evolution_loop      # new name
         self.decision_log = decision_log
         self.memory = memory
         self.agent_name = agent_name
@@ -487,17 +489,18 @@ class MetricsCollector:
 
     def _collect_evolution_efficiency(self, s: MetricsSnapshot) -> None:
         """Collect improvement loop statistics."""
-        if not self.improvement_loop:
+        loop = self.evolution_loop or self.improvement_loop
+        if not loop:
             return
 
         try:
-            state = self.improvement_loop.export_state()
+            state = loop.export_state()
             s.evolution_total_cycles = state.get("cycle_count", 0)
             s.evolution_improvements_made = state.get("improvements_this_session", 0)
             if s.evolution_total_cycles > 0:
                 s.evolution_improvement_rate = s.evolution_improvements_made / s.evolution_total_cycles
             s.evolution_streak_no_improvement = getattr(
-                self.improvement_loop, '_no_improvement_streak', 0
+                loop, '_no_improvement_streak', 0
             )
         except (AttributeError, Exception):
             pass

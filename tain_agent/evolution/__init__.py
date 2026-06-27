@@ -6,7 +6,7 @@ This is the "二生三，三生万物" engine:
   - SelfModify: ability to change own code
   - CapabilityRegistry: self-knowledge of what it can/cannot do
   - SelfImprovementPipeline: systematic analyze→design→forge→verify→register
-  - ImprovementLoop: continuous cyclic self-evolution scheduler
+  - AutonomousEvolutionLoop: closed autonomous evolution cycle
   - EvolutionReporter: version bump, report generation, git commit/push
 """
 
@@ -19,7 +19,7 @@ from tain_agent.evolution.pipeline import (
     StageResult,
     PipelineResult,
 )
-from tain_agent.evolution.improvement_loop import ImprovementLoop
+from tain_agent.evolution.autonomous_loop import AutonomousEvolutionLoop
 from tain_agent.evolution.reporter import EvolutionReporter
 from tain_agent.evolution.behavior_contract import (
     BehaviorContract,
