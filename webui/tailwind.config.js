@@ -1,6 +1,12 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   darkMode: 'class',
+  safelist: [
+    { pattern: /^md-h[1-6]$/ },
+    { pattern: /^md-(heading|table|blockquote)$/ },
+    { pattern: /^json-(key|string|number|bool)$/ },
+    'inline-code',
+  ],
   content: [
     './templates/**/*.html',
   ],
