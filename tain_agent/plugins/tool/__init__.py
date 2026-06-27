@@ -161,14 +161,42 @@ class ToolPlugin:
         code: str,
         parameters: dict | None = None,
     ) -> dict:
-        """Forge a new tool from source code through the safety sandbox."""
+        """Forge a new tool from source code through the safety sandbox.
+
+        Args:
+            name: Tool name.
+            description: Human-readable description.
+            code: Python source code for the tool function.
+            parameters: Optional dict with 'action' key:
+                - "create" (default): Create a new tool
+                - "update": Update an existing forged tool
+                - "rollback": Remove a forged tool
+        """
         if self._forge is None:
             return {"success": False, "error": "forge not initialized"}
+
+        action = (parameters or {}).get("action", "create")
+
+        if action == "rollback":
+            return self._forge.remove_forged(name)
+
+        # Strip action from parameters before passing to ToolForge
+        forge_params = dict(parameters) if parameters else None
+        if forge_params:
+            forge_params.pop("action", None)
+            if not forge_params:
+                forge_params = None
+
+        if action == "update":
+            # Remove old version, forge new version
+            if name in self._forge._forged_tools:
+                self._forge.remove_forged(name)
+
         return self._forge.forge(
             name=name,
             description=description,
             code=code,
-            parameters=parameters,
+            parameters=forge_params,
         )
 
     def forge_cycle(
@@ -230,6 +258,17 @@ class ToolPlugin:
         if self._forge is None:
             return {"success": False, "error": "forge not initialized"}
         return self._forge.remove_forged(tool_name)
+
+    def list_forged(self) -> dict:
+        """Return all forged tools and their metadata."""
+        if self._forge is None:
+            return {}
+        return dict(self._forge._forged_tools)
+
+    def get_sandbox_allowlist(self) -> list:
+        """Return the current sandbox import/API allowlist."""
+        from tain_agent.tools.sandbox_allowlist import SANDBOX_ALLOWED_MODULES
+        return sorted(SANDBOX_ALLOWED_MODULES)
 
     # ── Convenience ─────────────────────────────────────────────────────
 
