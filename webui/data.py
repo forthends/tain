@@ -326,6 +326,79 @@ def get_agent_goals(name: str) -> list[dict]:
     return []
 
 
+def get_agent_memory_notes(name: str, category: str = "") -> list[dict]:
+    """Read agent memory notes from agent_notes.jsonl, optionally filtered by category.
+
+    Returns entries in reverse chronological order (most recent first).
+    """
+    path = WORKSPACE_ROOT / name / "memory" / "agent_notes.jsonl"
+    if not path.exists():
+        return []
+    entries = []
+    try:
+        for line in path.read_text(encoding="utf-8").strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if category and entry.get("category") != category:
+                continue
+            # Truncate content for display (keep first 2000 chars)
+            content = entry.get("content", "")
+            if len(content) > 2000:
+                entry["content"] = content[:2000] + "..."
+            entries.append(entry)
+    except IOError:
+        return []
+    entries.reverse()  # most recent first
+    return entries
+
+
+def get_agent_memory_stats(name: str) -> dict:
+    """Return memory statistics: agent_notes count, episodic memory count, and categories."""
+    notes_count = 0
+    notes_path = WORKSPACE_ROOT / name / "memory" / "agent_notes.jsonl"
+    categories: set[str] = set()
+    if notes_path.exists():
+        try:
+            for line in notes_path.read_text(encoding="utf-8").strip().split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                notes_count += 1
+                try:
+                    entry = json.loads(line)
+                    cat = entry.get("category")
+                    if cat:
+                        categories.add(cat)
+                except json.JSONDecodeError:
+                    continue
+        except IOError:
+            pass
+
+    episodic_count = 0
+    episodic_path = WORKSPACE_ROOT / name / "memory" / "episodic.db"
+    if episodic_path.exists():
+        try:
+            import sqlite3
+            db = sqlite3.connect(f"file:{episodic_path}?mode=ro", uri=True)
+            row = db.execute("SELECT COUNT(*) FROM episodic_memory").fetchone()
+            if row:
+                episodic_count = row[0]
+            db.close()
+        except Exception:
+            pass  # Best-effort: DB might be locked, corrupted, or sqlite3 unavailable
+
+    return {
+        "notes_count": notes_count,
+        "episodic_count": episodic_count,
+        "categories": sorted(categories),
+    }
+
+
 def get_config() -> dict:
     config_path = PROJECT_ROOT / "config.yaml"
     if not config_path.exists():
