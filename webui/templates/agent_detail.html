@@ -325,6 +325,42 @@ document.addEventListener('alpine:init', () => {
             }
         },
     }));
+
+    Alpine.data('memoryViewer', (agentName) => ({
+        notes: [],
+        stats: { notes_count: 0, episodic_count: 0, categories: [] },
+        filter: '',
+
+        init() {
+            fetch(`/api/agent/${agentName}/memory/notes`)
+                .then(r => r.json())
+                .then(data => {
+                    this.notes = data.notes || [];
+                    this.stats = data.stats || this.stats;
+                })
+                .catch(err => console.warn('Memory notes load failed:', err));
+        },
+
+        get filteredNotes() {
+            if (!this.filter) return this.notes;
+            return this.notes.filter(n => n.category === this.filter);
+        },
+
+        renderMarkdown(text) {
+            if (!text) return '';
+            try {
+                const raw = marked.parse(text, { breaks: true, gfm: true });
+                return DOMPurify.sanitize(raw, {
+                    ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','strong','em','del',
+                                   'a','img','ul','ol','li','pre','code','blockquote',
+                                   'table','thead','tbody','tr','th','td','hr','span','div'],
+                    ALLOWED_ATTR: ['href','src','alt','class','id','target','rel'],
+                });
+            } catch (e) {
+                return text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            }
+        },
+    }));
 });
 </script>
 {% endblock %}
