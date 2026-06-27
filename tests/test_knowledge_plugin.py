@@ -388,3 +388,43 @@ class TestKnowledgeReferences:
 
         files = get_referenced_files("unknown")
         assert files == []
+
+
+# ── GoalManager tests ────────────────────────────────────────────────
+
+from tain_agent.plugins.knowledge.goal_manager import GoalManager, Goal
+
+
+class TestGoalManager:
+    """Tests for GoalManager — agent goal tracking with JSON persistence."""
+
+    def test_create_and_list(self):
+        """GoalManager.create() adds an active goal, list_active() returns it."""
+        gm = GoalManager()
+        goal = gm.create("Learn Rust", "Complete the Rust book")
+        assert goal.status == "active"
+        assert goal.description == "Learn Rust"
+        active = gm.list_active()
+        assert len(active) == 1
+        assert active[0]["id"] == goal.id
+
+    def test_complete(self):
+        """GoalManager.complete() marks goal as completed."""
+        gm = GoalManager()
+        goal = gm.create("Write tests", "95% coverage")
+        assert gm.complete(goal.id, "Done")
+        assert len(gm.list_active()) == 0
+        assert len(gm.list_completed()) == 1
+        assert gm.list_completed()[0]["summary"] == "Done"
+
+    def test_persist_and_load(self, tmp_path):
+        """GoalManager persists to JSON and reloads."""
+        path = tmp_path / "goals.json"
+        gm1 = GoalManager()
+        gm1.initialize(path)
+        gm1.create("Goal A", "Criteria A")
+
+        gm2 = GoalManager()
+        gm2.initialize(path)
+        assert len(gm2.list_active()) == 1
+        assert gm2.list_active()[0]["description"] == "Goal A"

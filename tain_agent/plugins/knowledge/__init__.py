@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from tain_agent.kernel.protocol import AgentContext, HealthStatus, PluginProtocol
+from tain_agent.plugins.knowledge.goal_manager import GoalManager
 from tain_agent.plugins.knowledge.graph import KnowledgeGraph, KnowledgeSnapshot
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class KnowledgePlugin:
         self._ctx: AgentContext | None = None
         self._dynamic: list[dict[str, Any]] = []
         self._graph: KnowledgeGraph = KnowledgeGraph()
+        self._goals: GoalManager = GoalManager()
         self._persist_path: Path | None = None
 
     # ── PluginProtocol ──────────────────────────────────────────────
@@ -43,6 +45,8 @@ class KnowledgePlugin:
         self._persist_path = ctx.workspace_path / "knowledge" / "graph.json"
         self._persist_path.parent.mkdir(parents=True, exist_ok=True)
         self._load()
+        goals_path = ctx.workspace_path / "knowledge" / "goals.json"
+        self._goals.initialize(goals_path)
 
     def shutdown(self) -> None:
         self._save()
@@ -131,6 +135,13 @@ class KnowledgePlugin:
         except Exception as e:
             logger.warning("Failed to load knowledge graph: %s — starting fresh", e)
             self._graph = KnowledgeGraph()
+
+    # ── Goal Manager ─────────────────────────────────────────────────
+
+    @property
+    def goals(self) -> GoalManager:
+        """Access the agent's goal manager."""
+        return self._goals
 
     # ── Knowledge API ───────────────────────────────────────────────
 
