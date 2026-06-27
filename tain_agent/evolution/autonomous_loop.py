@@ -32,7 +32,9 @@ from tain_agent.evolution.behavior_contract import (
     BehaviorContract,
     ContractValidationError,
 )
-from tain_agent.plugins.tool.forge_cycle import ImprovementSpec
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from tain_agent.plugins.tool.forge_cycle import ImprovementSpec
 
 logger = logging.getLogger(__name__)
 
@@ -687,7 +689,8 @@ class AutonomousEvolutionLoop:
             )
         reasoning = "Triggered by: " + "; ".join(reasoning_parts)
 
-        return ImprovementSpec(
+        from tain_agent.plugins.tool.forge_cycle import ImprovementSpec as _ISpec
+        return _ISpec(
             capability_id=capability_id,
             description=description,
             function_name=function_name,
