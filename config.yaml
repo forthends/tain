@@ -117,6 +117,14 @@ forge:
   # Maximum autonomous forge cycles per agent session.
   max_forges_per_session: 3
 
+# ── Autonomous Evolution Loop ─────────────────────────────────────────────
+evolution:
+  min_interval_seconds: 300
+  max_improvements_per_session: 10
+  max_generate_retries: 3
+  rollback_on_failure_count: 3
+  contract_enforcement: "strict"
+
 # ── Phase 2: Evolution Metrics ──────────────────────────────────────
 # Quantitative self-evaluation system for tracking evolution quality.
 metrics:
