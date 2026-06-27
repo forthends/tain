@@ -1,13 +1,12 @@
 # Tain Agent Framework — Quick Start Guide
 
-**Version**: 0.5.1
+**Version**: 0.10.0
 
 ---
 
 ## Prerequisites
 
-- Python 3.12+
-- Node.js 23+ (for CSS build, optional — pre-built CSS included)
+- Python 3.10+
 - An LLM API key (Anthropic, DeepSeek, OpenAI, or MiniMax)
 
 ---
@@ -28,15 +27,12 @@ pip install -e .
 Edit `config.yaml` to set your LLM provider and API key:
 
 ```yaml
-framework:
-  version: "0.5.1"
-
 agent:
   default_agent: "default"
 
 llm:
   provider: "minimax"            # anthropic | deepseek | openai | minimax
-  model: "MiniMax-M2.7"
+  model: "MiniMax-M3"
   api_key_env: "MINIMAX_API_KEY"
   base_url: "https://api.minimaxi.com/anthropic"
   retry:
@@ -45,8 +41,12 @@ llm:
 
 exploration:
   max_exploration_cycles: 10
-  min_bootstrap_cycles: 5
   min_action_categories: 2
+
+evolution:
+  min_interval_seconds: 300
+  max_improvements_per_session: 10
+  contract_enforcement: "strict"
 ```
 
 Set your API key:
@@ -61,7 +61,7 @@ export MINIMAX_API_KEY="your-api-key"
 Chaos mode creates an agent with no predefined personality — it will self-awaken and discover its identity through action.
 
 ```bash
-python main.py --create-agent
+./tain new
 ```
 
 ```
@@ -80,7 +80,7 @@ python main.py --create-agent
 
 Or create and start in one step:
 ```bash
-python main.py --agent explorer
+./tain run explorer
 ```
 
 ---
@@ -90,7 +90,7 @@ python main.py --agent explorer
 Specified mode lets you predefine the agent's role and personality:
 
 ```bash
-python main.py --create-agent
+./tain new
 ```
 
 ```
@@ -114,7 +114,7 @@ python main.py --create-agent
 
 Start the poet:
 ```bash
-python main.py --agent poet
+./tain run poet
 ```
 
 ---
@@ -124,7 +124,7 @@ python main.py --agent poet
 Start the Web UI to interact with agents through a browser:
 
 ```bash
-python -m uvicorn webui.app:create_app --host 0.0.0.0 --port 8000 --factory
+./tain webui
 ```
 
 Open `http://localhost:8000` to access the dashboard. From there you can:
@@ -148,12 +148,12 @@ Open multiple terminal windows and start different agents:
 
 Terminal 1:
 ```bash
-python main.py --agent poet
+./tain run poet
 ```
 
 Terminal 2:
 ```bash
-python main.py --agent alpha01
+./tain run alpha01
 ```
 
 ---
@@ -196,13 +196,13 @@ alpha01 checks and responds:
 
 ```bash
 # List all agents
-python main.py --list-agents
+./tain list
 
 # View a specific agent
-python main.py --agent poet --state
+./tain run poet --state
 
 # View agent decision log
-python main.py --agent poet --log
+./tain run poet --log
 ```
 
 ---
@@ -212,26 +212,29 @@ python main.py --agent poet --log
 Run an agent as a background daemon with auto-restart:
 
 ```bash
-python main.py --agent poet --daemon
-python main.py --daemon --stop
-python main.py --daemon --status
+./tain daemon start poet
+./tain daemon stop
+./tain daemon status
 ```
 
 ---
 
 ## 10. CLI Reference
 
-| Command | Description |
-|---------|-------------|
-| `python main.py --agent <name>` | Start an agent (creates if new) |
-| `python main.py --list-agents` | List all agents |
-| `python main.py --create-agent` | Interactive creation wizard |
-| `python main.py --agent <name> --state` | Print agent state |
-| `python main.py --agent <name> --log` | View decision log |
-| `python main.py --agent <name> --daemon` | Run as daemon |
-| `python main.py --daemon --stop` | Stop daemon |
-| `python main.py --daemon --status` | Check daemon status |
-| `python -m uvicorn webui.app:create_app --factory` | Start Web UI on port 8000 |
+| `./tain` command | `python main.py` equivalent | Description |
+| --- | --- | --- |
+| `./tain run <name>` | `python main.py --agent <name>` | Start agent (creates if new) |
+| `./tain list` | `./tain list` | List all agents |
+| `./tain new` | `python main.py --create-agent` | Interactive creation wizard |
+| `./tain state <name>` | `python main.py --agent <name> --state` | Print agent state |
+| `./tain log <name>` | `python main.py --agent <name> --log` | View decision log |
+| `./tain webui [port]` | `python main.py --webui --port 8000` | Start Web UI |
+| `./tain daemon start <name>` | `python main.py --daemon start --agent <name>` | Run as daemon |
+| `./tain daemon stop` | `python main.py --daemon stop` | Stop daemon |
+| `./tain daemon status` | `python main.py --daemon status` | Check daemon status |
+| `./tain export <name>` | `python main.py --agent <name> --export` | Export agent package |
+| `./tain dialogue <name>` | `python main.py --agent <name> --dialogue` | REPL dialogue mode |
+| `./tain help` | `python main.py --help` | Show help |
 
 ---
 
