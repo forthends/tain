@@ -55,6 +55,7 @@ class ToolPlugin:
         from tain_agent.tools.registry import ToolRegistry
         from tain_agent.tools.forge import ToolForge
         from tain_agent.tools.primal import register_primal_tools
+        from tain_agent.tools.inter_agent import register_inter_agent_tools
         from tain_agent.decision_log import DecisionLog
 
         workspace_str = str(ctx.workspace_path)
@@ -76,6 +77,11 @@ class ToolPlugin:
                                 workspace_dir=workspace_str)
         self._forge._lineage = self._lineage
         register_primal_tools(self._registry, workspace_dir=workspace_str)
+        register_inter_agent_tools(
+            self._registry,
+            workspace_root=str(ctx.workspace_path.parent),
+            agent_name=ctx.agent_name,
+        )
 
         # Load previously forged tools
         loaded = self._forge.load_forged_tools()
