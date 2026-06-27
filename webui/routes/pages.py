@@ -138,6 +138,13 @@ async def agent_tab(request: Request, name: str, tab: str):
         return _render("agent_tabs/knowledge.html", {
             "request": request, "agent": agent, "files": files,
         })
+    elif tab == "memory":
+        from webui.data import get_agent_memory_notes, get_agent_memory_stats
+        notes = get_agent_memory_notes(name)
+        stats = get_agent_memory_stats(name)
+        return _render("agent_tabs/memory.html", {
+            "request": request, "agent": agent, "notes": notes, "stats": stats,
+        })
     elif tab == "live":
         return _render("agent_tabs/live.html", {
             "request": request, "agent": agent,
