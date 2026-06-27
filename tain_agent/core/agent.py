@@ -234,7 +234,7 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
             self.personality.auto_observe(tool_names, text_parts)
 
         # Phase transition check
-        min_cats = getattr(self, 'min_action_categories', 3)
+        min_cats = getattr(self, 'min_action_categories', 2)
         if self.phase == "explore" and len(self._bootstrap_action_categories) >= min_cats:
             self._advance_phase()
 
@@ -501,7 +501,10 @@ class TaoAgent(AgentConfigMixin, AgentSubsystemsMixin, AgentCognitionMixin,
                     continue
 
             self.cycle_count += 1
-            max_cycles = self.MAX_CYCLES.get(self.phase, 50)
+            if self.phase == "explore":
+                max_cycles = getattr(self, 'max_exploration_cycles', 10)
+            else:
+                max_cycles = self.MAX_CYCLES.get(self.phase, float("inf"))
 
             if self.cycle_count > max_cycles:
                 logger.info("Max cycles (%s) reached, advancing phase", max_cycles)

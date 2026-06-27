@@ -15,6 +15,7 @@ from tain_agent.plugins.skill import SkillPlugin
 from tain_agent.plugins.knowledge import KnowledgePlugin
 from tain_agent.plugins.workflow import WorkflowPlugin
 from tain_agent.plugins.collaboration import CollaborationPlugin
+from tain_agent import __version__ as _fw_version
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class TaoAgentCompat:
         workspace = Path("agent_workspace") / name
 
         self.agent_name = name
-        self.framework_version = "0.6.0"
+        self.framework_version = _fw_version
         self.phase = "explore"
         self.cycle_count = 0
 
@@ -64,7 +65,7 @@ class TaoAgentCompat:
             evolution_mode=evolution_mode,
             workspace_path=workspace,
             config=config,
-            kernel_version="0.6.0",
+            kernel_version=_fw_version,
         )
         self.kernel = AgentKernel(ctx)
         self.kernel.load_plugins(_FACTORIES)

@@ -9,6 +9,8 @@ directly by the agent via run_forge_cycle tool.
 from dataclasses import dataclass, field
 from typing import Optional
 
+from tain_agent import __version__
+
 
 @dataclass
 class ForgeResult:
@@ -224,11 +226,7 @@ class ForgeCycle:
 
     def _get_version(self) -> str:
         """Get current framework version."""
-        try:
-            from tain_agent import __version__
-            return __version__
-        except ImportError:
-            return "0.6.0"
+        return __version__
 
     def _log_cycle(self, result: ForgeResult) -> None:
         """Record forge cycle outcome in decision log."""

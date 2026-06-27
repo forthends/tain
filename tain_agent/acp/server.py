@@ -18,7 +18,10 @@ import sys
 import traceback
 import uuid
 from pathlib import Path
+
 from typing import Optional
+
+from tain_agent import __version__
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -120,7 +123,7 @@ class ACPServer:
                 "protocolVersion": "2025-01-01",
                 "serverInfo": {
                     "name": "tain-agent-acp",
-                    "version": "0.5.0",
+                    "version": __version__,
                 },
                 "capabilities": {
                     "streaming": True,

@@ -43,8 +43,6 @@ class AgentPhaseMixin:
         "spawn_sub_agent": "creation",
         "multi_agent": "creation",
         "multi_agent_coordinator": "creation",
-        "external_fetch": "observation",
-        "external_subscribe": "creation",
         # Reflection tools
         "personality_introspect": "reflection",
         "personality_update": "reflection",
@@ -53,10 +51,8 @@ class AgentPhaseMixin:
         "complete_goal": "reflection",
         "evolve_report": "reflection",
         "drive_introspect": "reflection",
-        "trial_status": "reflection",
         "evolution_metrics": "reflection",
         "sub_agent_status": "reflection",
-        "external_status": "reflection",
     }
 
     # ── Initial Messages ───────────────────────────────────────────
