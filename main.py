@@ -230,7 +230,7 @@ def main():
         from webui.app import create_app
         import uvicorn
         app = create_app()
-        print(f"\n  Tain Agent Framework Web UI v0.4.1")
+        print(f"\n  Tain Agent Framework Web UI v{__version__}")
         print(f"  → http://127.0.0.1:{args.port}\n")
         uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info",
                     timeout_graceful_shutdown=3)
