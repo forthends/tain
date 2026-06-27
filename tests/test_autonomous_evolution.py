@@ -578,7 +578,7 @@ class TestAutonomousEvolutionLoopUnit:
                                mock_knowledge_plugin, mock_lineage)
         for i in range(10):
             mock_tool_plugin._tools[f"tool_{i}"] = {"description": f"Tool {i}"}
-        score = loop._eval_capability_gap(0.0)
+        score = loop._eval_capability_gap()
         assert score == 0.0
 
     def test_eval_capability_gap_positive_when_few_tools(
@@ -590,7 +590,7 @@ class TestAutonomousEvolutionLoopUnit:
         # Only 2 tools → should detect a gap
         mock_tool_plugin._tools["tool_a"] = {"description": "Tool A"}
         mock_tool_plugin._tools["tool_b"] = {"description": "Tool B"}
-        score = loop._eval_capability_gap(0.0)
+        score = loop._eval_capability_gap()
         assert 0 <= score <= 1
 
     def test_eval_tool_dedup_uses_hash_based_dedup(
@@ -599,7 +599,7 @@ class TestAutonomousEvolutionLoopUnit:
         """_eval_tool_dedup returns float based on forged tool list."""
         loop = self._make_loop(mock_backend, mock_tool_plugin,
                                mock_knowledge_plugin, mock_lineage)
-        score = loop._eval_tool_dedup(0.4)
+        score = loop._eval_tool_dedup()
         assert 0 <= score <= 1
 
     def test_eval_task_completion_returns_zero_stub(
@@ -608,7 +608,7 @@ class TestAutonomousEvolutionLoopUnit:
         """_eval_task_completion returns 0.0 (stub — needs decision_log)."""
         loop = self._make_loop(mock_backend, mock_tool_plugin,
                                mock_knowledge_plugin, mock_lineage)
-        score = loop._eval_task_completion(0.3)
+        score = loop._eval_task_completion()
         assert score == 0.0
 
     def test_eval_goal_achievement_queries_knowledge_plugin(
@@ -617,7 +617,7 @@ class TestAutonomousEvolutionLoopUnit:
         """_eval_goal_achievement gracefully handles knowledge plugin."""
         loop = self._make_loop(mock_backend, mock_tool_plugin,
                                mock_knowledge_plugin, mock_lineage)
-        score = loop._eval_goal_achievement(0.3)
+        score = loop._eval_goal_achievement()
         assert 0 <= score <= 1
 
     # ── configure / start / stop / pause / resume ───────────────────

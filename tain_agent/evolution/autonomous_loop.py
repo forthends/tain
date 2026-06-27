@@ -136,7 +136,8 @@ class ToolSnapshot:
     code: str | None
     tool_list_snapshot: dict
     forged_list_snapshot: dict
-    captured_at: str
+    knowledge_node_count: int = 0
+    captured_at: str = ""
 
 
 @dataclass
@@ -185,6 +186,7 @@ class AutonomousEvolutionLoop:
         self.contract_enforcement = "strict"  # strict | warn | off
 
         # ── Runtime state ──
+        self._lock = threading.Lock()
         self._running = False
         self._paused = False
         self._improvements_this_session = 0
@@ -231,24 +233,27 @@ class AutonomousEvolutionLoop:
 
     def start(self) -> dict:
         """Start background evolution thread. Returns state."""
-        if self._running:
-            return {"success": False, "error": "Loop is already active.", "running": True}
+        with self._lock:
+            if self._running:
+                return {"success": False, "error": "Loop is already active.", "running": True}
 
-        self._running = True
-        self._paused = False
-        self._thread = threading.Thread(target=self._run_loop, daemon=True)
-        self._thread.start()
-        logger.info("AutonomousEvolutionLoop started (background thread).")
-        return {"success": True, "running": True, "paused": False}
+            self._running = True
+            self._paused = False
+            self._thread = threading.Thread(target=self._run_loop, daemon=True)
+            self._thread.start()
+            logger.info("AutonomousEvolutionLoop started (background thread).")
+            return {"success": True, "running": True, "paused": False}
 
     def stop(self) -> dict:
         """Stop the evolution loop. Returns state."""
-        was_running = self._running
-        self._running = False
-        self._paused = False
+        with self._lock:
+            was_running = self._running
+            self._running = False
+            self._paused = False
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=5.0)
-        self._thread = None
+        with self._lock:
+            self._thread = None
         if was_running:
             self._save_state()
         logger.info("AutonomousEvolutionLoop stopped.")
@@ -256,13 +261,15 @@ class AutonomousEvolutionLoop:
 
     def pause(self) -> dict:
         """Pause the evolution loop. Returns state."""
-        self._paused = True
-        return {"success": True, "running": self._running, "paused": True}
+        with self._lock:
+            self._paused = True
+            return {"success": True, "running": self._running, "paused": True}
 
     def resume(self) -> dict:
         """Resume a paused evolution loop. Returns state."""
-        self._paused = False
-        return {"success": True, "running": self._running, "paused": False}
+        with self._lock:
+            self._paused = False
+            return {"success": True, "running": self._running, "paused": False}
 
     def run_one_cycle(self) -> CycleResult:
         """Execute the full 8-stage evolution cycle synchronously.
@@ -270,6 +277,9 @@ class AutonomousEvolutionLoop:
         Returns:
             CycleResult with success/skip/failure and stage details.
         """
+        # Update timestamp on every cycle (even skipped/failed) for rate-limiting
+        self._last_cycle_at = now().isoformat()
+
         # Stage 1: GAP_DETECT
         assessment = self._assess_need()
         if not assessment.get("should_trigger", False):
@@ -295,20 +305,15 @@ class AutonomousEvolutionLoop:
                 error="Contract parsing failed.",
             )
 
-        # Stage 4: CONTRACT_CHECK
-        if not self._check_contract(code, contract):
-            if self.contract_enforcement == "strict":
+        # Stage 4: CONTRACT_CHECK (only for non-strict modes;
+        # in strict mode the contract is already verified inside _generate_code_with_retry)
+        if self.contract_enforcement != "strict":
+            if not self._check_contract(code, contract):
                 return CycleResult.failed(
                     "CONTRACT_CHECK", spec=spec,
                     error="Generated code violates its declared contract.",
                     code=code, contract=contract,
                 )
-            elif self.contract_enforcement == "warn":
-                logger.warning(
-                    "Contract violation for '%s' — proceeding in warn mode.",
-                    spec.function_name,
-                )
-            # "off" — proceed silently
 
         # Stage 5: SANDBOX_FORGE
         forge_result = self._forge_tool(spec, code)
@@ -329,7 +334,7 @@ class AutonomousEvolutionLoop:
         # Stage 7: ONLINE_VERIFY
         verify_result = self._verify_online(spec.function_name)
         if verify_result.consecutive_failures >= self.rollback_on_failure_count:
-            self._rollback(spec.function_name, self._snapshots.get("before"))
+            self._rollback(spec.function_name, self._snapshots.get(spec.function_name))
             return CycleResult.failed(
                 "ONLINE_VERIFY", spec=spec, code=code,
                 error=f"Tool failed {verify_result.consecutive_failures} consecutive "
@@ -337,7 +342,7 @@ class AutonomousEvolutionLoop:
             )
 
         # Stage 8: EVALUATE
-        before_snapshot = self._snapshots.get("before")
+        before_snapshot = self._snapshots.get(spec.function_name)
         if before_snapshot:
             delta = self._evaluate_quality_delta(before_snapshot)
             if delta.degraded:
@@ -348,9 +353,9 @@ class AutonomousEvolutionLoop:
                 )
 
         # Record success
-        self._save_snapshot(spec.function_name, code)
-        self._improvements_this_session += 1
-        self._last_cycle_at = now().isoformat()
+        with self._lock:
+            self._save_snapshot(spec.function_name, code)
+            self._improvements_this_session += 1
 
         # Record in lineage
         try:
@@ -367,18 +372,19 @@ class AutonomousEvolutionLoop:
 
     def export_state(self) -> dict:
         """Return state dict for evolution_metrics.py compatibility."""
-        return {
-            "running": self._running,
-            "paused": self._paused,
-            "improvements_this_session": self._improvements_this_session,
-            "max_improvements_per_session": self.max_improvements_per_session,
-            "last_cycle_at": self._last_cycle_at,
-            "cycle_history": list(self._cycle_history),
-            "trigger_config": dict(self.trigger_config),
-            "last_trigger_scores": dict(self._last_trigger_scores),
-            "last_triggered_by": list(self._last_triggered_by),
-            "contract_enforcement": self.contract_enforcement,
-        }
+        with self._lock:
+            return {
+                "running": self._running,
+                "paused": self._paused,
+                "improvements_this_session": self._improvements_this_session,
+                "max_improvements_per_session": self.max_improvements_per_session,
+                "last_cycle_at": self._last_cycle_at,
+                "cycle_history": list(self._cycle_history),
+                "trigger_config": dict(self.trigger_config),
+                "last_trigger_scores": dict(self._last_trigger_scores),
+                "last_triggered_by": list(self._last_triggered_by),
+                "contract_enforcement": self.contract_enforcement,
+            }
 
     def execute_once_if_needed(self) -> dict:
         """Compatibility shim for cognitive_loop.py call pattern.
@@ -463,7 +469,7 @@ class AutonomousEvolutionLoop:
             weight = cfg.get("weight", 0.1)
 
             try:
-                score = evaluator(threshold)
+                score = evaluator()
             except Exception:
                 logger.debug(
                     "Dimension evaluator '%s' failed — defaulting to 0.0",
@@ -495,7 +501,7 @@ class AutonomousEvolutionLoop:
 
     # ── Dimension evaluators ─────────────────────────────────────────────
 
-    def _eval_capability_gap(self, threshold: float) -> float:
+    def _eval_capability_gap(self) -> float:
         """Score based on tool count. Returns 0 if >=10 tools, scaled gap otherwise."""
         try:
             tools = self._tools.list_tools()
@@ -507,7 +513,7 @@ class AutonomousEvolutionLoop:
         # Scale: 0 tools → 1.0, 10 tools → 0.0
         return round(max(0.0, (10 - count) / 10), 4)
 
-    def _eval_code_health(self, threshold: float) -> float:
+    def _eval_code_health(self) -> float:
         """Try importing code_entropy forged tool. Returns 0 on failure."""
         try:
             tools = self._tools.list_tools()
@@ -522,7 +528,7 @@ class AutonomousEvolutionLoop:
             logger.debug("code_entropy tool unavailable — code_health score: 0.0", exc_info=True)
         return 0.0
 
-    def _eval_knowledge_fresh(self, threshold: float) -> float:
+    def _eval_knowledge_fresh(self) -> float:
         """Try importing knowledge_freshness forged tool. Returns 0 on failure."""
         try:
             tools = self._tools.list_tools()
@@ -537,7 +543,7 @@ class AutonomousEvolutionLoop:
             logger.debug("knowledge_freshness tool unavailable — score: 0.0", exc_info=True)
         return 0.0
 
-    def _eval_tool_fitness(self, threshold: float) -> float:
+    def _eval_tool_fitness(self) -> float:
         """Try importing tool_fitness forged tool. Returns 0 on failure."""
         try:
             tools = self._tools.list_tools()
@@ -552,7 +558,7 @@ class AutonomousEvolutionLoop:
             logger.debug("tool_fitness tool unavailable — score: 0.0", exc_info=True)
         return 0.0
 
-    def _eval_tool_dedup(self, threshold: float) -> float:
+    def _eval_tool_dedup(self) -> float:
         """Hash-based dedup check on forged tools. Returns dedup score 0-1."""
         try:
             forged = self._tools.list_forged()
@@ -581,7 +587,7 @@ class AutonomousEvolutionLoop:
             logger.debug("tool_dedup evaluation failed — score: 0.0", exc_info=True)
             return 0.0
 
-    def _eval_subgraph_balance(self, threshold: float) -> float:
+    def _eval_subgraph_balance(self) -> float:
         """Try importing knowledge_subgraph forged tool. Returns 0 on failure."""
         try:
             tools = self._tools.list_tools()
@@ -596,11 +602,11 @@ class AutonomousEvolutionLoop:
             logger.debug("knowledge_subgraph tool unavailable — score: 0.0", exc_info=True)
         return 0.0
 
-    def _eval_task_completion(self, threshold: float) -> float:
+    def _eval_task_completion(self) -> float:
         """Stub — returns 0.0 (needs decision_log integration)."""
         return 0.0
 
-    def _eval_goal_achievement(self, threshold: float) -> float:
+    def _eval_goal_achievement(self) -> float:
         """Query knowledge_plugin for goal achievement rate."""
         try:
             if hasattr(self._knowledge, "goals"):
@@ -800,11 +806,11 @@ class AutonomousEvolutionLoop:
             f"def {spec.function_name}(...) -> dict:",
             '    """Docstring."""',
             "    # implementation",
-            "    return {{'result': ...}}",
+            "    return {'result': ...}",
             "```",
             "",
             "```contract",
-            '{{"side_effects": ["none"], "max_runtime_ms": 1000}}',
+            '{"side_effects": ["none"], "max_runtime_ms": 1000}',
             "```",
             "",
             "Generate now:",
@@ -909,7 +915,7 @@ class AutonomousEvolutionLoop:
         """Forge the tool through the ToolPlugin's forge_cycle."""
         try:
             # Capture pre-forge snapshot
-            self._capture_snapshot("before")
+            self._capture_snapshot(spec.function_name)
 
             # Run the closed forge cycle
             result = self._tools.forge_cycle(
@@ -965,11 +971,17 @@ class AutonomousEvolutionLoop:
         except Exception:
             forged_list = {}
 
+        try:
+            kn_count = getattr(self._knowledge, "node_count", 0)
+        except Exception:
+            kn_count = 0
+
         snapshot = ToolSnapshot(
             tool_name=tool_name,
             code=None,
             tool_list_snapshot=tool_list,
             forged_list_snapshot=forged_list,
+            knowledge_node_count=kn_count,
             captured_at=now().isoformat(),
         )
 
@@ -1001,16 +1013,15 @@ class AutonomousEvolutionLoop:
                 ),
             )
 
-        # Check knowledge node shrinkage
-        try:
-            current_knowledge_count = self._knowledge.node_count
-        except Exception:
-            current_knowledge_count = 0
-
-        if before.tool_list_snapshot:
-            # Estimate knowledge size from before snapshot (we don't store it directly,
-            # but we can check if it shrank significantly)
-            pass
+        # Criterion 2: Knowledge stability
+        before_kn = getattr(before, 'knowledge_node_count', None)
+        if before_kn is not None and before_kn > 0:
+            current_kn = getattr(self._knowledge, 'node_count', 0)
+            if current_kn < before_kn * 0.8:
+                return QualityDelta(
+                    degraded=True,
+                    reason=f"Knowledge nodes decreased significantly: {before_kn} → {current_kn}",
+                )
 
         return QualityDelta(degraded=False)
 
@@ -1046,37 +1057,40 @@ class AutonomousEvolutionLoop:
         """Background thread target — periodic assessment and evolution."""
         logger.info("AutonomousEvolutionLoop background thread running.")
 
-        while self._running:
+        while True:
+            with self._lock:
+                if not self._running:
+                    break
+                paused = self._paused
+                quota_exhausted = (
+                    self._improvements_this_session >= self.max_improvements_per_session
+                )
+                last_cycle = self._last_cycle_at
+
+            if paused:
+                time_module.sleep(5.0)
+                continue
+
+            if quota_exhausted:
+                time_module.sleep(10.0)
+                continue
+
+            # Rate limit wait using cached _last_cycle_at
+            if last_cycle:
+                try:
+                    last_time = datetime.fromisoformat(last_cycle)
+                    elapsed = (now() - last_time).total_seconds()
+                    wait = self.min_interval_seconds - elapsed
+                    if wait > 0:
+                        time_module.sleep(min(wait, 10.0))
+                        continue
+                except (ValueError, TypeError):
+                    pass
+
             try:
-                # Rate limit wait
-                if self._last_cycle_at:
-                    try:
-                        last_time = datetime.fromisoformat(self._last_cycle_at)
-                        elapsed = (now() - last_time).total_seconds()
-                        wait = self.min_interval_seconds - elapsed
-                        if wait > 0:
-                            time_module.sleep(min(wait, 10.0))
-                            continue
-                    except (ValueError, TypeError):
-                        pass
-
-                # Check paused
-                if self._paused:
-                    time_module.sleep(5.0)
-                    continue
-
-                # Quota check
-                if self._improvements_this_session >= self.max_improvements_per_session:
-                    time_module.sleep(10.0)
-                    continue
-
-                # Run one cycle
-                assessment = self._assess_need()
-                if not assessment.get("should_trigger", False):
-                    time_module.sleep(5.0)
-                    continue
-
+                # run_one_cycle() handles _assess_need() + skip internally
                 result = self.run_one_cycle()
+
                 cycle_record = {
                     "success": result.success,
                     "skipped": result.skipped,
@@ -1086,14 +1100,22 @@ class AutonomousEvolutionLoop:
                 }
                 if result.spec:
                     cycle_record["tool_name"] = result.spec.function_name
-                self._cycle_history.append(cycle_record)
 
-                # Keep only last 50 cycle records
-                if len(self._cycle_history) > 50:
-                    self._cycle_history = self._cycle_history[-50:]
+                with self._lock:
+                    self._cycle_history.append(cycle_record)
+                    # Keep only last 50 cycle records
+                    if len(self._cycle_history) > 50:
+                        self._cycle_history = self._cycle_history[-50:]
 
                 # Save state after each cycle
                 self._save_state()
+
+                if result.skipped:
+                    time_module.sleep(60)
+                elif not result.success:
+                    time_module.sleep(30)
+                else:
+                    time_module.sleep(5)
 
             except Exception:
                 logger.error(
