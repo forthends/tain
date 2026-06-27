@@ -83,19 +83,19 @@ async def api_agent_knowledge_content(name: str, path: str):
 
 @router.post("/agent/{name}/start")
 async def api_agent_start(name: str):
-    result = ProcessManager().start(name)
+    result = await ProcessManager().start_async(name)
     return {"success": result.success, "output": result.stdout, "error": result.stderr}
 
 
 @router.post("/agent/{name}/stop")
 async def api_agent_stop(name: str):
-    result = ProcessManager().stop(name)
+    result = await ProcessManager().stop_async(name)
     return {"success": result.success, "output": result.stdout, "error": result.stderr}
 
 
 @router.post("/agent/{name}/restart")
 async def api_agent_restart(name: str):
-    stop_result, start_result = ProcessManager().restart(name)
+    stop_result, start_result = await ProcessManager().restart_async(name)
     return {
         "success": start_result.success,
         "stop_output": stop_result.stdout,

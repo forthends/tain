@@ -24,7 +24,18 @@ def create_app() -> FastAPI:
 
     # Security middleware
     from webui.auth import APIKeyMiddleware
-    from webui.rate_limit import rate_limit_middleware
+    from webui.rate_limit import rate_limit_middleware, configure_rate_limits
+
+    # Read chat rate limit from config (default: 60 req/min)
+    try:
+        import yaml
+        with open(PROJECT_ROOT / "config.yaml", "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        rate = cfg.get("webui", {}).get("chat_rate_limit_per_minute", 60)
+    except Exception:
+        rate = 60
+    configure_rate_limits(rate)
+
     app.add_middleware(APIKeyMiddleware)
     app.middleware("http")(rate_limit_middleware)
 

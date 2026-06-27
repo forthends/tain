@@ -5,7 +5,7 @@ import re
 import uuid
 from typing import AsyncGenerator
 
-from webui.agent_cache import get_agent
+from webui.agent_cache import get_agent_async
 from webui.conversation_store import load_history, append_message, cleanup_incomplete
 from tain_agent.core.chat import ChatEngine
 
@@ -66,13 +66,12 @@ async def stream_chat_message(agent_name: str, user_content: str,
     msg_id = _make_msg_id()
     now_ts = _now_iso()
 
-    agent = get_agent(agent_name, config_path=str(PROJECT_ROOT / "config.yaml"))
-    if not agent.backend:
+    agent = await get_agent_async(agent_name, config_path=str(PROJECT_ROOT / "config.yaml"))
+    engine = ChatEngine(agent)
+    if not engine._backend:
         yield {"text": "[Agent has no LLM backend configured.]"}
         yield {"done": True, "message_id": msg_id}
         return
-
-    engine = ChatEngine(agent)
     history = load_history(agent_name)
     messages = []
     for m in history[-20:]:

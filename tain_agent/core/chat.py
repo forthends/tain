@@ -21,9 +21,19 @@ class ChatTurn:
 class ChatEngine:
     """Shared engine: LLM call -> parse -> execute tools. No web/SSE knowledge."""
 
-    def __init__(self, agent):
+    def __init__(self, agent, backend=None):
         self.agent = agent
-        self._kernel = getattr(agent, 'kernel', None)
+        from tain_agent.kernel import AgentKernel
+        if isinstance(agent, AgentKernel):
+            self._kernel = agent
+            if backend:
+                self._backend = backend
+            else:
+                from tain_agent.core.llm import create_backend
+                self._backend = create_backend(agent.ctx.config)
+        else:
+            self._kernel = getattr(agent, 'kernel', None)
+            self._backend = backend or getattr(agent, 'backend', None)
 
     async def run_turn(self, messages: list[dict],
                        cancel_event=None,
@@ -44,7 +54,7 @@ class ChatEngine:
 
             tools_for_turn = tool_defs if total_tool_calls < 3 else None
             try:
-                stream = self.agent.backend.stream_message(
+                stream = self._backend.stream_message(
                     system_prompt=system_prompt, messages=messages, tools=tools_for_turn)
             except Exception as e:
                 logger.warning("LLM stream error: %s", e)
@@ -118,8 +128,12 @@ class ChatEngine:
 
     def build_system_prompt(self) -> str:
         agent = self.agent
+        if self._kernel:
+            agent_name = agent.ctx.agent_name
+        else:
+            agent_name = agent.agent_name
         lines = [
-            f"你是 {agent.agent_name}，诞生于'道'的演化框架。",
+            f"你是 {agent_name}，诞生于'道'的演化框架。",
             "现在，你正在与一位人类对话。",
             "",
             "对话原则：",

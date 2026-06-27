@@ -78,14 +78,9 @@ def list_agents() -> list[dict]:
         lineage = _read_jsonl(WORKSPACE_ROOT / name / "logs" / "lineage.jsonl")
         lineage_count = len(lineage)
 
-        # Count knowledge files
-        knowledge_dir = WORKSPACE_ROOT / name / "knowledge"
-        files_dir = WORKSPACE_ROOT / name / "files"
-        knowledge_count = 0
-        if knowledge_dir.exists():
-            knowledge_count += len(list(knowledge_dir.rglob("*")))
-        if files_dir.exists():
-            knowledge_count += len(list(files_dir.rglob("*")))
+        # Count knowledge files — reuse the TTL-cached listing to avoid
+        # expensive recursive directory walks on every dashboard load.
+        knowledge_count = len(get_agent_knowledge(name))
 
         # Extract phase and cycle from memory
         phase = "unknown"
@@ -138,13 +133,42 @@ def get_agent(name: str) -> dict | None:
 
 def get_agent_decisions(name: str, phase: str = "", decision_type: str = "",
                         limit: int = 20, offset: int = 0) -> tuple[list[dict], int]:
-    entries = _read_jsonl(WORKSPACE_ROOT / name / "logs" / "decisions.jsonl")
-    if phase:
-        entries = [e for e in entries if e.get("phase") == phase]
-    if decision_type:
-        entries = [e for e in entries if e.get("decision_type") == decision_type]
-    total = len(entries)
-    return entries[offset:offset + limit], total
+    """Stream decisions from JSONL, keeping only the requested slice in memory.
+
+    Avoids loading the entire file for agents with large decision logs.
+    """
+    path = WORKSPACE_ROOT / name / "logs" / "decisions.jsonl"
+    if not path.exists():
+        return [], 0
+
+    matching: list[dict] = []
+    total = 0
+    end = offset + limit
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                if phase and entry.get("phase") != phase:
+                    continue
+                if decision_type and entry.get("decision_type") != decision_type:
+                    continue
+
+                if total >= offset and total < end:
+                    matching.append(entry)
+
+                total += 1
+    except IOError:
+        pass
+
+    return matching, total
 
 
 def _normalize_params(params):
@@ -266,7 +290,11 @@ def get_agent_knowledge(name: str) -> list[dict]:
 def get_agent_knowledge_content(name: str, rel_path: str) -> tuple[str, str]:
     full_path = (WORKSPACE_ROOT / name / rel_path).resolve()
     allowed_root = (WORKSPACE_ROOT / name).resolve()
-    if not str(full_path).startswith(str(allowed_root) + "/") and full_path != allowed_root:
+    # Use Path.relative_to() for robust containment check — raises ValueError
+    # if full_path escapes allowed_root (covers symlink-based traversal too).
+    try:
+        full_path.relative_to(allowed_root)
+    except ValueError:
         return "", "Access denied."
     if not full_path.exists():
         return "", "File not found."
