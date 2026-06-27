@@ -80,7 +80,7 @@ class TestToolPluginNewMethods:
         allowlist = tool_plugin.get_sandbox_allowlist()
         assert isinstance(allowlist, list)
 
-    def test_forge_action_param_supports_update(self, tool_plugin, agent_context, tmp_path):
+    def test_forge_action_param_supports_update(self, tool_plugin, agent_context):
         """forge() with action='update' updates an existing forged tool."""
         tool_plugin.initialize(agent_context)
         # Forge a tool first
@@ -99,5 +99,17 @@ class TestToolPluginNewMethods:
         tool_plugin.forge("temp_tool", "Temporary", code, {"action": "create"})
         assert "temp_tool" in tool_plugin.list_forged()
         result = tool_plugin.rollback("temp_tool")
+        assert result.get("success") is True
+        assert "temp_tool" not in tool_plugin.list_forged()
+
+    def test_forge_action_rollback_via_forge_method(self, tool_plugin, agent_context):
+        """forge(action='rollback') removes a forged tool via the forge() method."""
+        tool_plugin.initialize(agent_context)
+        code = "def temp_tool(): return 'temp'"
+        tool_plugin.forge("temp_tool", "Temporary", code, {"action": "create"})
+        assert "temp_tool" in tool_plugin.list_forged()
+        result = tool_plugin.forge(
+            "temp_tool", "", "", {"action": "rollback"},
+        )
         assert result.get("success") is True
         assert "temp_tool" not in tool_plugin.list_forged()

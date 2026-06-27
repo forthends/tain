@@ -176,6 +176,14 @@ class ToolPlugin:
             return {"success": False, "error": "forge not initialized"}
 
         action = (parameters or {}).get("action", "create")
+        if action not in ("create", "update", "rollback"):
+            return {
+                "success": False,
+                "error": (
+                    f"Unknown action: {action}. "
+                    "Use 'create', 'update', or 'rollback'."
+                ),
+            }
 
         if action == "rollback":
             return self._forge.remove_forged(name)
@@ -187,16 +195,13 @@ class ToolPlugin:
             if not forge_params:
                 forge_params = None
 
-        if action == "update":
-            # Remove old version, forge new version
-            if name in self._forge._forged_tools:
-                self._forge.remove_forged(name)
-
+        # ToolForge.forge overwrites by name — no need to remove first
         return self._forge.forge(
             name=name,
             description=description,
             code=code,
             parameters=forge_params,
+            action=action,
         )
 
     def forge_cycle(
@@ -263,12 +268,12 @@ class ToolPlugin:
         """Return all forged tools and their metadata."""
         if self._forge is None:
             return {}
-        return dict(self._forge._forged_tools)
+        return self._forge.list_forged()
 
     def get_sandbox_allowlist(self) -> list:
         """Return the current sandbox import/API allowlist."""
-        from tain_agent.tools.sandbox_allowlist import SANDBOX_ALLOWED_MODULES
-        return sorted(SANDBOX_ALLOWED_MODULES)
+        from tain_agent.tools.sandbox_allowlist import get_allowlist
+        return get_allowlist()["allowed_modules"]
 
     # ── Convenience ─────────────────────────────────────────────────────
 
