@@ -52,8 +52,8 @@
 
         <!-- Sidebar — light monochrome, hairline border -->
         <aside class="w-64 bg-canvas border-r border-hairline flex flex-col flex-shrink-0
-                    fixed inset-y-0 left-0 z-40 transform transition-transform
-                    md:relative md:translate-x-0"
+                    fixed inset-y-0 left-0 z-40 transition-transform
+                    md:!relative md:!translate-x-0"
              :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
              @click.outside="sidebarOpen = false">
             <div class="px-4 py-4 border-b border-hairline">
