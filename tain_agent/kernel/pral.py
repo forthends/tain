@@ -172,17 +172,23 @@ class PRALLoop:
         if ws is None:
             return
         logs_dir = ws / "logs"
-        logs_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            logs_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return
         now_iso = datetime.now(timezone.utc).isoformat()
         phase = "active" if self.cycle_count > 0 else "unknown"
         state = {
             "cycle_count": {"value": self.cycle_count, "updated_at": now_iso},
             "agent_phase": {"value": phase, "updated_at": now_iso},
         }
-        (logs_dir / "memory.json").write_text(
-            json.dumps(state, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        try:
+            (logs_dir / "memory.json").write_text(
+                json.dumps(state, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass  # Best-effort state snapshot; don't crash the loop
 
     def _notify_plugins(self, method: str, *args) -> None:
         for plugin in self._lm.plugins.values():
