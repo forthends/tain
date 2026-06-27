@@ -470,3 +470,40 @@ class TestMemoryPlugin:
             assert len(results) == 1
 
             plugin.shutdown()
+
+
+# ── Module-level fixtures for session_memory tests ──────────────────
+
+
+@pytest.fixture
+def agent_context(tmp_path):
+    return AgentContext(
+        agent_name="test",
+        agent_id="a1",
+        evolution_mode="specified",
+        workspace_path=tmp_path,
+        config={},
+        kernel_version="0.6.0",
+    )
+
+
+@pytest.fixture
+def memory_plugin():
+    return MemoryPlugin()
+
+
+# ── SessionMemory integration via MemoryPlugin ─────────────────────
+
+
+def test_session_memory_property_accessible(memory_plugin, agent_context):
+    """MemoryPlugin exposes session_memory for dialogue.py compatibility."""
+    memory_plugin.initialize(agent_context)
+    sm = memory_plugin.session_memory
+    assert sm is not None
+    assert hasattr(sm, 'start_session')
+    assert hasattr(sm, 'get_user_name')
+    assert hasattr(sm, 'set_user_name')
+    assert hasattr(sm, 'get_context_for_prompt')
+    assert hasattr(sm, 'end_session')
+    assert hasattr(sm, 'recent_sessions')
+    assert hasattr(sm, 'total_sessions')

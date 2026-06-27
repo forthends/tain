@@ -29,6 +29,18 @@ class MemoryPlugin:
         self._working: list[dict[str, Any]] = []
         self._semantic_dirty = False
 
+    # ── Session Memory ───────────────────────────────────────────
+
+    @property
+    def session_memory(self):
+        """Return a SessionMemory wrapper for dialogue.py compatibility.
+
+        SessionMemory wraps the MemoryPlugin for human session awareness
+        (user name, session history, context recall).
+        """
+        from tain_agent.core.session_memory import SessionMemory
+        return SessionMemory(memory_plugin=self)
+
     # ── PluginProtocol ───────────────────────────────────────────
 
     def initialize(self, ctx: AgentContext) -> None:
