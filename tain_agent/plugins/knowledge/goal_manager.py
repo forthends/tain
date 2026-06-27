@@ -59,9 +59,9 @@ class GoalManager:
         return goal
 
     def complete(self, goal_id: str, summary: str = "") -> bool:
-        """Mark a goal as completed. Returns True if found."""
+        """Mark a goal as completed. Only transitions from 'active' status."""
         goal = self._goals.get(goal_id)
-        if goal is None:
+        if goal is None or goal.status != "active":
             return False
         goal.status = "completed"
         goal.summary = summary
@@ -81,6 +81,25 @@ class GoalManager:
         """Get a specific goal by ID."""
         g = self._goals.get(goal_id)
         return g.to_dict() if g else None
+
+    def abandon(self, goal_id: str, reason: str = "") -> bool:
+        """Mark a goal as abandoned. Only transitions from 'active' status."""
+        goal = self._goals.get(goal_id)
+        if goal is None or goal.status != "active":
+            return False
+        goal.status = "abandoned"
+        goal.summary = reason
+        goal.completed_at = self._now()
+        self._save()
+        return True
+
+    def list_all(self) -> list[dict]:
+        """Return all goals as dicts, regardless of status."""
+        return [g.to_dict() for g in self._goals.values()]
+
+    def save(self) -> None:
+        """Public method to persist goals to disk."""
+        self._save()
 
     def _save(self) -> None:
         if self._persist_path is None:
@@ -107,5 +126,5 @@ class GoalManager:
 
     @staticmethod
     def _now() -> str:
-        from tain_agent.core.time_utils import now
-        return now().isoformat()
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc).isoformat()

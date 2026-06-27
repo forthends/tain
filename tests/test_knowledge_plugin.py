@@ -6,6 +6,7 @@ from pathlib import Path
 from tain_agent.kernel.protocol import AgentContext, PluginProtocol
 from tain_agent.plugins.knowledge import KnowledgePlugin
 from tain_agent.plugins.knowledge.graph import KnowledgeGraph, Entity, Relation
+from tain_agent.plugins.knowledge.goal_manager import GoalManager, Goal
 from tain_agent.plugins.knowledge.lifecycle import (
     _project_root,
     add_reference,
@@ -392,8 +393,6 @@ class TestKnowledgeReferences:
 
 # ── GoalManager tests ────────────────────────────────────────────────
 
-from tain_agent.plugins.knowledge.goal_manager import GoalManager, Goal
-
 
 class TestGoalManager:
     """Tests for GoalManager — agent goal tracking with JSON persistence."""
@@ -428,3 +427,25 @@ class TestGoalManager:
         gm2.initialize(path)
         assert len(gm2.list_active()) == 1
         assert gm2.list_active()[0]["description"] == "Goal A"
+
+    def test_get_goal_by_id(self):
+        gm = GoalManager()
+        goal = gm.create("Task A", "Do A")
+        assert gm.get(goal.id)["description"] == "Task A"
+        assert gm.get("nonexistent") is None
+
+    def test_complete_nonexistent_returns_false(self):
+        gm = GoalManager()
+        assert gm.complete("nonexistent") is False
+
+    def test_abandon_goal(self):
+        gm = GoalManager()
+        goal = gm.create("Task B", "Do B")
+        assert gm.abandon(goal.id, "No longer needed") is True
+        assert len(gm.list_active()) == 0
+        assert len(gm.list_all()) == 1
+        assert gm.list_all()[0]["status"] == "abandoned"
+
+    def test_abandon_nonexistent_returns_false(self):
+        gm = GoalManager()
+        assert gm.abandon("nonexistent") is False
