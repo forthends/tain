@@ -21,3 +21,8 @@ from tain_agent.evolution.pipeline import (
 )
 from tain_agent.evolution.improvement_loop import ImprovementLoop
 from tain_agent.evolution.reporter import EvolutionReporter
+from tain_agent.evolution.behavior_contract import (
+    BehaviorContract,
+    ContractValidationError,
+    ContractComplianceResult,
+)
