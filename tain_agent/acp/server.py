@@ -17,13 +17,43 @@ import signal
 import sys
 import traceback
 import uuid
+import yaml
 from pathlib import Path
 
 from typing import Optional
 
 from tain_agent import __version__
+from tain_agent.kernel import AgentKernel, AgentContext, STANDARD_FACTORIES
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+class _ACPAgentAdapter:
+    """Minimal adapter so ChatEngine can use AgentKernel."""
+    def __init__(self, kernel, agent_name, config):
+        self.kernel = kernel
+        self.agent_name = agent_name
+        self.config = config
+        tool_plugin = kernel.lifecycle.get("tool")
+        self.tools = tool_plugin
+        identity_plugin = kernel.lifecycle.get("identity")
+        self.personality = identity_plugin.personality if identity_plugin else None
+        from tain_agent.core.llm import LLMBackend
+        backend_config = config.get("llm", {})
+        # LLMBackend takes (model, max_tokens) — extract from config
+        model = backend_config.get("model", "claude-sonnet-4-6")
+        max_tokens = backend_config.get("max_tokens", 4096)
+        self.backend = LLMBackend(model, max_tokens)
+        if backend_config.get("api_key_env"):
+            self.backend.api_key_env = backend_config["api_key_env"]
+
+    def _execute_tool_calls(self, tool_calls):
+        results = []
+        for tc in tool_calls:
+            result = self.kernel.dispatch.call("tool.call", tc.name, **tc.input)
+            content = str(result) if result is not None else f"Tool '{tc.name}' returned no result"
+            results.append({"tool_use_id": tc.id, "content": content})
+        return results
 
 
 class ACPServer:
@@ -196,10 +226,27 @@ class ACPServer:
 
         try:
             from tain_agent.core.chat import ChatEngine
-            from tain_agent.core.agent import TaoAgent
 
             agent_name = f"acp_session_{session_id[:8]}"
-            agent = TaoAgent(config_path=self.config_path, agent_name=agent_name)
+            workspace = Path("agent_workspace") / agent_name
+            workspace.mkdir(parents=True, exist_ok=True)
+
+            with open(self.config_path) as f:
+                config = yaml.safe_load(f) or {}
+
+            ctx = AgentContext(
+                agent_name=agent_name,
+                agent_id=f"{agent_name}-{workspace.name}",
+                evolution_mode=config.get("agent", {}).get("evolution_mode", "specified"),
+                workspace_path=workspace,
+                config=config,
+                kernel_version=__version__,
+            )
+            kernel = AgentKernel(ctx)
+            kernel.load_plugins(STANDARD_FACTORIES)
+
+            # Wrap kernel as chat-compatible adapter
+            agent = _ACPAgentAdapter(kernel, agent_name, config)
             engine = ChatEngine(agent)
 
             messages = [{"role": "user", "content": text}]
