@@ -3,7 +3,7 @@
 A practical AI agent framework with multi-provider LLM support, safe tool-use
 execution, behavioral evolution tracking, and inter-agent communication.
 
-v0.7.0 — ToolForge update mode, knowledge references, evolution-mode adaptive suggestions, subtraction feedback signal.
+v0.5.2 — Agent tool self-evolution loop, personality lifecycle management, metacognition infrastructure.
 """
 
 __version__ = "0.9.0"

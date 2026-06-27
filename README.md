@@ -4,7 +4,7 @@
 
 A practical AI agent framework with multi-provider LLM support, safe tool-use execution, behavioral evolution tracking, and inter-agent communication. Agents operate in isolated workspaces and evolve through **framework-measured behavioral metrics** — not LLM self-evaluation.
 
-**v0.5.1** — AST Sandbox · Honest Evolution · Drive System · Multi-Agent Bus · Web UI
+**v0.5.2** — Tool Self-Evolution · Personality Lifecycle · Metacognition · Cross-Agent Awareness
 
 [Safety Model](docs/SAFETY.md) · [Evolution Design](docs/EVOLUTION.md) · [Architecture](docs/architecture.md)
 
@@ -139,7 +139,7 @@ Real-time SSE-streamed chat with agents, tabbed dashboards for decision logs and
 - **Docker support** — multi-stage build with docker-compose
 - **328 tests** — up from 326, covering kernel, plugins, MCP, pipeline, and integration
 
-Full changelog: [docs/changelog/v0.5.1.md](docs/changelog/v0.5.1.md)
+Full changelog: [docs/changelog/v0.5.2.md](docs/changelog/v0.5.2.md)
 
 ---
 
