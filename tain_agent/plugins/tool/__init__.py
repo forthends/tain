@@ -148,6 +148,12 @@ class ToolPlugin:
             return {}
         return self._registry.list_tools()
 
+    def get_claude_tool_definitions(self) -> list[dict]:
+        """Export tools in Claude API tool-use format."""
+        if self._registry is None:
+            return []
+        return self._registry.get_claude_tool_definitions()
+
     def call(self, name: str, **kwargs) -> dict:
         """Execute a registered tool by name."""
         if self._registry is None:

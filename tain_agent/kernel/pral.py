@@ -112,7 +112,7 @@ class PRALLoop:
     def _gather_tool_definitions(self):
         tool_plugin = self._lm.get("tool")
         if tool_plugin:
-            return tool_plugin.list_tools()
+            return tool_plugin.get_claude_tool_definitions()
         return []
 
     def _act(self, response, conversation) -> None:
