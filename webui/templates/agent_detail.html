@@ -43,7 +43,7 @@
 </div>
 
 <!-- Tab content -->
-<div id="tab-content" class="flex-1 min-h-0 overflow-y-auto p-6" hx-get="/agent/{{ agent.name }}/tab/{{ tab }}" hx-trigger="load">
+<div id="tab-content" class="flex-1 min-h-0 overflow-y-auto p-6" style="min-height: 400px;" hx-get="/agent/{{ agent.name }}/tab/{{ tab }}" hx-trigger="load">
 </div>
 
 <script>
@@ -216,7 +216,10 @@ document.addEventListener('alpine:init', () => {
             }
         } catch (e) {
             console.error('Chat error:', e);
-            this.streamText += '\n[Connection error]';
+            let msg = '[Connection error]';
+            if (e.message && e.message.includes('429')) msg = '[请求过于频繁，请稍候重试]';
+            else if (e.message && e.message.includes('404')) msg = '[Agent 未找到，可能已被删除]';
+            this.streamText += '\n' + msg;
         }
         this.streaming = false;
         this.cancelMessageId = null;
@@ -225,7 +228,13 @@ document.addEventListener('alpine:init', () => {
     renderMd(text) {
         if (!text) return '';
         try {
-            return marked.parse(text, { breaks: true, gfm: true });
+            const raw = marked.parse(text, { breaks: true, gfm: true });
+            return DOMPurify.sanitize(raw, {
+                ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','strong','em','del',
+                               'a','img','ul','ol','li','pre','code','blockquote',
+                               'table','thead','tbody','tr','th','td','hr','span','div'],
+                ALLOWED_ATTR: ['href','src','alt','class','id','target','rel'],
+            });
         } catch (e) {
             return text;
         }
@@ -275,11 +284,12 @@ document.addEventListener('alpine:init', () => {
                     : text.includes('🔧') ? 'tool' : '';
 
                 this.lines.push({ id: ++this.lineId, text, type });
-                this.lineCount = this.lines.length;
-
-                if (this.lines.length > 2000) {
-                    this.lines.splice(0, 500);
+                // Trim old lines to bound memory — keep the most recent 1500.
+                // Using slice() (new array) lets Alpine diff efficiently.
+                if (this.lines.length > 1500) {
+                    this.lines = this.lines.slice(-1000);
                 }
+                this.lineCount = this.lines.length;
 
                 if (this.autoScroll) {
                     this.$nextTick(() => {
