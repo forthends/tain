@@ -28,7 +28,6 @@ _MODULE_SIDE_EFFECT_MAP: dict[str, str] = {
     "ftplib": "network", "smtplib": "network",
     "pathlib": "file_read", "os": "file_write", "sys": "file_write",
     "shutil": "file_write", "io": "file_write", "csv": "file_read",
-    "json": "file_read",
     "subprocess": "subprocess", "multiprocessing": "subprocess",
     "signal": "subprocess",
 }
@@ -111,9 +110,18 @@ class BehaviorContract:
                 value.
         """
         side_effects: list[str] = contract_json.get("side_effects", ["none"])
-        max_runtime_ms: int = contract_json.get("max_runtime_ms", 5000)
+        try:
+            max_runtime_ms = int(contract_json.get("max_runtime_ms", 5000))
+        except (ValueError, TypeError):
+            max_runtime_ms = 5000
+        if max_runtime_ms < 1:
+            max_runtime_ms = 5000
         input_schema: dict[str, Any] = contract_json.get("input_schema", {})
         output_schema: dict[str, Any] = contract_json.get("output_schema", {})
+
+        # Normalize empty side_effects list to ["none"]
+        if isinstance(side_effects, list) and len(side_effects) == 0:
+            side_effects = ["none"]
 
         # Validate side effects
         invalid = [se for se in side_effects if se not in _VALID_EFFECTS]

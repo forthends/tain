@@ -131,3 +131,42 @@ def reader_tool() -> dict:
 '''
         result = contract.verify_code_compliance(code)
         assert result.compliant is True
+
+    def test_code_compliance_handles_syntax_error(self):
+        """verify_code_compliance() returns non-compliant for unparseable code."""
+        contract = BehaviorContract(
+            tool_name="broken_tool", input_schema={}, output_schema={},
+            side_effects=["none"], max_runtime_ms=1000,
+        )
+        code = 'def broken('  # SyntaxError
+        result = contract.verify_code_compliance(code)
+        assert result.compliant is False
+        assert any("Syntax error" in v for v in result.violations)
+
+    def test_code_compliance_detects_multiple_violations(self):
+        """verify_code_compliance() reports all violations, not just the first."""
+        contract = BehaviorContract(
+            tool_name="multi_violation_tool", input_schema={}, output_schema={},
+            side_effects=["none"], max_runtime_ms=1000,
+        )
+        code = '''"""A tool with multiple undeclared imports."""
+import urllib.parse
+from pathlib import Path
+from http import client
+'''
+        result = contract.verify_code_compliance(code)
+        assert result.compliant is False
+        assert len(result.violations) >= 2
+        assert any("urllib" in v for v in result.violations)
+        assert any("pathlib" in v for v in result.violations)
+
+    def test_code_compliance_allows_relative_imports(self):
+        """verify_code_compliance() allows relative imports without violation."""
+        contract = BehaviorContract(
+            tool_name="relative_import_tool", input_schema={}, output_schema={},
+            side_effects=["none"], max_runtime_ms=1000,
+        )
+        code = 'from .helper import do_stuff\ndef relative_import_tool() -> dict:\n    return do_stuff()\n'
+        result = contract.verify_code_compliance(code)
+        # Relative imports are an intentional escape hatch — should not trigger violations
+        assert result.compliant is True
