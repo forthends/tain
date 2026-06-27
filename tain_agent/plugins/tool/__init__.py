@@ -54,11 +54,19 @@ class ToolPlugin:
         from tain_agent.tools.registry import ToolRegistry
         from tain_agent.tools.forge import ToolForge
         from tain_agent.tools.primal import register_primal_tools
+        from tain_agent.decision_log import DecisionLog
 
         workspace_str = str(ctx.workspace_path)
 
+        # Persist decisions to the agent's workspace so the Web UI can display them.
+        decision_log = DecisionLog(
+            log_dir=str(ctx.workspace_path / "logs"),
+            log_file="decisions.jsonl",
+        )
+
         self._registry = ToolRegistry()
-        self._forge = ToolForge(self._registry, workspace_dir=workspace_str)
+        self._forge = ToolForge(self._registry, decision_log=decision_log,
+                                workspace_dir=workspace_str)
         register_primal_tools(self._registry, workspace_dir=workspace_str)
 
         # Load previously forged tools

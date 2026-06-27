@@ -19,11 +19,21 @@ Usage:
 """
 
 import argparse
+import logging
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+# Configure logging early so all modules benefit.
+# StreamHandler → stdout so the guardian captures agent output for the Live tab.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    datefmt="%H:%M:%S",
+    stream=sys.stdout,
+)
 
 # Ensure the project root is in sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent))

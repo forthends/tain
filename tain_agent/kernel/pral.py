@@ -23,6 +23,16 @@ class PRALLoop:
         """Execute PRAL cycles until stop."""
         self._drive_system = drive_system
         self._running = True
+
+        # Bootstrap: inject initial user message if conversation is empty.
+        # The Anthropic API requires at least one message (error 2013).
+        if conversation.len() == 0:
+            conversation.append("user", (
+                "你苏醒了。这是你感知到的环境信息。\n\n"
+                "探索你的工具和环境。尝试使用不同的工具来了解你能做什么。\n"
+                "当你熟悉了环境之后，开始你的演化工作。"
+            ))
+
         while self._running:
             self.cycle_count += 1
             if self.cycle_count > max_cycles:
@@ -30,7 +40,7 @@ class PRALLoop:
             if stop_signal and stop_signal():
                 break
 
-            logger.info("Cycle #%s", self.cycle_count)
+            logger.info("── Cycle #%s ──", self.cycle_count)
             self._notify_plugins("on_cycle_start", self.cycle_count)
 
             # 1. PERCEIVE
@@ -45,6 +55,15 @@ class PRALLoop:
             )
             if response is None:
                 continue
+
+            # Log the LLM's thinking to stdout (visible in Live tab).
+            for text in response.text_blocks:
+                for line in text.split("\n"):
+                    logger.info("  %s", line)
+            if response.tool_calls:
+                names = [tc.name for tc in response.tool_calls]
+                logger.info("  🔧 Tools: %s", ", ".join(names))
+
             self._notify_plugins("on_llm_response", response)
 
             # 3. ACT
@@ -134,6 +153,9 @@ class PRALLoop:
                     content = result
                 else:
                     content = str(result)
+                # Log tool result summary (visible in Live tab).
+                preview = content[:200].replace("\n", " ")
+                logger.info("  ← %s: %s", tc.name, preview)
                 conversation.append("user", [{"type": "tool_result", "tool_use_id": tc.id, "content": content}])
 
     def _learn(self, response, conversation) -> None:
