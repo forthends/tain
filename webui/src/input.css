@@ -161,6 +161,13 @@
     line-height: 1;
     height: 36px;
   }
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn-primary:disabled:hover {
+    opacity: 0.5;
+  }
 
   /* Secondary button */
   .btn-secondary {
@@ -170,6 +177,13 @@
     font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
     line-height: 1;
     height: 36px;
+  }
+  .btn-secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn-secondary:disabled:hover {
+    background: inherit;
   }
 
   /* Disabled button */
@@ -184,6 +198,18 @@
     @apply inline-flex items-center text-xs px-3 py-0.5 rounded-full font-medium;
     font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
     line-height: 1.43;
+  }
+
+  /* Alert / error message */
+  .alert-error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+  }
+  .dark .alert-error {
+    background: #451a1a;
+    border: 1px solid #7f1d1d;
+    color: #fecaca;
   }
 
   /* Terminal card */
@@ -206,6 +232,22 @@
   .knowledge-viewer {
     @apply text-body;
   }
+
+  /* Render.py dynamic output classes */
+  .md-heading { @apply text-ink font-semibold; }
+  .md-h1 { @apply text-2xl; }
+  .md-h2 { @apply text-xl; }
+  .md-h3 { @apply text-lg; }
+  .md-h4 { @apply text-base; }
+  .md-h5 { @apply text-sm; }
+  .md-h6 { @apply text-xs; }
+  .md-table { @apply w-full border-collapse; }
+  .md-blockquote { @apply border-l-[3px] border-ink pl-4 italic; }
+  .json-key { color: var(--color-ink); }
+  .json-string { color: var(--color-charcoal); }
+  .json-number { color: var(--color-primary); }
+  .json-bool { color: var(--color-primary); }
+  .inline-code { @apply font-mono text-sm bg-canvas-soft px-1.5 py-0.5 rounded-sm; }
 }
 
 /* ─── Utilities Layer ────────────────────────────────────────────── */
