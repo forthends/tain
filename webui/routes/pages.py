@@ -220,19 +220,22 @@ def _log_path_for(agent_name: str) -> Path:
 async def _tail_log(agent_name: str):
     """SSE generator that tails a per-agent output log, sending JSON events."""
     path = _log_path_for(agent_name)
-    # Wait for the log file to appear (agent may not have started yet)
-    while not path.exists():
-        await asyncio.sleep(1)
-    with open(path, "r") as f:
-        f.seek(0, os.SEEK_END)
-        while True:
-            line = f.readline()
-            if line:
-                ts = _datetime.now().strftime("%H:%M:%S")
-                payload = _json.dumps({"text": line.rstrip("\n"), "timestamp": ts})
-                yield f"data: {payload}\n\n"
-            else:
-                await asyncio.sleep(0.5)
+    try:
+        # Wait for the log file to appear (agent may not have started yet)
+        while not path.exists():
+            await asyncio.sleep(1)
+        with open(path, "r") as f:
+            f.seek(0, os.SEEK_END)
+            while True:
+                line = f.readline()
+                if line:
+                    ts = _datetime.now().strftime("%H:%M:%S")
+                    payload = _json.dumps({"text": line.rstrip("\n"), "timestamp": ts})
+                    yield f"data: {payload}\n\n"
+                else:
+                    await asyncio.sleep(0.5)
+    except asyncio.CancelledError:
+        pass
 
 
 @router.get("/stream/agent-output")
@@ -263,17 +266,20 @@ async def stream_agent_output(agent: str = ""):
 
 async def _tail_log_shared(path: Path):
     """Fallback SSE generator for the legacy shared log."""
-    if path.exists():
-        with open(path, "r") as f:
-            f.seek(0, os.SEEK_END)
-            while True:
-                line = f.readline()
-                if line:
-                    ts = _datetime.now().strftime("%H:%M:%S")
-                    payload = _json.dumps({"text": line.rstrip("\n"), "timestamp": ts})
-                    yield f"data: {payload}\n\n"
-                else:
-                    await asyncio.sleep(0.5)
+    try:
+        if path.exists():
+            with open(path, "r") as f:
+                f.seek(0, os.SEEK_END)
+                while True:
+                    line = f.readline()
+                    if line:
+                        ts = _datetime.now().strftime("%H:%M:%S")
+                        payload = _json.dumps({"text": line.rstrip("\n"), "timestamp": ts})
+                        yield f"data: {payload}\n\n"
+                    else:
+                        await asyncio.sleep(0.5)
+    except asyncio.CancelledError:
+        pass
 
 
 @router.post("/agent/{name}/controls/start", response_class=HTMLResponse)
