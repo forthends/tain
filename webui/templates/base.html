@@ -9,6 +9,7 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@11.2.0/lib/marked.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
     <style>
         .status-dot { width: 8px; height: 8px; border-radius: 9999px; display: inline-block; }
         .status-running { background-color: #22c55e; box-shadow: 0 0 6px #22c55e; }
@@ -42,10 +43,19 @@
         .markdown-body hr { border: none; margin: 1em 0; }
     </style>
 </head>
-<body class="bg-canvas text-ink antialiased">
+<body class="bg-canvas text-ink antialiased" x-data="{ sidebarOpen: false }">
     <div class="flex h-screen">
+        <!-- Mobile overlay backdrop -->
+        <div x-show="sidebarOpen" @click="sidebarOpen = false"
+             class="md:hidden fixed inset-0 bg-black/50 z-40 transition-opacity"
+             x-transition.opacity></div>
+
         <!-- Sidebar — light monochrome, hairline border -->
-        <aside class="w-64 bg-canvas border-r border-hairline flex flex-col flex-shrink-0">
+        <aside class="w-64 bg-canvas border-r border-hairline flex flex-col flex-shrink-0
+                    fixed inset-y-0 left-0 z-40 transform transition-transform
+                    md:relative md:translate-x-0"
+             :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
+             @click.outside="sidebarOpen = false">
             <div class="px-4 py-4 border-b border-hairline">
                 <a href="/" class="text-lg font-semibold tracking-tight text-ink hover:text-charcoal transition-colors" style="font-family: 'SF Pro Rounded', 'Nunito', system-ui, -apple-system, sans-serif;">
                     Tain Agent
@@ -89,6 +99,14 @@
 
         <!-- Main content -->
         <main class="flex-1 flex flex-col overflow-hidden bg-canvas">
+            <!-- Mobile hamburger -->
+            <button @click="sidebarOpen = !sidebarOpen"
+                    class="md:hidden fixed top-3 left-3 z-50 p-2 rounded-full bg-canvas border border-hairline text-ink hover:bg-canvas-soft transition-colors"
+                    aria-label="Toggle sidebar">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                </svg>
+            </button>
             {% block content %}{% endblock %}
         </main>
     </div>
