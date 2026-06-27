@@ -39,8 +39,8 @@ from tain_agent import __version__
 # ─── Constants ──────────────────────────────────────────────────────────
 
 AGENT_NAME_HELP = (
-    "Agent name (lowercase letters, digits, hyphens, underscores; "
-    "1-32 chars, must start with a letter). Example: poet, alpha01"
+    "Agent name (letters, digits, hyphens, underscores; "
+    "1-32 chars, must start with a letter). Example: poet, Philosopher, alpha01"
 )
 
 
@@ -68,8 +68,8 @@ def run_creation_wizard(factory: AgentFactory, suggested_name: str = "") -> str:
         if not name:
             print("  Name cannot be empty.")
             continue
-        if not re.match(r"^[a-z][a-z0-9_-]{0,31}$", name):
-            print("  Invalid name. Must be 1-32 chars, lowercase letters/digits/hyphens/underscores, start with a letter.")
+        if not re.match(r"^[a-zA-Z][a-zA-Z0-9_-]{0,31}$", name):
+            print("  Invalid name. Must be 1-32 chars, letters/digits/hyphens/underscores, start with a letter.")
             continue
         if factory.exists(name):
             print(f"  Agent '{name}' already exists. Choose a different name.")
