@@ -1,7 +1,9 @@
 """PRAL cognitive loop — Perceive → Reason → Act → Learn."""
 
 from __future__ import annotations
+import json
 import logging
+from datetime import datetime, timezone
 from tain_agent.kernel.lifecycle import LifecycleManager
 from tain_agent.kernel.dispatch import Dispatch
 
@@ -72,6 +74,7 @@ class PRALLoop:
             # 4. LEARN
             self._learn(response, conversation)
             self._notify_plugins("on_cycle_end", self.cycle_count)
+            self._save_memory_state()
 
             try:
                 conversation.trim_to_token_budget(keep_last=40)
@@ -162,6 +165,24 @@ class PRALLoop:
         mem = self._lm.get("memory")
         if mem:
             mem.encode(f"Cycle {self.cycle_count}: {len(response.tool_calls)} tool calls", importance=0.3)
+
+    def _save_memory_state(self) -> None:
+        """Write cycle_count and phase to workspace logs/memory.json for WebUI."""
+        ws = self._lm._ctx.workspace_path
+        if ws is None:
+            return
+        logs_dir = ws / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        phase = "active" if self.cycle_count > 0 else "unknown"
+        state = {
+            "cycle_count": {"value": self.cycle_count, "updated_at": now_iso},
+            "agent_phase": {"value": phase, "updated_at": now_iso},
+        }
+        (logs_dir / "memory.json").write_text(
+            json.dumps(state, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     def _notify_plugins(self, method: str, *args) -> None:
         for plugin in self._lm.plugins.values():
