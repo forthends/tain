@@ -23,6 +23,7 @@ class ChatEngine:
 
     def __init__(self, agent):
         self.agent = agent
+        self._kernel = getattr(agent, 'kernel', None)
 
     async def run_turn(self, messages: list[dict],
                        cancel_event=None,
@@ -79,7 +80,14 @@ class ChatEngine:
 
             total_tool_calls += len(turn_tools)
             try:
-                results = self.agent._execute_tool_calls(turn_tools)
+                if self._kernel:
+                    results = []
+                    for tc in turn_tools:
+                        result = self._kernel.dispatch.call("tool.call", tc.name, **tc.input)
+                        content = str(result) if result is not None else f"Tool '{tc.name}' returned no result"
+                        results.append({"tool_use_id": tc.id, "content": content})
+                else:
+                    results = self.agent._execute_tool_calls(turn_tools)
                 all_results.extend(results)
                 tool_msgs = [
                     {"type": "tool_result", "tool_use_id": r["tool_use_id"], "content": r["content"]}
@@ -120,14 +128,28 @@ class ChatEngine:
             "- 用中文回答",
             "- 对你不确定的事情保持诚实",
         ]
-        if hasattr(agent, 'personality') and agent.personality:
+        personality = None
+        if self._kernel:
+            ip = self._kernel.lifecycle.get("identity")
+            if ip and hasattr(ip, 'personality'):
+                personality = ip.personality
+        else:
+            personality = getattr(agent, 'personality', None)
+
+        if personality:
             try:
-                ctx = agent.personality.get_context_for_prompt()
+                ctx = personality.get_context_for_prompt()
                 if ctx:
                     lines.append("\n" + ctx)
             except Exception:
                 pass
-        tools = agent.tools.list_tools() if hasattr(agent.tools, 'list_tools') else {}
+        tools = {}
+        if self._kernel:
+            tp = self._kernel.lifecycle.get("tool")
+            if tp and hasattr(tp, 'list_tools'):
+                tools = tp.list_tools()
+        elif hasattr(agent, 'tools') and hasattr(agent.tools, 'list_tools'):
+            tools = agent.tools.list_tools()
         if tools:
             from tain_agent.utils.token_utils import estimate_tokens
             lines.append("\n## 可用工具\n")
@@ -143,10 +165,19 @@ class ChatEngine:
                 lines.append(f"- **{name}**: {desc}")
         return "\n".join(lines)
 
+    def _get_tool_defs(self):
+        if self._kernel:
+            tp = self._kernel.lifecycle.get("tool")
+            if tp and hasattr(tp, 'get_claude_tool_definitions'):
+                return tp.get_claude_tool_definitions()
+        if hasattr(self.agent, 'tools') and hasattr(self.agent.tools, 'get_claude_tool_definitions'):
+            return self.agent.tools.get_claude_tool_definitions()
+        return None
+
     def _build_tool_defs(self) -> list | None:
-        if not hasattr(self.agent.tools, 'get_claude_tool_definitions'):
+        all_tools = self._get_tool_defs()
+        if not all_tools:
             return None
-        all_tools = self.agent.tools.get_claude_tool_definitions()
         safe = [t for t in all_tools
                 if not t["name"].startswith(("test_", "forge_", "_"))]
         priority = [t for t in safe
