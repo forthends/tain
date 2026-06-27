@@ -374,6 +374,18 @@ class ToolForge:
         self.registry.register(name, func, description, parameters)
         self._forged_tools[name] = {"description": description, "code": code, "parameters": parameters}
         self._save_forged_tool(name, code, description, parameters, action=action)
+        # Record lineage event for WebUI Evolution tab
+        lineage = getattr(self, '_lineage', None)
+        if lineage:
+            try:
+                lineage.record_forge(
+                    tool_name=name,
+                    tool_code=code,
+                    agent_version="0.10.0",
+                    reasoning=f"Tool {action}d: {name} — {description}",
+                )
+            except Exception:
+                pass  # Lineage recording is best-effort, don't block forge
         if self.decision_log:
             log_action = "forge_tool_updated" if action == "update" else "forge_tool"
             self.decision_log.record(

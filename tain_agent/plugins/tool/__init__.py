@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from tain_agent.kernel.protocol import AgentContext, HealthStatus, PluginProtocol
+from tain_agent.evolution.lineage import LineageTracker
 from tain_agent.plugins.tool.forge_cycle import (
     ClosedForgeCycle,
     CycleStage,
@@ -64,9 +65,16 @@ class ToolPlugin:
             log_file="decisions.jsonl",
         )
 
+        # Persist lineage events alongside decisions for WebUI Evolution tab.
+        self._lineage = LineageTracker(
+            lineage_dir=str(ctx.workspace_path / "logs"),
+            lineage_file="lineage.jsonl",
+        )
+
         self._registry = ToolRegistry()
         self._forge = ToolForge(self._registry, decision_log=decision_log,
                                 workspace_dir=workspace_str)
+        self._forge._lineage = self._lineage
         register_primal_tools(self._registry, workspace_dir=workspace_str)
 
         # Load previously forged tools
