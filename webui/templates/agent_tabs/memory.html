@@ -1,0 +1,87 @@
+<div x-data="memoryViewer('{{ agent.name }}')" x-init="init()">
+    <!-- Stats bar -->
+    <div class="flex items-center gap-4 mb-4 text-sm">
+        <span class="text-ink font-medium">
+            <span class="text-lg" x-text="stats.notes_count">0</span> notes
+        </span>
+        <span class="text-mute">&middot;</span>
+        <span class="text-ink font-medium">
+            <span class="text-lg" x-text="stats.episodic_count">0</span> episodic memories
+        </span>
+        <span class="text-mute">&middot;</span>
+        <span class="text-body">
+            <span x-text="stats.categories.length">0</span> categories
+        </span>
+    </div>
+
+    <!-- Category filter -->
+    <div class="flex flex-wrap gap-2 mb-6">
+        <button @click="filter = ''"
+                :class="filter === '' ? 'btn-primary' : 'btn-secondary'"
+                class="text-xs">All</button>
+        <template x-for="cat in stats.categories" :key="cat">
+            <button @click="filter = cat"
+                    :class="filter === cat ? 'btn-primary' : 'btn-secondary'"
+                    class="text-xs" x-text="cat"></button>
+        </template>
+    </div>
+
+    <!-- Notes list -->
+    <div class="space-y-3">
+        <template x-if="filteredNotes.length === 0">
+            <p class="text-sm text-mute">No memory notes found.</p>
+        </template>
+        <template x-for="note in filteredNotes" :key="note.timestamp">
+            <div class="bg-canvas rounded-lg border border-hairline p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="pill-badge bg-canvas-soft text-body text-xs"
+                          x-text="note.category"></span>
+                    <span class="text-xs text-mute"
+                          x-text="note.timestamp.slice(11, 16)"></span>
+                </div>
+                <div class="text-sm text-body leading-relaxed markdown-body"
+                     x-html="renderMarkdown(note.content)"></div>
+            </div>
+        </template>
+    </div>
+</div>
+
+<script>
+document.addEventListener('alpine:init', () => {
+    Alpine.data('memoryViewer', (agentName) => ({
+        notes: [],
+        stats: { notes_count: 0, episodic_count: 0, categories: [] },
+        filter: '',
+
+        init() {
+            fetch(`/api/agent/${agentName}/memory/notes`)
+                .then(r => r.json())
+                .then(data => {
+                    this.notes = data.notes || [];
+                    this.stats = data.stats || this.stats;
+                })
+                .catch(err => console.warn('Memory notes load failed:', err));
+        },
+
+        get filteredNotes() {
+            if (!this.filter) return this.notes;
+            return this.notes.filter(n => n.category === this.filter);
+        },
+
+        renderMarkdown(text) {
+            if (!text) return '';
+            try {
+                const raw = marked.parse(text, { breaks: true, gfm: true });
+                return DOMPurify.sanitize(raw, {
+                    ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','strong','em','del',
+                                   'a','img','ul','ol','li','pre','code','blockquote',
+                                   'table','thead','tbody','tr','th','td','hr','span','div'],
+                    ALLOWED_ATTR: ['href','src','alt','class','id','target','rel'],
+                });
+            } catch (e) {
+                return text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            }
+        },
+    }));
+});
+</script>

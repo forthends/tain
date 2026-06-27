@@ -11,6 +11,7 @@ from webui.data import (
     get_agent_tools, get_agent_tool_detail, get_agent_evolution,
     get_agent_metrics, get_agent_personality, get_agent_knowledge,
     get_agent_knowledge_content, get_agent_goals, is_agent_running,
+    get_agent_memory_notes, get_agent_memory_stats,
 )
 from webui.process import ProcessManager
 
@@ -79,6 +80,14 @@ async def api_agent_knowledge(name: str):
 async def api_agent_knowledge_content(name: str, path: str):
     fmt, content = get_agent_knowledge_content(name, path)
     return {"format": fmt, "content": content}
+
+
+@router.get("/agent/{name}/memory/notes")
+async def api_agent_memory_notes(name: str):
+    """Return agent memory notes + stats as JSON."""
+    notes = get_agent_memory_notes(name)
+    stats = get_agent_memory_stats(name)
+    return {"notes": notes, "stats": stats}
 
 
 @router.post("/agent/{name}/start")
