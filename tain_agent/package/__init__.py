@@ -7,6 +7,7 @@ from typing import Optional
 
 from tain_agent.package.manifest import (
     Manifest, parse_manifest, create_manifest, ManifestValidationError,
+    PackageIntegrityError,
 )
 
 
