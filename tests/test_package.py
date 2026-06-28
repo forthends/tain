@@ -319,6 +319,65 @@ def test_cmd_package_export(tmp_path):
     assert not (export_dir / "ExportMe" / "_runtime").exists()
 
 
+def test_get_layer_infra(tmp_path):
+    packages_dir = tmp_path / "packages"
+    packages_dir.mkdir()
+    reg = PackageRegistry(packages_root=packages_dir)
+    reg.create(name="LayerTest", kind=PackageKind.AGENT, version="0.1.0")
+    layer = reg.get_layer("LayerTest", LayerKind.INFRA)
+    assert layer is not None
+    assert layer["layer"] == "infra"
+    assert "runtime" in layer
+    assert "plugins" in layer
+
+
+def test_get_layer_capability(tmp_path):
+    packages_dir = tmp_path / "packages"
+    packages_dir.mkdir()
+    reg = PackageRegistry(packages_root=packages_dir)
+    reg.create(name="LayerTest", kind=PackageKind.AGENT, version="0.1.0")
+    layer = reg.get_layer("LayerTest", LayerKind.CAPABILITY)
+    assert layer is not None
+    assert layer["layer"] == "capability"
+    assert isinstance(layer["tools"], list)
+    assert isinstance(layer["skills"], list)
+
+
+def test_get_layer_with_string(tmp_path):
+    packages_dir = tmp_path / "packages"
+    packages_dir.mkdir()
+    reg = PackageRegistry(packages_root=packages_dir)
+    reg.create(name="LayerTest", kind=PackageKind.AGENT, version="0.1.0")
+    layer = reg.get_layer("LayerTest", "cognitive")
+    assert layer is not None
+    assert layer["layer"] == "cognitive"
+
+
+def test_get_layer_nonexistent_package(tmp_path):
+    packages_dir = tmp_path / "packages"
+    packages_dir.mkdir()
+    reg = PackageRegistry(packages_root=packages_dir)
+    assert reg.get_layer("Ghost", LayerKind.EXPRESSION) is None
+
+
+def test_list_artifacts_empty(tmp_path):
+    packages_dir = tmp_path / "packages"
+    packages_dir.mkdir()
+    reg = PackageRegistry(packages_root=packages_dir)
+    reg.create(name="ArtTest", kind=PackageKind.AGENT, version="0.1.0")
+    arts = reg.list_artifacts("ArtTest")
+    assert arts == []
+
+
+def test_list_artifacts_filtered(tmp_path):
+    packages_dir = tmp_path / "packages"
+    packages_dir.mkdir()
+    reg = PackageRegistry(packages_root=packages_dir)
+    reg.create(name="ArtTest", kind=PackageKind.AGENT, version="0.1.0")
+    arts = reg.list_artifacts("ArtTest", type="report")
+    assert arts == []
+
+
 from tain_agent.package import bump_version
 from tain_agent.package import LayerKind as LK
 

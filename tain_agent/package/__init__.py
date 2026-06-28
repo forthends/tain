@@ -166,6 +166,72 @@ class PackageRegistry:
         errors.extend(hash_errors)
         return len(errors) == 0, errors
 
+    def get_layer(self, name: str, layer: str | LayerKind) -> dict | None:
+        """Return a structured view of a package layer from its manifest."""
+        manifest = self.get_manifest(name)
+        if manifest is None:
+            return None
+        layer_str = layer.value if isinstance(layer, LayerKind) else layer
+
+        if layer_str == "infra":
+            return {
+                "layer": "infra",
+                "runtime": {
+                    "kernel_version": manifest.infra.runtime.kernel_version,
+                    "min_kernel_version": manifest.infra.runtime.min_kernel_version,
+                },
+                "plugins": manifest.infra.plugins,
+                "packages": manifest.infra.packages,
+                "llm": manifest.infra.llm,
+            }
+        elif layer_str == "capability":
+            return {
+                "layer": "capability",
+                "tools": [
+                    {"name": t.name, "version": t.version, "path": t.path,
+                     "hash": t.hash, "signature": t.signature}
+                    for t in manifest.capability.tools
+                ],
+                "skills": [
+                    {"name": s.name, "maturity": s.maturity, "path": s.path}
+                    for s in manifest.capability.skills
+                ],
+            }
+        elif layer_str == "cognitive":
+            return {
+                "layer": "cognitive",
+                "knowledge_graph": manifest.cognitive.knowledge_graph,
+                "memory": manifest.cognitive.memory,
+                "decisions": manifest.cognitive.decisions,
+                "identity": manifest.cognitive.identity,
+            }
+        elif layer_str == "expression":
+            return {
+                "layer": "expression",
+                "artifacts": [
+                    {"type": a.type, "title": a.title, "path": a.path,
+                     "format": a.format, "hash": a.hash}
+                    for a in manifest.expression.artifacts
+                ],
+                "goals": manifest.expression.goals,
+                "lineage": manifest.expression.lineage,
+            }
+        return None
+
+    def list_artifacts(self, name: str, type: str = None) -> list[dict]:
+        """List artifacts from expression layer, optionally filtered by type."""
+        manifest = self.get_manifest(name)
+        if manifest is None:
+            return []
+        arts = manifest.expression.artifacts
+        if type:
+            arts = [a for a in arts if a.type == type]
+        return [
+            {"type": a.type, "title": a.title, "path": a.path,
+             "format": a.format, "hash": a.hash}
+            for a in arts
+        ]
+
 
 def bump_version(current: str, layer: str | LayerKind) -> str:
     """Bump semver according to evolution layer rules.
