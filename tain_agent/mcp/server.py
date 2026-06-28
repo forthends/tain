@@ -16,18 +16,19 @@ class AgentMCPServer:
         self._handlers: dict = {}
 
     def serve(self, mode: str = "stdio") -> None:
-        from tain_agent.kernel import AgentKernel, AgentContext
+        from tain_agent.runtime import AgentRuntime
+        from tain_agent.package import PackageRegistry, PackageKind
         from pathlib import Path
         import yaml
         config = {}
         try:
             with open("config.yaml") as f: config = yaml.safe_load(f)
         except Exception: pass
-        workspace = Path("agent_workspace") / self.agent_name
-        ctx = AgentContext(self.agent_name, self.agent_name, "ide", workspace, config, __version__)
-        self._kernel = AgentKernel(ctx)
-        factories = self._load_factories()
-        self._kernel.load_plugins(factories)
+        reg = PackageRegistry(packages_root=Path("agent_workspace/packages"))
+        pkg = reg.get_package(self.agent_name)
+        if pkg is None:
+            pkg = reg.create(name=self.agent_name, kind=PackageKind.AGENT)
+        self._kernel = AgentRuntime(package=pkg, config=config)
         self._handlers.update(register_tools_endpoints(self._kernel))
         self._handlers.update(register_resource_endpoints(self._kernel))
         self._handlers.update(register_prompt_endpoints(self._kernel))

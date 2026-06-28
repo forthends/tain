@@ -23,7 +23,8 @@ from pathlib import Path
 from typing import Optional
 
 from tain_agent import __version__
-from tain_agent.kernel import AgentKernel, AgentContext, STANDARD_FACTORIES
+from tain_agent.runtime import AgentRuntime
+from tain_agent.package import PackageRegistry, PackageKind
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -242,8 +243,11 @@ class ACPServer:
                 config=config,
                 kernel_version=__version__,
             )
-            kernel = AgentKernel(ctx)
-            kernel.load_plugins(STANDARD_FACTORIES)
+            reg = PackageRegistry(packages_root=PROJECT_ROOT / "agent_workspace" / "packages")
+            pkg = reg.get_package(agent_name)
+            if pkg is None:
+                pkg = reg.create(name=agent_name, kind=PackageKind.AGENT)
+            kernel = AgentRuntime(package=pkg, config=config)
 
             # Wrap kernel as chat-compatible adapter
             agent = _ACPAgentAdapter(kernel, agent_name, config)

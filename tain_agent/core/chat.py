@@ -23,8 +23,8 @@ class ChatEngine:
 
     def __init__(self, agent, backend=None):
         self.agent = agent
-        from tain_agent.kernel import AgentKernel
-        if isinstance(agent, AgentKernel):
+        from tain_agent.runtime import AgentRuntime
+        if isinstance(agent, AgentRuntime):
             self._kernel = agent
             if backend:
                 self._backend = backend
