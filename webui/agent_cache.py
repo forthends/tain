@@ -118,3 +118,46 @@ def invalidate_agent(name: str) -> bool:
         logger.info("Agent %s manually invalidated", name)
         return True
     return False
+
+
+# webui/agent_cache.py — AgentRuntime cache for v2 packages
+from pathlib import Path as _Path
+from tain_agent.package import PackageRegistry, AgentPackage as AgentPkg
+from tain_agent.runtime import AgentRuntime
+
+_PACKAGES_ROOT = _Path("agent_workspace/packages")
+
+_runtime_cache: dict[str, tuple[float, "AgentRuntime"]] = {}
+
+
+def _build_runtime(name: str, config_path: str) -> "AgentRuntime":
+    """Build an AgentRuntime for a v2 package."""
+    reg = PackageRegistry(packages_root=_PACKAGES_ROOT)
+    pkg = reg.get_package(name)
+    if pkg is None:
+        raise FileNotFoundError(f"Package not found: {name}")
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+    return AgentRuntime(package=pkg, config=config)
+
+
+def get_runtime(name: str, config_path: str) -> "AgentRuntime":
+    """Get or create an AgentRuntime (sync, cached)."""
+    now = time.time()
+    if name in _runtime_cache:
+        cached_time, runtime = _runtime_cache[name]
+        pkg_path = _PACKAGES_ROOT / name / "manifest.json"
+        if pkg_path.exists():
+            mtime = pkg_path.stat().st_mtime
+            if mtime <= cached_time:
+                return runtime
+    runtime = _build_runtime(name, config_path)
+    _runtime_cache[name] = (now, runtime)
+    return runtime
+
+
+async def get_runtime_async(name: str, config_path: str) -> "AgentRuntime":
+    """Get or create an AgentRuntime (async, cached)."""
+    lock = _build_locks.setdefault(name, asyncio.Lock())
+    async with lock:
+        return get_runtime(name, config_path)

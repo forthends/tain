@@ -16,6 +16,53 @@ PID_DIR = WORKSPACE_ROOT  # .agent_daemon_{name}.pid files live here
 _knowledge_cache: dict[str, tuple[float, list[dict]]] = {}
 _KNOWLEDGE_CACHE_TTL = 10  # seconds
 
+# webui/data.py — Package-based data layer
+from tain_agent.package import PackageRegistry, PackageKind
+from tain_agent.package.manifest import parse_manifest
+
+PACKAGES_ROOT = PROJECT_ROOT / "agent_workspace" / "packages"
+_registry = PackageRegistry(packages_root=PACKAGES_ROOT)
+
+
+def list_agents_v2() -> list[dict]:
+    """List agents from the new package-based system."""
+    agents = []
+    for pkg in _registry.list_packages(kind=PackageKind.AGENT):
+        manifest = _registry.get_manifest(pkg.name)
+        if manifest is None:
+            continue
+        agents.append({
+            "name": pkg.name,
+            "version": pkg.version,
+            "kind": manifest.package.kind,
+            "evolution_mode": manifest.package.evolution_mode,
+            "tool_count": len(manifest.capability.tools),
+            "artifact_count": len(manifest.expression.artifacts),
+            "created_at": manifest.package.created_at,
+            "updated_at": manifest.package.updated_at,
+        })
+    return agents
+
+
+def get_agent_v2(name: str) -> dict | None:
+    """Get a single agent from the package system."""
+    manifest = _registry.get_manifest(name)
+    if manifest is None:
+        return None
+    pkg = _registry.get_package(name)
+    if pkg is None:
+        return None
+    return {
+        "name": name,
+        "version": pkg.version,
+        "kind": manifest.package.kind,
+        "evolution_mode": manifest.package.evolution_mode,
+        "tool_count": len(manifest.capability.tools),
+        "artifact_count": len(manifest.expression.artifacts),
+        "created_at": manifest.package.created_at,
+        "updated_at": manifest.package.updated_at,
+    }
+
 
 def _read_json(path: Path) -> dict | None:
     try:
