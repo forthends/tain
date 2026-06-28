@@ -4,7 +4,7 @@ import tempfile
 
 import pytest
 from pathlib import Path
-from tain_agent.package import AgentPackage, PackageKind, LayerKind
+from tain_agent.package import AgentPackage, PackageKind, LayerKind, PackageRegistry
 
 
 def test_agent_package_creation():
@@ -160,3 +160,56 @@ def test_manifest_roundtrip():
     m2 = parse_manifest(serialized)
     assert m2.package.name == m.package.name
     assert m2.infra.plugins == m.infra.plugins
+
+
+# ---- PackageRegistry tests (Task 3) ----
+
+
+def test_package_registry_list_empty():
+    with tempfile.TemporaryDirectory() as tmp:
+        reg = PackageRegistry(packages_root=Path(tmp))
+        pkgs = reg.list_packages()
+        assert pkgs == []
+
+
+def test_package_registry_create_and_list():
+    with tempfile.TemporaryDirectory() as tmp:
+        reg = PackageRegistry(packages_root=Path(tmp))
+        pkg = reg.create(name="TestAgent", kind=PackageKind.AGENT, version="0.1.0")
+        assert pkg.manifest_path.exists()
+        pkgs = reg.list_packages()
+        assert len(pkgs) == 1
+        assert pkgs[0].name == "TestAgent"
+        assert pkgs[0].version == "0.1.0"
+
+
+def test_package_registry_get_package():
+    with tempfile.TemporaryDirectory() as tmp:
+        reg = PackageRegistry(packages_root=Path(tmp))
+        reg.create(name="TestAgent", kind=PackageKind.AGENT, version="0.1.0")
+        pkg = reg.get_package("TestAgent")
+        assert pkg is not None
+        assert pkg.name == "TestAgent"
+        manifest = reg.get_manifest("TestAgent")
+        assert manifest is not None
+        assert manifest.package.name == "TestAgent"
+
+
+def test_package_registry_get_nonexistent():
+    with tempfile.TemporaryDirectory() as tmp:
+        reg = PackageRegistry(packages_root=Path(tmp))
+        assert reg.get_package("Ghost") is None
+        assert reg.get_manifest("Ghost") is None
+
+
+def test_package_registry_list_by_kind():
+    with tempfile.TemporaryDirectory() as tmp:
+        reg = PackageRegistry(packages_root=Path(tmp))
+        reg.create(name="Agent1", kind=PackageKind.AGENT, version="0.1.0")
+        reg.create(name="Tool1", kind=PackageKind.TOOLSET, version="0.1.0")
+        agents = reg.list_packages(kind=PackageKind.AGENT)
+        tools = reg.list_packages(kind=PackageKind.TOOLSET)
+        assert len(agents) == 1
+        assert agents[0].name == "Agent1"
+        assert len(tools) == 1
+        assert tools[0].name == "Tool1"
