@@ -40,6 +40,8 @@ class _PersonalityAdapter:
 class IdentityPlugin:
     """Plugin that owns AgentIdentity — who the agent is, what it values, its boundaries."""
 
+    version = "1.0.0"
+
     def __init__(self):
         self._ctx: AgentContext | None = None
         self.identity: AgentIdentity | None = None

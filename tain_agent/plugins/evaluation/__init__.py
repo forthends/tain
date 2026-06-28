@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 class EvaluationPlugin:
     """8th plugin — periodic seven-dimension maturity evaluation with executable reports."""
 
+    version = "1.0.0"
+
     def __init__(self, routine_interval: int = 50, deep_interval: int = 200):
         self._ctx: AgentContext | None = None
         self._engine: MaturityEngine | None = None

@@ -40,6 +40,8 @@ class ToolPlugin:
       - forge_cycle(spec, code, llm_backend) → run ClosedForgeCycle
     """
 
+    version = "1.2.0"
+
     def __init__(self):
         self._ctx: AgentContext | None = None
         self._registry = None

@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 class MemoryPlugin:
     """Plugin that manages the agent's memory across three tiers."""
 
+    version = "1.0.0"
     MAX_WORKING_MEMORY = 20
 
     def __init__(self):

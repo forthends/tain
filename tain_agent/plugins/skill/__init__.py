@@ -25,6 +25,8 @@ class SkillPlugin:
     on_llm_response.
     """
 
+    version = "1.0.0"
+
     def __init__(self):
         self._ctx: AgentContext | None = None
         self._skills: dict[str, Skill] = {}
