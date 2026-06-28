@@ -111,7 +111,7 @@ class ToolForge:
         else:
             import tempfile
             ws = Path(tempfile.gettempdir()) / "tain-agent"
-        self._forge_dir = ws / "forged_tools"
+        self._forge_dir = ws / "capability" / "tools"
         self._forge_dir.mkdir(parents=True, exist_ok=True)
         self._sandbox = None  # Lazy-loaded sandbox
 

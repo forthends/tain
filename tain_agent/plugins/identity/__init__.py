@@ -60,7 +60,7 @@ class IdentityPlugin:
 
     def initialize(self, ctx: AgentContext) -> None:
         self._ctx = ctx
-        self._profile_path = ctx.workspace_path / "identity" / "profile.json"
+        self._profile_path = ctx.workspace_path / "cognitive" / "identity" / "profile.json"
         self._profile_path.parent.mkdir(parents=True, exist_ok=True)
         self.identity = self._load_or_create()
 

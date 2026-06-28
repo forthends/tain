@@ -62,15 +62,15 @@ class ToolPlugin:
 
         workspace_str = str(ctx.workspace_path)
 
-        # Persist decisions to the agent's workspace so the Web UI can display them.
+        # Persist decisions to cognitive/ for the new package layout.
         decision_log = DecisionLog(
-            log_dir=str(ctx.workspace_path / "logs"),
+            log_dir=str(ctx.workspace_path / "cognitive"),
             log_file="decisions.jsonl",
         )
 
-        # Persist lineage events alongside decisions for WebUI Evolution tab.
+        # Persist lineage events to expression/ for the new package layout.
         self._lineage = LineageTracker(
-            lineage_dir=str(ctx.workspace_path / "logs"),
+            lineage_dir=str(ctx.workspace_path / "expression"),
             lineage_file="lineage.jsonl",
         )
 

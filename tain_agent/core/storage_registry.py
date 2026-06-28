@@ -13,43 +13,43 @@ from typing import Optional
 # Agents call resolve_storage_path("poem", "spring.md") → workspace/poetry/spring.md
 
 STORAGE_SCHEMA: dict[str, str] = {
-    # Creative output
-    "poem":             "poetry/",
-    "song":             "poetry/",
-    "story":            "poetry/",
-    "poetic_moment":    "poetry/moments/",
+    # Creative output → L4 Expression
+    "poem":             "expression/artifacts/poetry/",
+    "song":             "expression/artifacts/poetry/",
+    "story":            "expression/artifacts/poetry/",
+    "poetic_moment":    "expression/artifacts/poetry/moments/",
 
-    # Knowledge & learning
-    "knowledge":        "knowledge/",
-    "concept":          "knowledge/concepts/",
-    "research":         "knowledge/research/",
+    # Knowledge & learning → L3 Cognitive
+    "knowledge":        "cognitive/knowledge/",
+    "concept":          "cognitive/knowledge/concepts/",
+    "research":         "cognitive/knowledge/research/",
 
-    # Introspection
-    "journal":          "journal/",
-    "reflection":       "journal/",
-    "self_portrait":    "journal/",
+    # Introspection → L4 Expression
+    "journal":          "expression/artifacts/journal/",
+    "reflection":       "expression/artifacts/journal/",
+    "self_portrait":    "expression/artifacts/journal/",
 
-    # Commitments & goals
-    "commitment":       "commitments/",
-    "goal":             "goals/",
+    # Commitments & goals → L4 Expression
+    "commitment":       "expression/artifacts/commitments/",
+    "goal":             "expression/goals/",
 
-    # Reports & evolution
-    "report":           "reports/",
-    "evolution":        "reports/",
-    "milestone":        "reports/",
+    # Reports & evolution → L4 Expression
+    "report":           "expression/artifacts/reports/",
+    "evolution":        "expression/artifacts/reports/",
+    "milestone":        "expression/artifacts/reports/",
 
-    # Tools & code
-    "tool":             "forged_tools/",
-    "tool_test":        "tests/",
-    "test":             "tests/",
+    # Tools & code → L2 Capability
+    "tool":             "capability/tools/",
+    "tool_test":        "capability/tests/",
+    "test":             "capability/tests/",
 
-    # General file storage
-    "note":             "files/",
-    "creative":         "files/",
-    "data":             "files/",
-    "capture":          "files/",
-    "letter":           "files/",
-    "general":          "files/",
+    # General file storage → L4 Expression
+    "note":             "expression/artifacts/",
+    "creative":         "expression/artifacts/",
+    "data":             "expression/artifacts/",
+    "capture":          "expression/artifacts/",
+    "letter":           "expression/artifacts/",
+    "general":          "expression/artifacts/",
 }
 
 # ── Directories created when a workspace is initialized ──────────────

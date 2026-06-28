@@ -37,7 +37,7 @@ class SkillPlugin:
 
     def initialize(self, ctx: AgentContext) -> None:
         self._ctx = ctx
-        self._persist_path = ctx.workspace_path / "skill" / "catalog.json"
+        self._persist_path = ctx.workspace_path / "capability" / "skills" / "catalog.json"
         self._persist_path.parent.mkdir(parents=True, exist_ok=True)
         self._load()
 
