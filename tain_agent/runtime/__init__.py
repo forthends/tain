@@ -45,6 +45,8 @@ class AgentRuntime:
             workspace_path=package.path,
             config=self.config,
             kernel_version=self.manifest.infra.runtime.kernel_version or "0.11.0",
+            package=package,          # new
+            manifest=self.manifest,   # new
         )
 
         # Assemble plugins
@@ -61,6 +63,12 @@ class AgentRuntime:
 
         # Register dispatch routes for active plugins
         self._build_routes()
+
+        # Populate active plugin names on context
+        self.ctx.active_plugins = [
+            p.__class__.__name__.removesuffix("Plugin").lower()
+            for p in self.active_plugins
+        ]
 
     def _build_plugin_registry(self) -> dict[str, type]:
         """Build the plugin registry mapping name -> class."""
