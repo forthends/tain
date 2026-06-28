@@ -204,6 +204,11 @@ class AgentKernel:
         # Build the runtime (loads perpetual plugins: identity, memory)
         self._runtime = AgentRuntime(package=pkg, config=ctx.config)
 
+        # Align the legacy context's workspace_path with the package path
+        # so that load_plugins and other legacy paths write into the
+        # package directory rather than a separate agent_workspace/<name>.
+        self.ctx.workspace_path = pkg.path
+
         # Reuse the runtime's dispatch (already populated with routes)
         self.dispatch = self._runtime.dispatch
 
@@ -228,6 +233,10 @@ class AgentKernel:
         behaviour of the removed LifecycleManager.load().
         Plugins already loaded by AgentRuntime (perpetual plugins)
         are skipped to avoid double-initialization.
+
+        Plugins are initialized with the runtime's AgentContext
+        (workspace_path = package path) so all plugin data lands
+        inside the package directory tree.
         """
         layout = PLUGIN_LAYOUT.get(self.ctx.evolution_mode, PLUGIN_LAYOUT["specified"])
         registry_updates: dict[str, Any] = {}
@@ -241,7 +250,10 @@ class AgentKernel:
             if factory is None:
                 continue
             instance = factory()
-            instance.initialize(self.ctx)
+            # Initialize with the runtime's context so plugin data is written
+            # into the package directory (workspace_path = packages/<name>)
+            # rather than the legacy agent_workspace/<name> path.
+            instance.initialize(self._runtime.ctx)
             self._runtime.active_plugins.append(instance)
             registry_updates[name] = instance
             new_instances.append(instance)
