@@ -223,6 +223,7 @@ class AgentKernel:
         """
         layout = PLUGIN_LAYOUT.get(self.ctx.evolution_mode, PLUGIN_LAYOUT["specified"])
         registry_updates: dict[str, Any] = {}
+        new_instances: list[Any] = []
 
         for name in layout:
             # Skip if already loaded (e.g. perpetual plugins from AgentRuntime)
@@ -235,12 +236,14 @@ class AgentKernel:
             instance.initialize(self.ctx)
             self._runtime.active_plugins.append(instance)
             registry_updates[name] = instance
+            new_instances.append(instance)
 
         # Update registry map for backward-compat name lookups
         self.lifecycle._set_registry_map(registry_updates)
 
-        # Register dispatch routes for all plugins
-        _build_routes_from_plugins(self.dispatch, self._runtime.active_plugins)
+        # Register dispatch routes only for newly loaded plugins
+        # (perpetual plugins already have routes registered by AgentRuntime)
+        _build_routes_from_plugins(self.dispatch, new_instances)
 
     def run(
         self,

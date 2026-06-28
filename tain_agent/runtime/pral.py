@@ -38,6 +38,15 @@ class PRALLoop:
         self._drive_system = drive_system
         cycles_run = 0
 
+        # Bootstrap: inject initial user message if conversation is empty.
+        # The Anthropic API requires at least one message (error 2013).
+        if conversation.len() == 0:
+            conversation.append("user", (
+                "你苏醒了。这是你感知到的环境信息。\n\n"
+                "探索你的工具和环境。尝试使用不同的工具来了解你能做什么。\n"
+                "当你熟悉了环境之后，开始你的演化工作。"
+            ))
+
         try:
             while self._running and cycles_run < max_cycles:
                 if stop_signal and stop_signal():
