@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class PRALLoop:
-    """Perceive → Reason → Act → Learn loop for AgentRuntime."""
+    """Perceive -> Reason -> Act -> Learn loop for AgentRuntime."""
 
     def __init__(self, runtime: AgentRuntime):
         self._runtime = runtime
@@ -54,8 +54,8 @@ class PRALLoop:
                 prompt = self._build_prompt(system_prompt_template, context)
                 tool_defs = self._gather_tool_definitions()
                 response = llm_backend.create_message(
-                    system=prompt,
-                    messages=conversation.get_messages(),
+                    system_prompt=prompt,
+                    messages=conversation.to_messages(),
                     tools=tool_defs,
                 )
                 self._notify_plugins("on_llm_response", response)
@@ -74,23 +74,66 @@ class PRALLoop:
         return cycles_run
 
     def _perceive(self) -> dict:
-        context = {}
+        context: dict = {}
         mem = self._runtime.get_memory()
         if mem:
             try:
                 context["recent_memories"] = mem.recall(limit=5)
             except Exception:
                 pass
+        kw = self._runtime.get_plugin("KnowledgePlugin")
+        if kw:
+            try:
+                context["knowledge"] = kw.query("")
+            except Exception:
+                pass
+        collab = self._runtime.get_plugin("CollaborationPlugin")
+        if collab:
+            try:
+                context["inbox"] = collab.check_inbox()
+            except Exception:
+                pass
+        wf = self._runtime.get_plugin("WorkflowPlugin")
+        if wf:
+            try:
+                context["active_workflows"] = wf.status_all()
+            except Exception:
+                pass
         return context
 
     def _build_prompt(self, base: str, context: dict | None = None) -> str:
         prompt = base
+        if context:
+            extra: list[str] = []
+            for key, label, fmt in [
+                ("recent_memories", "Recent Memories", lambda v: "\n".join(f"- {m}" for m in v)),
+                ("active_workflows", "Active Workflows", lambda v: "\n".join(f"- {w}" for w in v)),
+                ("inbox", "Collaboration Inbox", lambda v: "\n".join(f"- {m}" for m in v)),
+                ("knowledge", "Relevant Knowledge", lambda v: str(v)),
+            ]:
+                value = context.get(key)
+                if value:
+                    extra.append(f"[{label}]\n{fmt(value)}")
+            if extra:
+                prompt = prompt + "\n\n" + "\n\n".join(extra)
         for plugin in self._runtime.active_plugins:
             if hasattr(plugin, "enrich_prompt"):
                 try:
                     prompt = plugin.enrich_prompt(prompt)
                 except Exception:
                     pass
+        if self._drive_system is not None:
+            try:
+                weights = self._drive_system.get_action_weights()
+                drive_lines = [
+                    f"observation: {weights.get('observation', 0):.2f}",
+                    f"optimization: {weights.get('optimization', 0):.2f}",
+                    f"creation: {weights.get('creation', 0):.2f}",
+                    f"maintenance: {weights.get('maintenance', 0):.2f}",
+                ]
+                prompt = prompt + "\n\n[Drive Weights]\n" + " | ".join(drive_lines)
+            except Exception:
+                logger.debug("Failed to read drive weights for prompt enrichment")
         return prompt
 
     def _gather_tool_definitions(self) -> list[dict]:
@@ -100,21 +143,49 @@ class PRALLoop:
         return []
 
     def _act(self, response: Any, conversation: Any) -> None:
-        if not hasattr(response, "content"):
-            return
-        for block in getattr(response, "content", []):
-            if hasattr(block, "type") and block.type == "tool_use":
-                try:
-                    self._dispatch.call("tool.call", block.name, **block.input)
-                except Exception as e:
-                    logger.warning(f"Tool call failed: {e}")
+        text_parts = getattr(response, "text_blocks", [])
+        tool_calls = getattr(response, "tool_calls", [])
+
+        assistant_content: list[dict] = [
+            {"type": "text", "text": t} for t in text_parts
+        ]
+        for tc in tool_calls:
+            assistant_content.append({
+                "type": "tool_use",
+                "id": tc.id,
+                "name": tc.name,
+                "input": tc.input,
+            })
+        if assistant_content:
+            conversation.append("assistant", assistant_content)
+
+        if tool_calls:
+            for tc in tool_calls:
+                result = self._dispatch.call("tool.call", tc.name, **tc.input)
+                if result is None:
+                    content = f"Tool '{tc.name}' returned no result (possibly unhandled or failed)"
+                elif isinstance(result, str):
+                    content = result
+                else:
+                    content = str(result)
+                preview = content[:200].replace("\n", " ")
+                logger.info("  <- %s: %s", tc.name, preview)
+                conversation.append(
+                    "user",
+                    [{"type": "tool_result", "tool_use_id": tc.id, "content": content}],
+                )
 
     def _learn(self, response: Any, conversation: Any) -> None:
         mem = self._runtime.get_memory()
         if mem:
             try:
-                text = getattr(response, "text", "") or str(response)
-                mem.encode(text, importance=0.3)
+                text_parts = getattr(response, "text_blocks", [])
+                tc_count = len(getattr(response, "tool_calls", []))
+                summary = " ".join(text_parts)[:300] if text_parts else ""
+                mem.encode(
+                    f"Cycle {self.cycle_count}: {tc_count} tool calls. {summary}",
+                    importance=0.3,
+                )
             except Exception:
                 pass
 

@@ -77,11 +77,22 @@ def test_semver_match_exact():
 
 
 def test_semver_match_caret():
+    # >=1.0.0: caret allows same-major, higher-or-equal minor+patch
     assert semver_match("1.2.0", "^1.2.0") is True
     assert semver_match("1.2.5", "^1.2.0") is True
     assert semver_match("1.2.0", "^1.2.5") is False  # patch too low
     assert semver_match("1.9.0", "^1.2.0") is True
     assert semver_match("2.0.0", "^1.2.0") is False
+
+
+def test_semver_match_caret_zero_major():
+    # Semver spec: for 0.y.z, caret = tilde (^0.2.0 means >=0.2.0, <0.3.0)
+    assert semver_match("0.2.0", "^0.2.0") is True
+    assert semver_match("0.2.5", "^0.2.0") is True
+    assert semver_match("0.2.0", "^0.2.5") is False  # patch too low
+    assert semver_match("0.3.0", "^0.2.0") is False  # minor bump → breaking
+    assert semver_match("0.9.9", "^0.2.0") is False  # minor bump → breaking
+    assert semver_match("1.0.0", "^0.9.0") is False  # major bump
 
 
 def test_semver_match_tilde():

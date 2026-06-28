@@ -17,7 +17,7 @@ from tain_agent.kernel.dispatch import Dispatch
 from tain_agent.kernel.protocol import AgentContext
 from tain_agent.package import AgentPackage
 from tain_agent.package.manifest import parse_manifest, Manifest
-from tain_agent.runtime.plugin_loader import PluginLoader
+from tain_agent.runtime.plugin_loader import PluginLoader, PluginVersionError
 
 __version__ = "3.0.0-dev"
 
@@ -50,7 +50,14 @@ class AgentRuntime:
         # Assemble plugins
         self.plugin_loader = PluginLoader(registry=self._build_plugin_registry())
         declared = self.manifest.infra.plugins
-        self.active_plugins = self.plugin_loader.assemble(declared, self.ctx)
+        try:
+            self.active_plugins = self.plugin_loader.assemble(declared, self.ctx)
+        except PluginVersionError as e:
+            raise RuntimeError(
+                f"Failed to assemble plugins for package '{self.package.name}': "
+                f"plugin '{e.plugin_name}' requires {e.requested} but {e.available} "
+                f"is available. Update the manifest or install a compatible plugin version."
+            ) from e
 
         # Register dispatch routes for active plugins
         self._build_routes()
@@ -94,9 +101,12 @@ class AgentRuntime:
         }
 
         for event, (class_name, method_name) in route_map.items():
-            if class_name in plugin_map:
-                plugin = plugin_map[class_name]
-                self.dispatch.register(event, getattr(plugin, method_name))
+            if class_name not in plugin_map:
+                continue
+            plugin = plugin_map[class_name]
+            if not hasattr(plugin, method_name):
+                continue
+            self.dispatch.register(event, getattr(plugin, method_name))
 
     def get_plugin(self, name: str) -> Any | None:
         """Get a loaded plugin by class name or registry key."""

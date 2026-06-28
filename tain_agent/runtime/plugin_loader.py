@@ -31,6 +31,14 @@ def semver_match(available: str, spec: str) -> bool:
         spec_parts = [int(p) for p in spec[1:].split(".")]
         if len(spec_parts) != 3:
             return False
+        # Semver spec: for 0.y.z, caret behaves like tilde (^0.2.0 means
+        # >=0.2.0, <0.3.0).  For >=1.0.0, caret means >=spec, <next-major.
+        if spec_parts[0] == 0:
+            return (
+                avail_parts[0] == 0
+                and avail_parts[1] == spec_parts[1]
+                and avail_parts[2] >= spec_parts[2]
+            )
         return (
             avail_parts[0] == spec_parts[0]
             and (
