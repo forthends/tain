@@ -33,7 +33,10 @@ def semver_match(available: str, spec: str) -> bool:
             return False
         return (
             avail_parts[0] == spec_parts[0]
-            and (avail_parts[0] > spec_parts[0] or avail_parts[1] >= spec_parts[1])
+            and (
+                avail_parts[1] > spec_parts[1]
+                or (avail_parts[1] == spec_parts[1] and avail_parts[2] >= spec_parts[2])
+            )
         )
     elif spec.startswith("~"):
         spec_parts = [int(p) for p in spec[1:].split(".")]

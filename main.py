@@ -195,6 +195,8 @@ def main():
     # Mode
     parser.add_argument("--pral", action="store_true",
                         help="Run with full PRAL cognitive cycle (default)")
+    parser.add_argument("--no-pral", action="store_true",
+                        help="Run without PRAL cognitive cycle (daemon passthrough)")
     parser.add_argument("--dialogue", "-d", action="store_true",
                         help="Start in interactive human-AI dialogue mode (REPL)")
     parser.add_argument("--cycles", type=int, default=0,

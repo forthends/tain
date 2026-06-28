@@ -78,6 +78,8 @@ def test_semver_match_exact():
 
 def test_semver_match_caret():
     assert semver_match("1.2.0", "^1.2.0") is True
+    assert semver_match("1.2.5", "^1.2.0") is True
+    assert semver_match("1.2.0", "^1.2.5") is False  # patch too low
     assert semver_match("1.9.0", "^1.2.0") is True
     assert semver_match("2.0.0", "^1.2.0") is False
 
