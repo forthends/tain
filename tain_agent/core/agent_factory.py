@@ -64,11 +64,14 @@ class AgentFactory:
     # ── Infrastructure ────────────────────────────────────────────────
 
     def _ensure_infrastructure(self) -> None:
-        """Ensure workspace root, registry, and message bus exist."""
+        """Ensure workspace root and packages directory exist.
+
+        Note: _registry.json and _messages/ are no longer created — the
+        new Package model uses packages/ scanning via PackageRegistry,
+        and inter-agent messaging uses the per-package collaboration plugin.
+        """
         self._root.mkdir(parents=True, exist_ok=True)
-        self._messages_dir.mkdir(parents=True, exist_ok=True)
-        if not self._registry_path.exists():
-            self._write_registry({"registry_version": "1.0", "agents": {}})
+        self._packages_root.mkdir(parents=True, exist_ok=True)
 
     # ── Registry I/O ──────────────────────────────────────────────────
 

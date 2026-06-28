@@ -121,7 +121,15 @@ def _ensure_package(ctx: AgentContext) -> Any:
     # agent_workspace/packages.  For production use (workspace_path ==
     # agent_workspace/<agent>) this yields agent_workspace/packages; for tests
     # (tmp_path/<agent>) this yields tmp_path/packages.
+    #
+    # Guard against accidental nesting when workspace_path already points
+    # inside a packages/ directory (e.g. agent_workspace/packages/<agent>).
+    # In that case, use the existing packages/ parent instead of creating a
+    # nested packages/packages/ ghost.
     packages_root = ctx.workspace_path.parent / "packages"
+    if packages_root.parent.name == "packages":
+        # workspace_path was already inside a packages/ dir — back out
+        packages_root = packages_root.parent
     packages_root.mkdir(parents=True, exist_ok=True)
     pkg_dir = packages_root / ctx.agent_name
     pkg_dir.mkdir(parents=True, exist_ok=True)

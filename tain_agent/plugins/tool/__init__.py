@@ -179,9 +179,18 @@ class ToolPlugin:
         return self._registry.get_claude_tool_definitions()
 
     def call(self, name: str, **kwargs) -> dict:
-        """Execute a registered tool by name."""
+        """Execute a registered tool by name.
+
+        Strips 'tool_name' from kwargs to avoid collision with
+        ToolRegistry.call()'s first positional parameter of the same name.
+        The tool name is already passed positionally via ``name``.
+        """
         if self._registry is None:
             return {"success": False, "error": "registry not initialized"}
+        # Prevent ``tool_name`` from being passed twice — once positionally
+        # (mapping to ToolRegistry.call.tool_name) and again as a keyword
+        # from the LLM's tool_use input block.
+        kwargs.pop("tool_name", None)
         return self._registry.call(name, **kwargs)
 
     def forge(
