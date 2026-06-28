@@ -228,7 +228,7 @@ class ACPServer:
             from tain_agent.core.chat import ChatEngine
 
             agent_name = f"acp_session_{session_id[:8]}"
-            workspace = Path("agent_workspace") / agent_name
+            workspace = (PROJECT_ROOT / "agent_workspace") / agent_name
             workspace.mkdir(parents=True, exist_ok=True)
 
             with open(self.config_path) as f:

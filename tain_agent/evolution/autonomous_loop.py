@@ -165,7 +165,6 @@ class AutonomousEvolutionLoop:
     """
 
     # INI file for state persistence
-    _STATE_DIR = Path("agent_workspace/state")
     _STATE_FILE = "evolution_loop.json"
 
     def __init__(
@@ -179,6 +178,10 @@ class AutonomousEvolutionLoop:
         self._tools = tool_plugin
         self._knowledge = knowledge_plugin
         self._lineage = lineage
+
+        # ── State directory (defaults to temp to avoid CWD pollution) ──
+        import tempfile
+        self._STATE_DIR = Path(tempfile.gettempdir()) / "tain-agent" / "state"
 
         # ── Config (overridable via configure()) ──
         self.min_interval_seconds = 300

@@ -105,20 +105,25 @@ class _PRALAdapter:
         pass
 
 
-_PACKAGES_ROOT = Path("agent_workspace/packages")
-
-
 def _ensure_package(ctx: AgentContext) -> Any:
     """Create or retrieve an AgentPackage for the given context.
 
     Creates a manifest that declares only perpetual plugins (identity, memory).
     Additional plugins are loaded by load_plugins() at the AgentKernel level.
+
+    The packages root is derived from the parent of ctx.workspace_path so that
+    tests using tmp_path do not write into the real agent_workspace/ on disk.
     """
     from tain_agent.package import PackageRegistry, AgentPackage as AgentPkg, PackageKind
     from tain_agent.package.manifest import create_manifest
 
-    _PACKAGES_ROOT.mkdir(parents=True, exist_ok=True)
-    pkg_dir = _PACKAGES_ROOT / ctx.agent_name
+    # Derive packages root from the workspace path rather than hardcoding
+    # agent_workspace/packages.  For production use (workspace_path ==
+    # agent_workspace/<agent>) this yields agent_workspace/packages; for tests
+    # (tmp_path/<agent>) this yields tmp_path/packages.
+    packages_root = ctx.workspace_path.parent / "packages"
+    packages_root.mkdir(parents=True, exist_ok=True)
+    pkg_dir = packages_root / ctx.agent_name
     pkg_dir.mkdir(parents=True, exist_ok=True)
 
     manifest_path = pkg_dir / "manifest.json"
@@ -131,14 +136,14 @@ def _ensure_package(ctx: AgentContext) -> Any:
         )
         manifest.to_json(manifest_path)
 
-    reg = PackageRegistry(packages_root=_PACKAGES_ROOT)
+    reg = PackageRegistry(packages_root=packages_root)
     pkg = reg.get_package(ctx.agent_name)
     if pkg is None:
         pkg = AgentPkg(
             name=ctx.agent_name,
             kind=PackageKind.AGENT,
             version="0.0.0",
-            packages_root=_PACKAGES_ROOT,
+            packages_root=packages_root,
         )
         pkg.ensure_directories()
 

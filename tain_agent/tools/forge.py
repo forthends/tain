@@ -106,7 +106,11 @@ class ToolForge:
         self.registry = registry
         self.decision_log = decision_log
         self._forged_tools: dict[str, dict] = {}  # track forged tools
-        ws = Path(workspace_dir) if workspace_dir else Path("agent_workspace")
+        if workspace_dir:
+            ws = Path(workspace_dir)
+        else:
+            import tempfile
+            ws = Path(tempfile.gettempdir()) / "tain-agent"
         self._forge_dir = ws / "forged_tools"
         self._forge_dir.mkdir(parents=True, exist_ok=True)
         self._sandbox = None  # Lazy-loaded sandbox
