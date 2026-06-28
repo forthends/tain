@@ -6,6 +6,7 @@ from pathlib import Path
 from tain_agent.kernel.protocol import AgentContext, PluginProtocol
 from tain_agent.plugins.knowledge import KnowledgePlugin
 from tain_agent.plugins.knowledge.graph import KnowledgeGraph, Entity, Relation
+from tain_agent.plugins.knowledge.goal_manager import GoalManager, Goal
 from tain_agent.plugins.knowledge.lifecycle import (
     _project_root,
     add_reference,
@@ -388,3 +389,63 @@ class TestKnowledgeReferences:
 
         files = get_referenced_files("unknown")
         assert files == []
+
+
+# ── GoalManager tests ────────────────────────────────────────────────
+
+
+class TestGoalManager:
+    """Tests for GoalManager — agent goal tracking with JSON persistence."""
+
+    def test_create_and_list(self):
+        """GoalManager.create() adds an active goal, list_active() returns it."""
+        gm = GoalManager()
+        goal = gm.create("Learn Rust", "Complete the Rust book")
+        assert goal.status == "active"
+        assert goal.description == "Learn Rust"
+        active = gm.list_active()
+        assert len(active) == 1
+        assert active[0]["id"] == goal.id
+
+    def test_complete(self):
+        """GoalManager.complete() marks goal as completed."""
+        gm = GoalManager()
+        goal = gm.create("Write tests", "95% coverage")
+        assert gm.complete(goal.id, "Done")
+        assert len(gm.list_active()) == 0
+        assert len(gm.list_completed()) == 1
+        assert gm.list_completed()[0]["summary"] == "Done"
+
+    def test_persist_and_load(self, tmp_path):
+        """GoalManager persists to JSON and reloads."""
+        path = tmp_path / "goals.json"
+        gm1 = GoalManager()
+        gm1.initialize(path)
+        gm1.create("Goal A", "Criteria A")
+
+        gm2 = GoalManager()
+        gm2.initialize(path)
+        assert len(gm2.list_active()) == 1
+        assert gm2.list_active()[0]["description"] == "Goal A"
+
+    def test_get_goal_by_id(self):
+        gm = GoalManager()
+        goal = gm.create("Task A", "Do A")
+        assert gm.get(goal.id)["description"] == "Task A"
+        assert gm.get("nonexistent") is None
+
+    def test_complete_nonexistent_returns_false(self):
+        gm = GoalManager()
+        assert gm.complete("nonexistent") is False
+
+    def test_abandon_goal(self):
+        gm = GoalManager()
+        goal = gm.create("Task B", "Do B")
+        assert gm.abandon(goal.id, "No longer needed") is True
+        assert len(gm.list_active()) == 0
+        assert len(gm.list_all()) == 1
+        assert gm.list_all()[0]["status"] == "abandoned"
+
+    def test_abandon_nonexistent_returns_false(self):
+        gm = GoalManager()
+        assert gm.abandon("nonexistent") is False

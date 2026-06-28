@@ -95,7 +95,7 @@ class CognitiveLoop:
         self._memory = memory
         self._decision_log = decision_log
         self._goals = goals
-        self._improvement_loop = improvement_loop  # Optional: ImprovementLoop for cognitive-driven improvement
+        self._improvement_loop = improvement_loop  # Optional: AutonomousEvolutionLoop for cognitive-driven improvement
         
         # Cognitive state
         self.state = CognitiveState()
@@ -421,17 +421,17 @@ class CognitiveLoop:
     # ── Public API for agent.py ─────────────────────────────────────
     # These methods provide the interface that agent.py expects.
     
-    def connect_improvement_loop(self, improvement_loop) -> None:
-        """Connect to the improvement loop for cognitive-driven improvement.
-        
-        Once connected, the learn() phase will automatically trigger 
-        improvement cycles when the need_score exceeds threshold.
-        Call this after both CognitiveLoop and ImprovementLoop are initialized.
-        
+    def connect_evolution_loop(self, evolution_loop) -> None:
+        """Connect to the autonomous evolution loop for cognitive-driven improvement.
+
+        Once connected, the learn() phase will automatically check for
+        improvement opportunities after each cognitive cycle.
+        Call this after both CognitiveLoop and AutonomousEvolutionLoop are initialized.
+
         Args:
-            improvement_loop: tain_agent.evolution.improvement_loop.ImprovementLoop instance
+            evolution_loop: tain_agent.evolution.autonomous_loop.AutonomousEvolutionLoop instance
         """
-        self._improvement_loop = improvement_loop
+        self._improvement_loop = evolution_loop
     
     def get_tool_success_rates(self) -> dict:
         """Get per-tool success rate statistics from this session.

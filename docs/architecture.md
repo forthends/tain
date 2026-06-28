@@ -1,7 +1,7 @@
 # Tain Agent Framework — Architecture Design
 
-**Version**: 0.5.1
-**Date**: 2026-05-24
+**Version**: 0.10.0
+**Date**: 2026-06-27
 
 ---
 
@@ -34,19 +34,20 @@ The Tain Agent Framework is a platform for building and running self-evolving AI
 └──────────────────────┬───────────────────────────────────────┘
                        │
 ┌──────────────────────▼───────────────────────────────────────┐
-│                    TaoAgent                                   │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────┐   │
-│  │ Personality  │  │ Drive System │  │ Cognitive Loop    │   │
-│  │ (emergent)   │  │ (4 drives)   │  │ (PRAL state mach) │   │
-│  └─────────────┘  └──────────────┘  └───────────────────┘   │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────┐   │
-│  │ ToolRegistry│  │ ToolForge    │  │ ImprovementLoop   │   │
-│  │ (safe exec)  │  │ (6-stage)    │  │ (6-dim triggers)  │   │
-│  └─────────────┘  └──────────────┘  └───────────────────┘   │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────┐   │
-│  │ Memory      │  │ DecisionLog  │  │ ConversationMgr   │   │
-│  │ (dual-tier) │  │ (append-only)│  │ (checkpointed)    │   │
-│  └─────────────┘  └──────────────┘  └───────────────────┘   │
+│                    AgentKernel                                │
+│  ┌────────────────┐  ┌──────────────┐  ┌──────────────────┐ │
+│  │ PRALLoop        │  │LifecycleMgr │  │ Dispatch          │ │
+│  │ (Perceive→      │  │ (Plugin      │  │ (Event routing)   │ │
+│  │  Reason→Act→    │  │  lifecycle)  │  │                   │ │
+│  │  Learn)         │  │              │  │                   │ │
+│  └────────────────┘  └──────────────┘  └──────────────────┘ │
+│  ┌────────┬────────┬────────┬────────┬────────┬────────┐    │
+│  │Identity│ Memory │  Tool  │ Skill  │Knowled.│Workflow│    │
+│  │ Plugin │ Plugin │ Plugin │ Plugin │ Plugin │ Plugin │    │
+│  ├────────┼────────┼────────┼────────┼────────┼────────┤    │
+│  │Collab. │ Eval.  │ Drives │ConvMgr │ AutoEvo│Behav.  │    │
+│  │ Plugin │ Plugin │ System │        │ Loop   │Contract│    │
+│  └────────┴────────┴────────┴────────┴────────┴────────┘    │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -56,53 +57,83 @@ The Tain Agent Framework is a platform for building and running self-evolving AI
 
 ```
 tain_agent/                        # Framework package
-  __init__.py                      # __version__ = "0.5.1"
+  __init__.py                      # __version__ = "0.10.0"
   decision_log.py                  # Append-only JSONL decision log
+  storage_registry.py              # Semantic storage path resolution
 
-  core/                            # Central nervous system
-    agent.py                       # TaoAgent class — main orchestrator
-    agent_cache.py                 # Agent metadata/index cache
-    agent_factory.py               # Agent lifecycle management (v0.5.0)
-    agent_protocols.py             # Mixin interface contracts
-    bootstrap.py                   # Tool registration + system prompts
-    chat.py                        # Shared chat engine (LLM orchestration, XML parsing)
-    cognitive_loop.py              # PRAL cognitive loop state machine
-    companion_shrine.py            # Non-code presence marker
-    config_schema.py               # Pydantic config validation
-    conversation.py                # Conversation manager (checkpointed)
-    conversation_store.py          # Persistent conversation storage
+  kernel/                          # AgentKernel — sole entry point
+    __init__.py                    # AgentKernel class
+    pral.py                        # PRALLoop (Perceive→Reason→Act→Learn)
+    lifecycle.py                   # LifecycleManager (Plugin lifecycle)
+    dispatch.py                    # Dispatch (cross-plugin event routing)
+    protocol.py                    # PluginProtocol (@runtime_checkable)
+    factories.py                   # STANDARD_FACTORIES (7 Plugin mapping)
+    prompts.py                     # System prompts (migrated from bootstrap.py)
+
+  plugins/                         # Plugin implementations (PluginProtocol)
+    identity/                      # Agent identity + personality adapter
+    memory/                        # Episodic + semantic memory
+    tool/                          # ToolRegistry + ToolForge + ClosedForgeCycle
+    skill/                         # Skill composition
+    knowledge/                     # Knowledge graph + GoalManager
+    workflow/                      # Workflow engine
+    collaboration/                 # Inter-agent communication bus
+    evaluation/                    # Quality gate + export readiness
+
+  core/                            # Core subsystems
+    agent_factory.py               # Agent lifecycle management
+    chat.py                        # Shared chat engine (Web UI + ACP)
+    cognitive_loop.py              # PRAL cognitive loop enrichment
+    config_schema.py               # Pydantic v2 config validation
+    conversation.py                # Token-aware context management
     dialogue.py                    # DialogueBridge: interactive REPL
     drives.py                      # Drive system (4 intrinsic drives)
-    environment.py                 # Environment scanner + diversity engine
+    environment.py                 # Environment scanner
     llm.py                         # LLM backend abstraction (4 providers)
-    memory.py                      # Dual-tier memory (working + long-term)
-    persist.py                     # Unified persistence with atomic writes
+    llm_logger.py                  # Structured JSONL call logging
+    logging_config.py              # Logging infrastructure
+    memory.py                      # Long-term memory store
+    message_bus.py                 # Inter-component communication
     personality.py                 # Emergent personality (7 categories)
-    process.py                     # Process lifecycle management
+    retry.py                       # Exponential backoff + jitter retry
     session_memory.py              # Cross-session user recognition
-    streaming.py                   # Streaming response support
-    time_utils.py                  # Timezone-aware utilities
+    time_utils.py                  # Timezone-aware datetime utilities
 
   tools/                           # Extensible tool system
     registry.py                    # ToolRegistry (thread-pool timeout exec)
-    forge.py                       # ToolForge (6-stage safe pipeline)
-    primal.py                      # 10 primal tools (read/write/search/execute)
-    inter_agent.py                 # Inter-agent communication tools (v0.5.0)
+    forge.py                       # ToolForge (7-stage safety pipeline)
+    primal.py                      # Primal tools (file ops, web, code exec, knowledge)
+    sandbox_allowlist.py           # Shared sandbox import/API allowlist
+    mcp_loader.py                  # MCP server integration over stdio
+    background_manager.py          # Async background process lifecycle
+    inter_agent.py                 # Inter-agent communication tools
+    forged/                        # Agent-forged tools
 
   evolution/                       # Self-evolution subsystem
-    goal.py                        # Goal system with lifecycle management
+    autonomous_loop.py             # AutonomousEvolutionLoop (8-stage closed cycle)
+    behavior_contract.py           # BehaviorContract (AST compliance verification)
     pipeline.py                    # SelfImprovementPipeline (5-stage)
-    improvement_loop.py            # ImprovementLoop (6-dimension triggers)
-    self_modify.py                 # SelfModify (workspace-scoped)
-    capability.py                  # CapabilityRegistry with gap analysis
+    quality_gate.py                # Export quality gate (7 hard + 9 scoring)
+    emergence_verifier.py          # Behavioral emergence verification (6 checks)
+    goal.py                        # Goal system with lifecycle management
     lineage.py                     # LineageTracker (SHA-256 events)
+    capability.py                  # CapabilityRegistry with gap analysis
     reporter.py                    # EvolutionReporter (version bump + report)
-    sub_agent.py                   # Sub-agent sandbox (5 drive profiles)
-    emergence_verifier.py          # 6 emergence verification checks
-    quality_gate.py                # 15-gate export quality system
-    exporter.py                    # 5-step export pipeline
+    sub_agent.py                   # Sub-agent sandbox
+    exporter.py                    # Export pipeline
     importer.py                    # Return-to-factory import pipeline
     skill_exporter.py              # agentskills.io Skill export
+    introspection.py               # get_self_profile lightweight API
+    diagnostic_feedback.py         # Agent→framework diagnostic channel
+    dependency_manager.py          # Package dependency resolution
+    self_modify.py                 # Workspace-scoped self-modification
+    vector_store.py                # Vector embedding storage
+
+  acp/                             # ACP protocol (JSON-RPC 2.0 over stdio)
+  mcp/                             # MCP server (IDE embedding)
+  utils/                           # Utilities
+    token_utils.py                 # Token-aware smart truncation
+    persist.py                     # Atomic write utilities
 
   runtime/                         # Standalone runtime kernel (no framework deps)
     __init__.py                    # __version__ independent of framework
@@ -245,7 +276,7 @@ Each agent's `version.json` records the `framework_version` it was created with.
 
 | File | Purpose |
 |------|---------|
-| `tain_agent/__init__.py` | Framework version (`__version__ = "0.5.1"`) |
+| `tain_agent/__init__.py` | Framework version (`__version__ = "0.10.0"`) |
 | `agent_workspace/<name>/version.json` | Agent workspace version + framework binding |
 | `config.yaml` → `framework.version` | Configured framework version |
 
@@ -263,7 +294,9 @@ Each agent's `version.json` records the `framework_version` it was created with.
 ### 8.2 Tool Execution Safety
 
 - All tools run in thread pool with timeout (60s default, 120s for network)
-- ToolForge: 6-stage pipeline with AST sandbox, restricted imports, workspace path validation
+- ToolForge: 7-stage pipeline with AST sandbox, restricted imports, workspace path validation
+- BehaviorContract: LLM-generated tools must declare import/side-effect boundaries; AST-verified before forging
+- AutonomousEvolutionLoop: automatic rollback on consecutive failure or quality degradation
 - SelfModify: protected paths cannot be modified
 - No `os.system`, `subprocess`, `exec`, `eval` in forged tools
 
@@ -278,8 +311,9 @@ Each agent's `version.json` records the `framework_version` it was created with.
 
 ## 9. Extension Points
 
-- **New tools**: `ToolForge.forge()` 6-stage pipeline or manual registration
-- **New evolution triggers**: Add dimension to `ImprovementLoop` trigger config
+- **New tools**: `ToolForge.forge()` 7-stage pipeline or manual registration via `ToolPlugin`
+- **New evolution triggers**: Add dimension to `AutonomousEvolutionLoop.trigger_config`
+- **New Plugins**: Implement `PluginProtocol` and register in `STANDARD_FACTORIES`
 - **New LLM providers**: Implement backend in `core/llm.py`
-- **Custom system prompts**: Add templates to `bootstrap.py`
+- **Custom system prompts**: Add templates to `kernel/prompts.py`
 - **Runtime export**: `Exporter.export()` produces standalone packages

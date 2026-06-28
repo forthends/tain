@@ -99,7 +99,7 @@ def render_markdown(text: str) -> str:
                    lambda m: f'<img src="{_safe_url(m.group(2))}" alt="{m.group(1)}">', t)
         # Links
         t = re.sub(r"\[([^\]]+)\]\(([^)]+)\)",
-                   lambda m: f'<a href="{_safe_url(m.group(2))}" class="text-blue-500 hover:underline">{m.group(1)}</a>', t)
+                   lambda m: f'<a href="{_safe_url(m.group(2))}" class="text-ink underline hover:text-charcoal">{m.group(1)}</a>', t)
         # Bold + Italic
         t = re.sub(r"\*\*\*(.+?)\*\*\*", r"<strong><em>\1</em></strong>", t)
         # Bold

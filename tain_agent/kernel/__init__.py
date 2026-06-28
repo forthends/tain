@@ -4,6 +4,12 @@ from tain_agent.kernel.protocol import PluginProtocol, AgentContext, HealthStatu
 from tain_agent.kernel.lifecycle import LifecycleManager
 from tain_agent.kernel.pral import PRALLoop
 from tain_agent.kernel.dispatch import Dispatch
+from tain_agent.kernel.factories import STANDARD_FACTORIES
+from tain_agent.kernel.prompts import (
+    BOOTSTRAP_SYSTEM_PROMPT,
+    SPECIFIED_BOOTSTRAP_SYSTEM_PROMPT,
+    EVOLVE_SYSTEM_PROMPT,
+)
 
 
 class AgentKernel:
@@ -60,4 +66,8 @@ class AgentKernel:
         self.lifecycle.shutdown_all()
 
 
-__all__ = ["AgentKernel", "PluginProtocol", "AgentContext", "HealthStatus"]
+__all__ = [
+    "AgentKernel", "PluginProtocol", "AgentContext", "HealthStatus",
+    "STANDARD_FACTORIES",
+    "BOOTSTRAP_SYSTEM_PROMPT", "SPECIFIED_BOOTSTRAP_SYSTEM_PROMPT", "EVOLVE_SYSTEM_PROMPT",
+]

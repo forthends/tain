@@ -9,16 +9,22 @@ WORKSPACE_ROOT = PROJECT_ROOT / "agent_workspace"
 
 
 def load_history(agent_name: str) -> list[dict]:
+    """Load chat history for an agent, reading only the tail of large files.
+
+    Uses a generous tail window (2 MB) to avoid truncating long messages.
+    Falls back to reading the entire file when it's smaller than the window.
+    """
     conv_file = WORKSPACE_ROOT / agent_name / "logs" / "conversations" / "web_user.jsonl"
     if not conv_file.exists():
         return []
-    TAIL_BYTES = 200 * 1024
+    TAIL_BYTES = 2 * 1024 * 1024  # 2 MB — handles very long single messages
     file_size = conv_file.stat().st_size
     messages = deque()
     try:
         with open(conv_file, "r", encoding="utf-8") as f:
             if file_size > TAIL_BYTES:
                 f.seek(max(0, file_size - TAIL_BYTES))
+                # Discard the first (likely partial) line from the seek position
                 f.readline()
             for line in f:
                 line = line.strip()

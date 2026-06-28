@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from tain_agent.kernel.protocol import AgentContext, HealthStatus, PluginProtocol
+from tain_agent.evolution.lineage import LineageTracker
 from tain_agent.plugins.tool.forge_cycle import (
     ClosedForgeCycle,
     CycleStage,
@@ -54,12 +55,33 @@ class ToolPlugin:
         from tain_agent.tools.registry import ToolRegistry
         from tain_agent.tools.forge import ToolForge
         from tain_agent.tools.primal import register_primal_tools
+        from tain_agent.tools.inter_agent import register_inter_agent_tools
+        from tain_agent.decision_log import DecisionLog
 
         workspace_str = str(ctx.workspace_path)
 
+        # Persist decisions to the agent's workspace so the Web UI can display them.
+        decision_log = DecisionLog(
+            log_dir=str(ctx.workspace_path / "logs"),
+            log_file="decisions.jsonl",
+        )
+
+        # Persist lineage events alongside decisions for WebUI Evolution tab.
+        self._lineage = LineageTracker(
+            lineage_dir=str(ctx.workspace_path / "logs"),
+            lineage_file="lineage.jsonl",
+        )
+
         self._registry = ToolRegistry()
-        self._forge = ToolForge(self._registry, workspace_dir=workspace_str)
+        self._forge = ToolForge(self._registry, decision_log=decision_log,
+                                workspace_dir=workspace_str)
+        self._forge._lineage = self._lineage
         register_primal_tools(self._registry, workspace_dir=workspace_str)
+        register_inter_agent_tools(
+            self._registry,
+            workspace_root=str(ctx.workspace_path.parent),
+            agent_name=ctx.agent_name,
+        )
 
         # Load previously forged tools
         loaded = self._forge.load_forged_tools()
@@ -148,6 +170,12 @@ class ToolPlugin:
             return {}
         return self._registry.list_tools()
 
+    def get_claude_tool_definitions(self) -> list[dict]:
+        """Export tools in Claude API tool-use format."""
+        if self._registry is None:
+            return []
+        return self._registry.get_claude_tool_definitions()
+
     def call(self, name: str, **kwargs) -> dict:
         """Execute a registered tool by name."""
         if self._registry is None:
@@ -161,14 +189,47 @@ class ToolPlugin:
         code: str,
         parameters: dict | None = None,
     ) -> dict:
-        """Forge a new tool from source code through the safety sandbox."""
+        """Forge a new tool from source code through the safety sandbox.
+
+        Args:
+            name: Tool name.
+            description: Human-readable description.
+            code: Python source code for the tool function.
+            parameters: Optional dict with 'action' key:
+                - "create" (default): Create a new tool
+                - "update": Update an existing forged tool
+                - "rollback": Remove a forged tool
+        """
         if self._forge is None:
             return {"success": False, "error": "forge not initialized"}
+
+        action = (parameters or {}).get("action", "create")
+        if action not in ("create", "update", "rollback"):
+            return {
+                "success": False,
+                "error": (
+                    f"Unknown action: {action}. "
+                    "Use 'create', 'update', or 'rollback'."
+                ),
+            }
+
+        if action == "rollback":
+            return self._forge.remove_forged(name)
+
+        # Strip action from parameters before passing to ToolForge
+        forge_params = dict(parameters) if parameters else None
+        if forge_params:
+            forge_params.pop("action", None)
+            if not forge_params:
+                forge_params = None
+
+        # ToolForge.forge overwrites by name — no need to remove first
         return self._forge.forge(
             name=name,
             description=description,
             code=code,
-            parameters=parameters,
+            parameters=forge_params,
+            action=action,
         )
 
     def forge_cycle(
@@ -230,6 +291,17 @@ class ToolPlugin:
         if self._forge is None:
             return {"success": False, "error": "forge not initialized"}
         return self._forge.remove_forged(tool_name)
+
+    def list_forged(self) -> dict:
+        """Return all forged tools and their metadata."""
+        if self._forge is None:
+            return {}
+        return self._forge.list_forged()
+
+    def get_sandbox_allowlist(self) -> list:
+        """Return the current sandbox import/API allowlist."""
+        from tain_agent.tools.sandbox_allowlist import get_allowlist
+        return get_allowlist()["allowed_modules"]
 
     # ── Convenience ─────────────────────────────────────────────────────
 

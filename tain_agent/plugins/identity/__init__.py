@@ -10,6 +10,33 @@ from tain_agent.plugins.identity.model import AgentIdentity, EvolutionEvent
 logger = logging.getLogger(__name__)
 
 
+class _PersonalityAdapter:
+    """Adapter that exposes Personality-like API from IdentityPlugin traits."""
+
+    def __init__(self, plugin: "IdentityPlugin"):
+        self._plugin = plugin
+
+    def get_context_for_prompt(self) -> str:
+        """Build a prompt context string from confident traits."""
+        return self._plugin._trait_context()
+
+    def introspect(self) -> dict:
+        """Return a summary of current personality traits."""
+        if self._plugin.identity is None:
+            return {"traits": {}}
+        result = {"traits": {}}
+        for cat, traits in self._plugin.identity.traits.items():
+            result["traits"][cat] = [
+                {"value": t.get("value", ""), "confidence": t.get("confidence", 0)}
+                for t in traits
+            ]
+        return result
+
+    def auto_observe(self, tool_names: list[str], text_parts: list[str]) -> None:
+        """Behavioral observation of tool usage to auto-discover traits."""
+        self._plugin._observe_traits(tool_names, text_parts)
+
+
 class IdentityPlugin:
     """Plugin that owns AgentIdentity — who the agent is, what it values, its boundaries."""
 
@@ -17,6 +44,15 @@ class IdentityPlugin:
         self._ctx: AgentContext | None = None
         self.identity: AgentIdentity | None = None
         self._profile_path: Path | None = None
+
+    @property
+    def personality(self):
+        """Return a Personality adapter backed by IdentityPlugin's trait data.
+
+        Provides get_context_for_prompt() and introspect() for dialogue.py
+        compatibility. Reads/writes traits through self.identity.traits.
+        """
+        return _PersonalityAdapter(self)
 
     # ── PluginProtocol ───────────────────────────────────────────
 

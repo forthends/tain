@@ -24,7 +24,7 @@ EVOLUTION_MODE_CHAOS = "chaos"
 EVOLUTION_MODE_SPECIFIED = "specified"
 EVOLUTION_MODES = (EVOLUTION_MODE_CHAOS, EVOLUTION_MODE_SPECIFIED)
 
-AGENT_NAME_PATTERN = r"^[a-z][a-z0-9_-]{0,31}$"
+AGENT_NAME_PATTERN = r"^[a-zA-Z][a-zA-Z0-9_-]{0,31}$"
 RESERVED_NAMES = frozenset({"_registry", "_messages", "_system"})
 
 # Subdirectories created inside each agent workspace
@@ -116,7 +116,7 @@ class AgentFactory:
         if not re.match(AGENT_NAME_PATTERN, name):
             return {"error": (
                 f"Invalid agent name '{name}'. Must be 1-32 chars, "
-                f"lowercase letters/digits/hyphens/underscores, start with a letter."
+                f"letters/digits/hyphens/underscores, start with a letter."
             )}
         if mode not in EVOLUTION_MODES:
             return {"error": f"Unknown mode '{mode}'. Use 'chaos' or 'specified'."}

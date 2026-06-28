@@ -42,6 +42,9 @@
         <h2 class="text-sm font-semibold text-ink mb-4">Agent Metrics Comparison</h2>
         <div class="relative" style="height: 320px;">
             <canvas id="metricsChart"></canvas>
+            <div id="metrics-empty" class="absolute inset-0 flex items-center justify-center hidden">
+                <p class="text-sm text-mute">No metrics yet — start an agent to see data</p>
+            </div>
         </div>
     </div>
     {% endif %}
@@ -124,6 +127,15 @@
             if (!agents.length) return;
             agentsData = agents;
             chart = buildChart(agents);
+            // Show empty-state hint when all metrics are zero
+            const allZero = agents.every(a =>
+                (a.cycle_count || 0) === 0 &&
+                (a.tool_count || 0) === 0 &&
+                (a.decision_count || 0) === 0 &&
+                (a.lineage_count || 0) === 0
+            );
+            const emptyEl = document.getElementById('metrics-empty');
+            if (emptyEl && allZero) emptyEl.classList.remove('hidden');
         })
         .catch(err => console.warn('Chart load failed:', err));
 

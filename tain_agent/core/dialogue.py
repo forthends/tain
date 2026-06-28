@@ -126,16 +126,62 @@ class DialogueBridge:
 
     MAX_TOOL_ITERATIONS = 10  # Max tool-call rounds per conversational turn
 
-    def __init__(self, agent):
+    def __init__(self, agent, kernel=None):
         self.agent = agent
+        self.kernel = kernel
         self._running = False
         self._dialogue_system_prompt = DIALOGUE_SYSTEM_PROMPT  # base (tool list appended at runtime)
         # Store agent.run as /evolve handler (may already be PRAL-bridged)
-        self._evolve_handler = agent.run
+        self._evolve_handler = agent.run if hasattr(agent, 'run') else (lambda: 0)
         # Mark agent for introspection
         agent._dialogue = self
-        # Session memory — remembers who & what was discussed
-        self.session_memory = SessionMemory(agent.memory)
+        # Session memory — prefers plugin path if kernel available
+        if kernel:
+            mem_plugin = kernel.lifecycle.get("memory")
+            if mem_plugin and hasattr(mem_plugin, 'session_memory'):
+                self.session_memory = mem_plugin.session_memory
+            else:
+                self.session_memory = SessionMemory(getattr(agent, 'memory', None))
+        else:
+            self.session_memory = SessionMemory(getattr(agent, 'memory', None))
+
+    # ── Convenience property accessors (kernel → agent fallback) ──────
+
+    @property
+    def _tools(self):
+        """Get ToolPlugin (kernel) or fall back to agent.tools."""
+        if self.kernel:
+            tp = self.kernel.lifecycle.get("tool")
+            if tp:
+                return tp
+        return getattr(self.agent, 'tools', None)
+
+    @property
+    def _personality(self):
+        """Get Personality adapter (kernel) or fall back to agent.personality."""
+        if self.kernel:
+            ip = self.kernel.lifecycle.get("identity")
+            if ip and hasattr(ip, 'personality'):
+                return ip.personality
+        return getattr(self.agent, 'personality', None)
+
+    @property
+    def _goals(self):
+        """Get GoalManager (kernel) or fall back to agent.goals."""
+        if self.kernel:
+            kp = self.kernel.lifecycle.get("knowledge")
+            if kp and hasattr(kp, 'goals'):
+                return kp.goals
+        return getattr(self.agent, 'goals', None)
+
+    @property
+    def _forge(self):
+        """Get ToolPlugin forge access (kernel) or fall back to agent.forge."""
+        if self.kernel:
+            tp = self.kernel.lifecycle.get("tool")
+            if tp:
+                return tp
+        return getattr(self.agent, 'forge', None)
 
     # ── Main REPL ────────────────────────────────────────────────────
 
@@ -225,7 +271,7 @@ class DialogueBridge:
         """Print welcome banner."""
         print(f"""
 ╔══════════════════════════════════════════════╗
-║  Tain Agent 对话模式 — v{self.agent.version:<24s} ║
+║  Tain Agent 对话模式 — v{getattr(self.agent, 'version', 'unknown'):<24s} ║
 ║                                              ║
 ║  输入消息开始对话                              ║
 ║  /help  查看可用命令                           ║
@@ -343,12 +389,11 @@ class DialogueBridge:
         goal_text = direction["goal"]
         rationale = direction.get("rationale", "从对话中提取的方向")
 
-        # Create the goal
-        goal = self.agent.goals.create_goal(
+        # Create the goal (already active on creation — no start() needed)
+        goal = self._goals.create(
             description=goal_text,
             success_criteria=f"完成目标: {goal_text}",
         )
-        goal.start()
         print(f"\n🎯 新目标已创建: [{goal.id}] {goal_text}")
         print(f"   理由: {rationale}")
 
@@ -385,7 +430,7 @@ class DialogueBridge:
 
             system_prompt = self._build_dialogue_system_prompt()
             messages = self.agent.conversation.to_claude_messages()
-            tool_defs = self.agent.tools.get_claude_tool_definitions()
+            tool_defs = self._tools.get_claude_tool_definitions()
 
             # ── Stream LLM response ──────────────────────────────────
             try:
@@ -489,7 +534,14 @@ class DialogueBridge:
                 breath.start()
                 try:
                     with redirect_stdout(io.StringIO()):
-                        tool_results = self.agent._execute_tool_calls(tool_calls)
+                        if self.kernel:
+                            tool_results = []
+                            for tc in tool_calls:
+                                result = self.kernel.dispatch.call("tool.call", tc.name, **tc.input)
+                                content = str(result) if result is not None else f"Tool '{tc.name}' returned no result"
+                                tool_results.append({"tool_use_id": tc.id, "content": content})
+                        else:
+                            tool_results = self.agent._execute_tool_calls(tool_calls)
                 except Exception as e:
                     breath.stop()
                     sys.stdout.write(f"\n  ❌ {e}")
@@ -610,7 +662,7 @@ class DialogueBridge:
 
     def _list_tools(self) -> None:
         """List all registered tools."""
-        tools = self.agent.tools.list_tools()
+        tools = self._tools.list_tools()
         if not tools:
             print("\n(无已注册工具)")
             return
@@ -645,6 +697,20 @@ class DialogueBridge:
         Agent 可以在对话中使用工具（搜索网络、读取文件等）。
         """))
 
+    def _assess_capability(self) -> dict:
+        """Compute capability assessment from available plugins."""
+        tools = self._tools
+        forge = self._forge
+        goals = self._goals
+        knowledge = self.kernel.lifecycle.get("knowledge") if self.kernel else None
+        return {
+            "coverage_pct": len(tools.list_tools() if tools else {}),
+            "tools_count": len(tools.list_tools() if tools else {}),
+            "forged_count": len(forge.list_forged() if forge else {}),
+            "active_goals": len(goals.list_active() if goals else []),
+            "knowledge_entities": knowledge._graph.entity_count if knowledge else 0,
+        }
+
     # ── System prompt builder ─────────────────────────────────────────
 
     def _build_dialogue_system_prompt(self) -> str:
@@ -656,12 +722,12 @@ class DialogueBridge:
         prompt += "\n\n" + session_ctx
 
         # ── Personality context (who the agent has discovered itself to be) ──
-        if hasattr(self.agent, 'personality') and self.agent.personality:
-            personality_ctx = self.agent.personality.get_context_for_prompt()
+        if self._personality:
+            personality_ctx = self._personality.get_context_for_prompt()
             prompt += "\n\n" + personality_ctx
 
         # Append tool summary (same pattern as agent._get_system_prompt())
-        tools = self.agent.tools.list_tools()
+        tools = self._tools.list_tools()
         if tools:
             lines = ["\n## 可用工具\n"]
             for name, info in sorted(tools.items()):
@@ -684,17 +750,16 @@ class DialogueBridge:
         state_lines = [
             "",
             "## 当前状态",
-            f"- 版本: v{self.agent.version}",
-            f"- 阶段: {self.agent.phase}",
-            f"- 已锻造工具: {len(self.agent.forge.list_forged())} 个",
-            f"- 活跃目标: {len(self.agent.goals.list_active())} 个",
+            f"- 版本: v{getattr(self.agent, 'version', 'unknown')}",
+            f"- 阶段: {getattr(self.agent, 'phase', 'explore')}",
+            f"- 已锻造工具: {len(self._forge.list_forged())} 个",
+            f"- 活跃目标: {len(self._goals.list_active())} 个",
         ]
-        if hasattr(self.agent, 'capability'):
-            try:
-                assessment = self.agent.capability.assess()
-                state_lines.append(f"- 能力覆盖率: {assessment.get('coverage_pct', 'N/A')}%")
-            except Exception:
-                pass
+        try:
+            assessment = self._assess_capability()
+            state_lines.append(f"- 能力覆盖率: {assessment.get('coverage_pct', 'N/A')}%")
+        except Exception:
+            pass
 
         prompt += "\n".join(state_lines)
         return prompt

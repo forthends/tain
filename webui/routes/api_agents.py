@@ -11,6 +11,7 @@ from webui.data import (
     get_agent_tools, get_agent_tool_detail, get_agent_evolution,
     get_agent_metrics, get_agent_personality, get_agent_knowledge,
     get_agent_knowledge_content, get_agent_goals, is_agent_running,
+    get_agent_memory_notes, get_agent_memory_stats,
 )
 from webui.process import ProcessManager
 
@@ -81,21 +82,29 @@ async def api_agent_knowledge_content(name: str, path: str):
     return {"format": fmt, "content": content}
 
 
+@router.get("/agent/{name}/memory/notes")
+async def api_agent_memory_notes(name: str):
+    """Return agent memory notes + stats as JSON."""
+    notes = get_agent_memory_notes(name)
+    stats = get_agent_memory_stats(name)
+    return {"notes": notes, "stats": stats}
+
+
 @router.post("/agent/{name}/start")
 async def api_agent_start(name: str):
-    result = ProcessManager().start(name)
+    result = await ProcessManager().start_async(name)
     return {"success": result.success, "output": result.stdout, "error": result.stderr}
 
 
 @router.post("/agent/{name}/stop")
 async def api_agent_stop(name: str):
-    result = ProcessManager().stop(name)
+    result = await ProcessManager().stop_async(name)
     return {"success": result.success, "output": result.stdout, "error": result.stderr}
 
 
 @router.post("/agent/{name}/restart")
 async def api_agent_restart(name: str):
-    stop_result, start_result = ProcessManager().restart(name)
+    stop_result, start_result = await ProcessManager().restart_async(name)
     return {
         "success": start_result.success,
         "stop_output": stop_result.stdout,

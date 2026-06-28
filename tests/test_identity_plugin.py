@@ -1,5 +1,6 @@
 """Tests for IdentityPlugin and AgentIdentity model."""
 
+import pytest
 from pathlib import Path
 from tain_agent.kernel.protocol import AgentContext, PluginProtocol
 from tain_agent.plugins.identity import IdentityPlugin
@@ -7,6 +8,18 @@ from tain_agent.plugins.identity.model import (
     AgentIdentity, DomainExpertise, Proficiency, Value, Goal,
     BehaviorConstraints, AutonomyLevel, CollaborationPrefs,
 )
+
+
+@pytest.fixture
+def agent_context(tmp_path):
+    workspace = tmp_path / "agent_workspace" / "test"
+    workspace.mkdir(parents=True)
+    return AgentContext("test", "a1", "specified", workspace, {}, "0.6.0")
+
+
+@pytest.fixture
+def identity_plugin():
+    return IdentityPlugin()
 
 
 class TestAgentIdentity:
@@ -70,3 +83,18 @@ class TestIdentityPlugin:
             result = plugin.enrich_prompt("base prompt")
             assert "base prompt" in result
             assert "## 你的身份" in result
+
+
+def test_personality_get_context_for_prompt(identity_plugin, agent_context):
+    """IdentityPlugin.personality.get_context_for_prompt() returns trait context."""
+    identity_plugin.initialize(agent_context)
+    ctx = identity_plugin.personality.get_context_for_prompt()
+    assert isinstance(ctx, str)
+
+
+def test_personality_introspect(identity_plugin, agent_context):
+    """IdentityPlugin.personality.introspect() returns trait summary."""
+    identity_plugin.initialize(agent_context)
+    result = identity_plugin.personality.introspect()
+    assert isinstance(result, dict)
+    assert "traits" in result

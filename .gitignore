@@ -70,3 +70,5 @@ docs/report/
 
 # Agent runtime artifacts
 agent_notes.jsonl
+
+.superpowers/

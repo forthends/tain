@@ -138,6 +138,13 @@ async def agent_tab(request: Request, name: str, tab: str):
         return _render("agent_tabs/knowledge.html", {
             "request": request, "agent": agent, "files": files,
         })
+    elif tab == "memory":
+        from webui.data import get_agent_memory_notes, get_agent_memory_stats
+        notes = get_agent_memory_notes(name)
+        stats = get_agent_memory_stats(name)
+        return _render("agent_tabs/memory.html", {
+            "request": request, "agent": agent, "notes": notes, "stats": stats,
+        })
     elif tab == "live":
         return _render("agent_tabs/live.html", {
             "request": request, "agent": agent,
@@ -218,21 +225,35 @@ def _log_path_for(agent_name: str) -> Path:
 
 
 async def _tail_log(agent_name: str):
-    """SSE generator that tails a per-agent output log, sending JSON events."""
+    """SSE generator that tails a per-agent output log, sending JSON events.
+
+    Sends SSE comments (lines starting with ':') as heartbeats every 15 s
+    to prevent intermediate proxies from closing idle connections.
+    """
     path = _log_path_for(agent_name)
-    # Wait for the log file to appear (agent may not have started yet)
-    while not path.exists():
-        await asyncio.sleep(1)
-    with open(path, "r") as f:
-        f.seek(0, os.SEEK_END)
-        while True:
-            line = f.readline()
-            if line:
-                ts = _datetime.now().strftime("%H:%M:%S")
-                payload = _json.dumps({"text": line.rstrip("\n"), "timestamp": ts})
-                yield f"data: {payload}\n\n"
-            else:
-                await asyncio.sleep(0.5)
+    _HEARTBEAT_INTERVAL = 15.0
+    try:
+        # Wait for the log file to appear (agent may not have started yet)
+        while not path.exists():
+            await asyncio.sleep(1)
+        with open(path, "r") as f:
+            f.seek(0, os.SEEK_END)
+            last_heartbeat = time.monotonic()
+            while True:
+                line = f.readline()
+                if line:
+                    ts = _datetime.now().strftime("%H:%M:%S")
+                    payload = _json.dumps({"text": line.rstrip("\n"), "timestamp": ts})
+                    yield f"data: {payload}\n\n"
+                    last_heartbeat = time.monotonic()
+                else:
+                    now = time.monotonic()
+                    if now - last_heartbeat >= _HEARTBEAT_INTERVAL:
+                        yield ": heartbeat\n\n"
+                        last_heartbeat = now
+                    await asyncio.sleep(0.5)
+    except asyncio.CancelledError:
+        pass
 
 
 @router.get("/stream/agent-output")
@@ -262,25 +283,37 @@ async def stream_agent_output(agent: str = ""):
 
 
 async def _tail_log_shared(path: Path):
-    """Fallback SSE generator for the legacy shared log."""
-    if path.exists():
-        with open(path, "r") as f:
-            f.seek(0, os.SEEK_END)
-            while True:
-                line = f.readline()
-                if line:
-                    ts = _datetime.now().strftime("%H:%M:%S")
-                    payload = _json.dumps({"text": line.rstrip("\n"), "timestamp": ts})
-                    yield f"data: {payload}\n\n"
-                else:
-                    await asyncio.sleep(0.5)
+    """Fallback SSE generator for the legacy shared log.
+
+    Sends SSE comments as heartbeats every 15 s to prevent proxy timeouts.
+    """
+    _HEARTBEAT_INTERVAL = 15.0
+    try:
+        if path.exists():
+            with open(path, "r") as f:
+                f.seek(0, os.SEEK_END)
+                last_heartbeat = time.monotonic()
+                while True:
+                    line = f.readline()
+                    if line:
+                        ts = _datetime.now().strftime("%H:%M:%S")
+                        payload = _json.dumps({"text": line.rstrip("\n"), "timestamp": ts})
+                        yield f"data: {payload}\n\n"
+                        last_heartbeat = time.monotonic()
+                    else:
+                        now = time.monotonic()
+                        if now - last_heartbeat >= _HEARTBEAT_INTERVAL:
+                            yield ": heartbeat\n\n"
+                            last_heartbeat = now
+                        await asyncio.sleep(0.5)
+    except asyncio.CancelledError:
+        pass
 
 
 @router.post("/agent/{name}/controls/start", response_class=HTMLResponse)
 async def agent_control_start(request: Request, name: str):
-    ProcessManager().start(name)
-    import time
-    time.sleep(0.5)
+    await ProcessManager().start_async(name)
+    await asyncio.sleep(0.5)
     agent = get_agent(name)
     resp = _render("components/agent_controls.html", {
         "request": request, "agent": agent or {"name": name, "status": "unknown"},
@@ -291,9 +324,8 @@ async def agent_control_start(request: Request, name: str):
 
 @router.post("/agent/{name}/controls/stop", response_class=HTMLResponse)
 async def agent_control_stop(request: Request, name: str):
-    ProcessManager().stop(name)
-    import time
-    time.sleep(0.5)
+    await ProcessManager().stop_async(name)
+    await asyncio.sleep(0.5)
     agent = get_agent(name)
     resp = _render("components/agent_controls.html", {
         "request": request, "agent": agent or {"name": name, "status": "unknown"},
@@ -304,7 +336,7 @@ async def agent_control_stop(request: Request, name: str):
 
 @router.post("/agent/{name}/controls/restart", response_class=HTMLResponse)
 async def agent_control_restart(request: Request, name: str):
-    ProcessManager().restart(name)
+    await ProcessManager().restart_async(name)
     agent = get_agent(name)
     resp = _render("components/agent_controls.html", {
         "request": request, "agent": agent or {"name": name, "status": "unknown"},

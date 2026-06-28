@@ -7,7 +7,7 @@ runtime kernel for running exported agents independently of the full framework.
 
 ## Current Status
 
-**Experimental (v0.5.1).** The runtime kernel is present but not yet fully
+**Experimental (v0.10.0).** The runtime kernel is present but not yet fully
 integrated with the export pipeline. It is intended as the target for
 `skill_exporter` and `exporter` output.
 
@@ -15,6 +15,10 @@ integrated with the export pipeline. It is intended as the target for
 
 - `identity.py` — Agent identity loading (name, role, evolution mode)
 - `llm.py` — Minimal LLM client wrapper
+- `tools.py` — Isolated ToolRegistry for exported agents
+- `memory.py` — MemoryStore with session lifecycle
+- `conversation.py` — ConversationManager for exported agents
+- `tui.py` — Rich/Plain terminal UI
 - `__init__.py` — Runtime bootstrap
 
 ## Known Limitations

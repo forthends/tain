@@ -4,7 +4,7 @@
 
 The Tain Agent Framework previously used an "LLM-judging-LLM" pattern for self-evaluation — the same LLM would answer benchmark questions and then score its own answers. This created a closed, self-referential loop with no external ground truth.
 
-Starting from v0.5.1, "evolution" means **framework-measured behavioral change over time**:
+Starting from v0.10.0, "evolution" means **autonomous, framework-measured behavioral change over time**:
 
 ## What Is Measured
 
@@ -51,13 +51,25 @@ Drives are randomly initialized per agent instance, creating different behaviora
 The `ExportQualityGate` evaluates agent readiness for export using **only framework-measured criteria**:
 
 - **Hard gates (H1-H7)**: File existence, import tests, AST analysis, safety boundary checks
-- **Scoring gates (S1-S8)**: Tool success rate, knowledge coverage, tool chain coherence, action diversity, code health, knowledge freshness, drive integrity, external feedback
+- **Scoring gates (S1-S9)**: Tool success rate, knowledge coverage, tool chain coherence, action diversity, code health, knowledge freshness, drive integrity, external feedback, code dedup trend
 
 No scoring gate uses LLM-as-judge. All scores come from file system, AST, registry, or telemetry data.
+
+## Autonomous Evolution (v0.10.0)
+
+The **AutonomousEvolutionLoop** closes the evolution loop — agents can now autonomously complete the full gap→deploy→verify cycle with zero human intervention:
+
+1. **Gap Detection** — 8-dimension trigger assessment identifies improvement needs
+2. **Code Generation** — LLM generates tool code with sandbox allowlist awareness
+3. **Behavior Contract** — AST-verified import/side-effect boundary enforcement
+4. **Sandbox Forging** — 7-stage safety pipeline (existing, unchanged)
+5. **Online Verification** — Deployed tool tested with auto-generated inputs
+6. **Quality Evaluation** — Pre/post quality delta comparison; automatic rollback on degradation
+
+Three-layer safety: sandbox → behavior contract → automatic rollback. See [changelog/v0.10.0.md](changelog/v0.10.0.md) for details.
 
 ## What Evolution Is NOT
 
 - The agent does not rewrite its own core code (self-modification is workspace-scoped)
-- The agent does not generate and register novel tools autonomously (tool creation requires human development)
 - The agent does not "become smarter" through self-reflection — it accumulates behavioral data that the framework uses to describe it
 - Confidence scores in personality traits represent consistency of observed behavior, not "correctness" of self-assessment

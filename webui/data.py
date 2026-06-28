@@ -78,14 +78,9 @@ def list_agents() -> list[dict]:
         lineage = _read_jsonl(WORKSPACE_ROOT / name / "logs" / "lineage.jsonl")
         lineage_count = len(lineage)
 
-        # Count knowledge files
-        knowledge_dir = WORKSPACE_ROOT / name / "knowledge"
-        files_dir = WORKSPACE_ROOT / name / "files"
-        knowledge_count = 0
-        if knowledge_dir.exists():
-            knowledge_count += len(list(knowledge_dir.rglob("*")))
-        if files_dir.exists():
-            knowledge_count += len(list(files_dir.rglob("*")))
+        # Count knowledge files — reuse the TTL-cached listing to avoid
+        # expensive recursive directory walks on every dashboard load.
+        knowledge_count = len(get_agent_knowledge(name))
 
         # Extract phase and cycle from memory
         phase = "unknown"
@@ -138,13 +133,42 @@ def get_agent(name: str) -> dict | None:
 
 def get_agent_decisions(name: str, phase: str = "", decision_type: str = "",
                         limit: int = 20, offset: int = 0) -> tuple[list[dict], int]:
-    entries = _read_jsonl(WORKSPACE_ROOT / name / "logs" / "decisions.jsonl")
-    if phase:
-        entries = [e for e in entries if e.get("phase") == phase]
-    if decision_type:
-        entries = [e for e in entries if e.get("decision_type") == decision_type]
-    total = len(entries)
-    return entries[offset:offset + limit], total
+    """Stream decisions from JSONL, keeping only the requested slice in memory.
+
+    Avoids loading the entire file for agents with large decision logs.
+    """
+    path = WORKSPACE_ROOT / name / "logs" / "decisions.jsonl"
+    if not path.exists():
+        return [], 0
+
+    matching: list[dict] = []
+    total = 0
+    end = offset + limit
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                if phase and entry.get("phase") != phase:
+                    continue
+                if decision_type and entry.get("decision_type") != decision_type:
+                    continue
+
+                if total >= offset and total < end:
+                    matching.append(entry)
+
+                total += 1
+    except IOError:
+        pass
+
+    return matching, total
 
 
 def _normalize_params(params):
@@ -266,7 +290,11 @@ def get_agent_knowledge(name: str) -> list[dict]:
 def get_agent_knowledge_content(name: str, rel_path: str) -> tuple[str, str]:
     full_path = (WORKSPACE_ROOT / name / rel_path).resolve()
     allowed_root = (WORKSPACE_ROOT / name).resolve()
-    if not str(full_path).startswith(str(allowed_root) + "/") and full_path != allowed_root:
+    # Use Path.relative_to() for robust containment check — raises ValueError
+    # if full_path escapes allowed_root (covers symlink-based traversal too).
+    try:
+        full_path.relative_to(allowed_root)
+    except ValueError:
         return "", "Access denied."
     if not full_path.exists():
         return "", "File not found."
@@ -296,6 +324,79 @@ def get_agent_goals(name: str) -> list[dict]:
         if isinstance(goals, dict):
             return list(goals.values())
     return []
+
+
+def get_agent_memory_notes(name: str, category: str = "") -> list[dict]:
+    """Read agent memory notes from agent_notes.jsonl, optionally filtered by category.
+
+    Returns entries in reverse chronological order (most recent first).
+    """
+    path = WORKSPACE_ROOT / name / "memory" / "agent_notes.jsonl"
+    if not path.exists():
+        return []
+    entries = []
+    try:
+        for line in path.read_text(encoding="utf-8").strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if category and entry.get("category") != category:
+                continue
+            # Truncate content for display (keep first 2000 chars)
+            content = entry.get("content", "")
+            if len(content) > 2000:
+                entry["content"] = content[:2000] + "..."
+            entries.append(entry)
+    except IOError:
+        return []
+    entries.reverse()  # most recent first
+    return entries
+
+
+def get_agent_memory_stats(name: str) -> dict:
+    """Return memory statistics: agent_notes count, episodic memory count, and categories."""
+    notes_count = 0
+    notes_path = WORKSPACE_ROOT / name / "memory" / "agent_notes.jsonl"
+    categories: set[str] = set()
+    if notes_path.exists():
+        try:
+            for line in notes_path.read_text(encoding="utf-8").strip().split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                notes_count += 1
+                try:
+                    entry = json.loads(line)
+                    cat = entry.get("category")
+                    if cat:
+                        categories.add(cat)
+                except json.JSONDecodeError:
+                    continue
+        except IOError:
+            pass
+
+    episodic_count = 0
+    episodic_path = WORKSPACE_ROOT / name / "memory" / "episodic.db"
+    if episodic_path.exists():
+        try:
+            import sqlite3
+            db = sqlite3.connect(f"file:{episodic_path}?mode=ro", uri=True)
+            row = db.execute("SELECT COUNT(*) FROM episodic_memory").fetchone()
+            if row:
+                episodic_count = row[0]
+            db.close()
+        except Exception:
+            pass  # Best-effort: DB might be locked, corrupted, or sqlite3 unavailable
+
+    return {
+        "notes_count": notes_count,
+        "episodic_count": episodic_count,
+        "categories": sorted(categories),
+    }
 
 
 def get_config() -> dict:

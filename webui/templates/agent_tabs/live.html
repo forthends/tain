@@ -1,5 +1,5 @@
 <!-- Live Tab — real-time agent output stream -->
-<div x-data="liveOutput('{{ agent.name }}', '{{ agent.role or '' }}')" x-init="connect()" class="flex flex-col" style="height: calc(100vh - 340px);">
+<div x-data="liveOutput('{{ agent.name }}', '{{ agent.role or '' }}')" x-init="connect()" class="flex flex-col flex-1 min-h-0">
     <!-- Agent info header -->
     <div class="flex-shrink-0 mb-3 pb-3 border-b border-hairline">
         <div class="flex items-center gap-2 flex-wrap">
@@ -38,9 +38,9 @@
         <!-- Terminal title bar — fixed, does not scroll -->
         <div class="flex-shrink-0 bg-canvas-soft px-4 py-2.5 flex items-center gap-2 border-b border-hairline">
             <div class="terminal-dots">
-                <div class="terminal-dot cursor-default" style="background:#ff5f56;"></div>
-                <div class="terminal-dot cursor-default" style="background:#ffbd2e;"></div>
-                <div class="terminal-dot cursor-default" style="background:#27c93f;"></div>
+                <div class="terminal-dot cursor-default bg-terminal-red"></div>
+                <div class="terminal-dot cursor-default bg-terminal-yellow"></div>
+                <div class="terminal-dot cursor-default bg-terminal-green"></div>
             </div>
             <span class="text-xs text-mute font-mono flex-1 text-center">tain — agent output</span>
             <div class="flex gap-1.5">
@@ -61,7 +61,7 @@
                 <template x-for="line in lines" :key="line.id">
                     <div class="leading-relaxed hover:bg-white/5 px-1 rounded" style="min-height: 1.25rem;"
                          x-text="line.text"
-                         :class="line.type === 'error' ? 'text-[#ff5f56]' : line.type === 'tool' ? 'text-[#27c93f]' : 'text-[#e2e8f0]'"></div>
+                         :class="line.type === 'error' ? 'text-terminal-red' : line.type === 'tool' ? 'text-terminal-green' : 'text-on-dark'"></div>
                 </template>
             </div>
         </div>

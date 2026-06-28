@@ -19,23 +19,38 @@ Usage:
 """
 
 import argparse
+import logging
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
+# Configure logging early so all modules benefit.
+# StreamHandler → stdout so the guardian captures agent output for the Live tab.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    datefmt="%H:%M:%S",
+    stream=sys.stdout,
+)
+
 # Ensure the project root is in sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from tain_agent.core.agent import TaoAgent
 from tain_agent.core.agent_factory import AgentFactory
+from tain_agent.kernel import AgentKernel, AgentContext, STANDARD_FACTORIES
+from tain_agent.kernel.prompts import EVOLVE_SYSTEM_PROMPT
+from tain_agent.core.llm import LLMBackend
+from tain_agent.core.conversation import ConversationManager
+from tain_agent.core.drives import DriveSystem
+from tain_agent import __version__
 
 # ─── Constants ──────────────────────────────────────────────────────────
 
 AGENT_NAME_HELP = (
-    "Agent name (lowercase letters, digits, hyphens, underscores; "
-    "1-32 chars, must start with a letter). Example: poet, alpha01"
+    "Agent name (letters, digits, hyphens, underscores; "
+    "1-32 chars, must start with a letter). Example: poet, Philosopher, alpha01"
 )
 
 
@@ -63,8 +78,8 @@ def run_creation_wizard(factory: AgentFactory, suggested_name: str = "") -> str:
         if not name:
             print("  Name cannot be empty.")
             continue
-        if not re.match(r"^[a-z][a-z0-9_-]{0,31}$", name):
-            print("  Invalid name. Must be 1-32 chars, lowercase letters/digits/hyphens/underscores, start with a letter.")
+        if not re.match(r"^[a-zA-Z][a-zA-Z0-9_-]{0,31}$", name):
+            print("  Invalid name. Must be 1-32 chars, letters/digits/hyphens/underscores, start with a letter.")
             continue
         if factory.exists(name):
             print(f"  Agent '{name}' already exists. Choose a different name.")
@@ -213,10 +228,6 @@ def main():
     parser.add_argument("--port", type=int, default=8000,
                         help="Port for Web UI (default: 8000)")
 
-    # Kernel mode
-    parser.add_argument("--new-kernel", action="store_true",
-                        help="Use new Core-Plugins AgentKernel (v0.6.0)")
-
     # MCP / IDE embedding
     parser.add_argument("--mcp-serve", action="store_true", help="Start agent as MCP Server for IDE embedding")
     parser.add_argument("--export-bundle", action="store_true", help="Export agent as standalone Skill Bundle")
@@ -229,7 +240,7 @@ def main():
         from webui.app import create_app
         import uvicorn
         app = create_app()
-        print(f"\n  Tain Agent Framework Web UI v0.4.1")
+        print(f"\n  Tain Agent Framework Web UI v{__version__}")
         print(f"  → http://127.0.0.1:{args.port}\n")
         uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info",
                     timeout_graceful_shutdown=3)
@@ -326,11 +337,105 @@ def main():
         print("  The agent may need migration. Proceeding anyway...\n")
 
     # ── Wake the agent ──────────────────────────────────────────────
-    if args.new_kernel:
-        from tain_agent.compat import TaoAgentCompat
-        agent = TaoAgentCompat(config_path=args.config, agent_name=agent_name)
-    else:
-        agent = TaoAgent(config_path=args.config, agent_name=agent_name)
+    import yaml
+    from pathlib import Path
+    config_path = args.config
+    cfg = {}
+    if Path(config_path).exists():
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+
+    evolution_mode = cfg.get("agent", {}).get("evolution_mode", "specified")
+    workspace = Path("agent_workspace") / agent_name
+
+    ctx = AgentContext(
+        agent_name=agent_name,
+        agent_id=f"{agent_name}-{workspace.name}",
+        evolution_mode=evolution_mode,
+        workspace_path=workspace,
+        config=cfg,
+        kernel_version=__version__,
+    )
+    kernel = AgentKernel(ctx)
+    kernel.load_plugins(STANDARD_FACTORIES)
+
+    # Create LLM backend, conversation, drives (same pattern as old compat.py)
+    from tain_agent.core.llm import create_backend
+    backend = create_backend(cfg)
+    conversation = ConversationManager(
+        checkpoint_dir=str(workspace),
+        auto_checkpoint_interval=10,
+        token_limit=cfg.get("conversation", {}).get("token_limit", 80000),
+        model_context_window=cfg.get("conversation", {}).get("model_context_window", 131072),
+    )
+    drives = DriveSystem()
+
+    system_prompt = EVOLVE_SYSTEM_PROMPT.format(
+        agent_name=agent_name,
+        role=cfg.get("identity", {}).get("role", ""),
+        role_description=cfg.get("identity", {}).get("role_description", ""),
+    )
+
+    class _DecisionLogShim:
+        """Minimal shim for decision_log compatibility."""
+        def __init__(self, entries=None):
+            self._entries = entries or []
+        def read_all(self):
+            return list(self._entries)
+        def filter_by_phase(self, phase):
+            return [e for e in self._entries if e.get("phase") == phase]
+
+    class _AgentStateAdapter:
+        """Minimal adapter so main.py commands work with AgentKernel."""
+        def __init__(self, kernel, agent_name, framework_version,
+                     backend, config, conversation, phase="explore"):
+            self.kernel = kernel
+            self.agent_name = agent_name
+            self.version = framework_version
+            self.phase = phase
+            self.backend = backend
+            self.config = config
+            self.conversation = conversation
+            self.decision_log = _DecisionLogShim([])
+            # Plugin accessors for dialogue/chat compatibility
+            self.tools = kernel.lifecycle.get("tool")
+            self.memory = kernel.lifecycle.get("memory")
+            identity = kernel.lifecycle.get("identity")
+            self.personality = identity.personality if identity else None
+            self.forge = kernel.lifecycle.get("tool")  # ToolPlugin has forge methods
+            knowledge = kernel.lifecycle.get("knowledge")
+            self.goals = knowledge.goals if knowledge else None
+            self.capability = None  # computed on-demand by dialogue.py
+
+        def print_state(self):
+            print(f"\n  Agent: {self.agent_name}")
+            print(f"  Version: {self.version}")
+            print(f"  Phase: {self.phase}")
+            print(f"  Cycle: {self.kernel.pral.cycle_count}")
+            print()
+            for name, health in self.kernel.lifecycle.all_health_checks().items():
+                status = getattr(health, 'status', str(health))
+                print(f"  [{name}] {status}")
+            print()
+
+        def stop(self):
+            self.kernel.shutdown()
+
+        def run(self, autonomous=False):
+            return self.kernel.run(backend, conversation, drives, system_prompt)
+
+        def _execute_tool_calls(self, tool_calls):
+            results = []
+            for tc in tool_calls:
+                result = self.kernel.dispatch.call("tool.call", tc.name, **tc.input)
+                content = str(result) if result is not None else f"Tool '{tc.name}' returned no result"
+                results.append({"tool_use_id": tc.id, "content": content})
+            return results
+
+    agent = _AgentStateAdapter(
+        kernel, agent_name, __version__,
+        backend, cfg, conversation,
+    )
 
     if args.state:
         agent.print_state()
@@ -441,7 +546,7 @@ def main():
     try:
         if args.dialogue:
             from tain_agent.core.dialogue import DialogueBridge
-            dialogue = DialogueBridge(agent)
+            dialogue = DialogueBridge(agent, kernel=kernel)
             dialogue.run()
         else:
             exit_code = agent.run()

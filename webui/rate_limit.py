@@ -22,10 +22,24 @@ class TokenBucket:
         return False
 
 
-_buckets: dict[str, TokenBucket] = defaultdict(lambda: TokenBucket(rate=60))
+# Module-level rate; call configure_rate_limits() to override from config.
+_default_rate: int = 60
+_buckets: dict[str, TokenBucket] = {}
+
+
+def _make_bucket() -> TokenBucket:
+    return TokenBucket(rate=_default_rate)
+
+
+def configure_rate_limits(rate: int) -> None:
+    """Set the chat rate limit (requests per minute). Call once at startup."""
+    global _default_rate
+    _default_rate = rate
 
 
 def check_rate_limit(client_ip: str) -> bool:
+    if client_ip not in _buckets:
+        _buckets[client_ip] = _make_bucket()
     return _buckets[client_ip].consume()
 
 

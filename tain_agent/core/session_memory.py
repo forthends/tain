@@ -4,8 +4,13 @@ Session Memory — 会话记忆
 Let the agent remember who it talked to and what was discussed.
 Stores user identity and dialogue session summaries persistently.
 
-Data is stored in the existing LongTermMemory under key "dialogue_sessions".
+Supports two backends:
+  - Legacy: tain_agent.core.memory.Memory instance (long_term dictionary)
+  - Plugin: MemoryPlugin (JSON file persistence in workspace/memory/)
 """
+
+import json
+from pathlib import Path
 
 from tain_agent.core.time_utils import now
 
@@ -23,14 +28,24 @@ class SessionMemory:
 
     MAX_SESSIONS = 20  # Keep at most this many session records
 
-    def __init__(self, memory):
-        """Wrap an existing Memory instance.
+    def __init__(self, memory=None, *, memory_plugin=None):
+        """Wrap a persistence backend (legacy Memory or MemoryPlugin).
 
         Args:
-            memory: tain_agent.core.memory.Memory instance (provides long_term persistence)
+            memory: tain_agent.core.memory.Memory instance (legacy backend)
+            memory_plugin: MemoryPlugin instance (new plugin-based backend)
         """
-        self._memory = memory
+        self._memory = memory  # legacy Memory instance (may be None)
+        self._plugin = memory_plugin  # MemoryPlugin instance (may be None)
+        self._persist_path: Path | None = None
         self._current_session: dict | None = None
+
+        # If using plugin, derive persist path from workspace
+        if memory_plugin is not None and memory_plugin._ctx is not None:
+            self._persist_path = (
+                memory_plugin._ctx.workspace_path / "memory" / "dialogue_sessions.json"
+            )
+            self._persist_path.parent.mkdir(parents=True, exist_ok=True)
 
     # ── User identity ─────────────────────────────────────────────────
 
@@ -144,9 +159,23 @@ class SessionMemory:
     # ── Persistence ───────────────────────────────────────────────────
 
     def _load(self) -> dict:
-        """Load dialogue session data from long-term memory."""
-        return self._memory.long_term.get("dialogue_sessions", {})
+        """Load dialogue session data from the active persistence backend."""
+        if self._plugin is not None and self._persist_path is not None:
+            try:
+                if self._persist_path.exists():
+                    return json.loads(self._persist_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+            return {}
+        if self._memory is not None:
+            return self._memory.long_term.get("dialogue_sessions", {})
+        return {}
 
     def _save(self, data: dict) -> None:
-        """Save dialogue session data to long-term memory."""
-        self._memory.remember("dialogue_sessions", data, persist=True)
+        """Save dialogue session data to the active persistence backend."""
+        if self._plugin is not None and self._persist_path is not None:
+            self._persist_path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            return
+        if self._memory is not None:
+            self._memory.remember("dialogue_sessions", data, persist=True)

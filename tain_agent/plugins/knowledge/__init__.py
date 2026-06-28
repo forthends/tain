@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from tain_agent.kernel.protocol import AgentContext, HealthStatus, PluginProtocol
+from tain_agent.plugins.knowledge.goal_manager import GoalManager
 from tain_agent.plugins.knowledge.graph import KnowledgeGraph, KnowledgeSnapshot
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class KnowledgePlugin:
         self._ctx: AgentContext | None = None
         self._dynamic: list[dict[str, Any]] = []
         self._graph: KnowledgeGraph = KnowledgeGraph()
+        self._goals: GoalManager = GoalManager()
         self._persist_path: Path | None = None
 
     # ── PluginProtocol ──────────────────────────────────────────────
@@ -43,10 +45,14 @@ class KnowledgePlugin:
         self._persist_path = ctx.workspace_path / "knowledge" / "graph.json"
         self._persist_path.parent.mkdir(parents=True, exist_ok=True)
         self._load()
+        goals_path = ctx.workspace_path / "knowledge" / "goals.json"
+        self._goals.initialize(goals_path)
 
     def shutdown(self) -> None:
         self._save()
+        self._goals._save()
         self._dynamic.clear()
+        self._goals._goals.clear()
         self._graph = KnowledgeGraph()
         self._ctx = None
 
@@ -64,6 +70,7 @@ class KnowledgePlugin:
         return {
             "dynamic": list(self._dynamic),
             "graph": self._graph.to_dict(),
+            "goals": [g.to_dict() for g in self._goals._goals.values()],
         }
 
     def restore(self, data: dict[str, Any]) -> None:
@@ -71,6 +78,12 @@ class KnowledgePlugin:
             self._dynamic = list(data["dynamic"])
         if "graph" in data:
             self._graph = KnowledgeGraph.from_dict(data["graph"])
+        if "goals" in data:
+            from tain_agent.plugins.knowledge.goal_manager import Goal
+            self._goals._goals.clear()
+            for gd in data["goals"]:
+                goal = Goal.from_dict(gd)
+                self._goals._goals[goal.id] = goal
 
     # ── PRAL hooks ──────────────────────────────────────────────────
 
@@ -131,6 +144,13 @@ class KnowledgePlugin:
         except Exception as e:
             logger.warning("Failed to load knowledge graph: %s — starting fresh", e)
             self._graph = KnowledgeGraph()
+
+    # ── Goal Manager ─────────────────────────────────────────────────
+
+    @property
+    def goals(self) -> GoalManager:
+        """Access the agent's goal manager."""
+        return self._goals
 
     # ── Knowledge API ───────────────────────────────────────────────
 

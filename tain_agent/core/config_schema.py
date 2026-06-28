@@ -44,6 +44,20 @@ class ExplorationConfigSchema(BaseModel):
     min_action_categories: int = 2
 
 
+class EvolutionConfigSchema(BaseModel):
+    """Autonomous evolution loop configuration."""
+    min_interval_seconds: int = Field(default=300, ge=60,
+        description="Minimum seconds between evolution cycles")
+    max_improvements_per_session: int = Field(default=10, ge=1, le=100,
+        description="Max improvements per agent session")
+    max_generate_retries: int = Field(default=3, ge=1, le=5,
+        description="Max LLM code generation retries per capability")
+    rollback_on_failure_count: int = Field(default=3, ge=1, le=10,
+        description="Consecutive tool failures before auto-rollback")
+    contract_enforcement: str = Field(default="strict",
+        description="Behavior contract enforcement: strict | warn | off")
+
+
 class DiversityConstraintsSchema(BaseModel):
     allow_network: bool = True
     allow_file_write: bool = True
@@ -159,6 +173,7 @@ class AppConfig(BaseModel):
     diversity: DiversitySchema = Field(default_factory=DiversitySchema)
     drives: DrivesSchema = Field(default_factory=DrivesSchema)
     forge: ForgeConfigSchema = Field(default_factory=ForgeConfigSchema)
+    evolution: EvolutionConfigSchema = Field(default_factory=EvolutionConfigSchema)
     metrics: MetricsSchema = Field(default_factory=MetricsSchema)
     safety: SafetySchema = Field(default_factory=SafetySchema)
     logging: LoggingSchema = Field(default_factory=LoggingSchema)

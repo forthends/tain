@@ -128,9 +128,9 @@ def check_agent_health() -> dict:
         health["ok"] = False
         health["issues"].append("config.yaml missing")
 
-    if not (PROJECT_ROOT / "tain_agent" / "core" / "agent.py").exists():
+    if not (PROJECT_ROOT / "tain_agent" / "kernel" / "__init__.py").exists():
         health["ok"] = False
-        health["issues"].append("agent.py missing")
+        health["issues"].append("kernel missing (AgentKernel entry point)")
 
     if not (PROJECT_ROOT / "tain_agent" / "tools" / "forged" / "regression_tester.py").exists():
         health["issues"].append("agent may not be bootstrapped yet")
