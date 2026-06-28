@@ -256,6 +256,8 @@ def main():
     pkg_export = pkg_sub.add_parser("export", help="Export a package")
     pkg_export.add_argument("--name", required=True)
     pkg_export.add_argument("--output", default="dist")
+    pkg_export.add_argument("--format", choices=["dir", "tar.gz"], default="dir",
+                            help="Export format (default: dir)")
 
     pkg_import = pkg_sub.add_parser("import", help="Import a package")
     pkg_import.add_argument("--source", required=True, dest="import_source")
@@ -277,7 +279,8 @@ def main():
         elif args.package_action == "validate":
             result = cmd_package_validate(name=args.name)
         elif args.package_action == "export":
-            result = cmd_package_export(name=args.name, output=_Path(args.output))
+            result = cmd_package_export(name=args.name, output=_Path(args.output),
+                                         format=args.format)
         elif args.package_action == "import":
             result = cmd_package_import(source=_Path(args.import_source))
         else:

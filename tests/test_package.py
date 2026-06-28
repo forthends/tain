@@ -319,6 +319,41 @@ def test_cmd_package_export(tmp_path):
     assert not (export_dir / "ExportMe" / "_runtime").exists()
 
 
+def test_cmd_package_export_targz(tmp_path):
+    import tarfile
+    packages_dir = tmp_path / "packages"
+    packages_dir.mkdir()
+    cmd_package_create(name="TarGzTest", kind="agent", version="0.1.0",
+                       packages_root=packages_dir)
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+    result = cmd_package_export(name="TarGzTest", output=export_dir,
+                                packages_root=packages_dir, format="tar.gz")
+    assert result["ok"] is True
+    archive = Path(result["path"])
+    assert archive.exists()
+    assert archive.suffix == ".gz"
+    assert archive.name.endswith(".tar.gz")
+
+
+def test_cmd_package_export_targz_excludes_runtime(tmp_path):
+    import tarfile
+    packages_dir = tmp_path / "packages"
+    packages_dir.mkdir()
+    cmd_package_create(name="NoRuntime", kind="agent", version="0.1.0",
+                       packages_root=packages_dir)
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+    result = cmd_package_export(name="NoRuntime", output=export_dir,
+                                packages_root=packages_dir, format="tar.gz")
+    assert result["ok"] is True
+    archive_path = Path(result["path"])
+    with tarfile.open(archive_path, "r:gz") as tar:
+        names = tar.getnames()
+        runtime_files = [n for n in names if "_runtime" in n]
+        assert runtime_files == [], f"_runtime found in tar.gz: {runtime_files}"
+
+
 def test_get_layer_infra(tmp_path):
     packages_dir = tmp_path / "packages"
     packages_dir.mkdir()

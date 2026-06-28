@@ -62,13 +62,31 @@ def cmd_package_list(
     }
 
 
-def cmd_package_export(name: str, output: Path, packages_root: Optional[Path] = None) -> dict:
-    """Export a package by copying it (excluding _runtime/) to output dir."""
+def cmd_package_export(name: str, output: Path, packages_root: Optional[Path] = None,
+                       format: str = "dir") -> dict:
+    """Export a package by copying it (excluding _runtime/) to output dir.
+
+    format: "dir" (default) or "tar.gz"
+    """
     root = Path(packages_root) if packages_root else DEFAULT_PACKAGES_ROOT
     reg = PackageRegistry(packages_root=root)
     pkg = reg.get_package(name)
     if pkg is None:
         return {"ok": False, "error": f"Package not found: {name}"}
+
+    if format == "tar.gz":
+        import tarfile
+        archive_path = Path(output) / f"{name}.tar.gz"
+        archive_path.parent.mkdir(parents=True, exist_ok=True)
+        with tarfile.open(archive_path, "w:gz") as tar:
+            for item in sorted(pkg.path.rglob("*")):
+                if "_runtime" in item.parts:
+                    continue
+                if item.is_file():
+                    tar.add(str(item), arcname=str(item.relative_to(pkg.path.parent)))
+        return {"ok": True, "path": str(archive_path)}
+
+    # Directory mode (original)
     dest = Path(output) / name
     if dest.exists():
         shutil.rmtree(dest)
