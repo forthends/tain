@@ -213,3 +213,69 @@ def test_package_registry_list_by_kind():
         assert agents[0].name == "Agent1"
         assert len(tools) == 1
         assert tools[0].name == "Tool1"
+
+
+# ---- CLI handler tests (Task 4) ----
+
+from tain_agent.package.cli import cmd_package_create, cmd_package_validate, cmd_package_export, cmd_package_import, cmd_package_list
+
+
+def test_cmd_package_create(tmp_path):
+    packages_dir = tmp_path / "packages"
+    packages_dir.mkdir()
+    result = cmd_package_create(
+        name="TestAgent",
+        kind="agent",
+        version="0.1.0",
+        evolution_mode="chaos",
+        packages_root=packages_dir,
+    )
+    assert result["ok"] is True
+    assert (packages_dir / "TestAgent" / "manifest.json").exists()
+    assert (packages_dir / "TestAgent" / "capability" / "tools").exists()
+
+
+def test_cmd_package_create_duplicate(tmp_path):
+    packages_dir = tmp_path / "packages"
+    packages_dir.mkdir()
+    cmd_package_create(name="Dup", kind="agent", version="0.1.0", packages_root=packages_dir)
+    result = cmd_package_create(name="Dup", kind="agent", version="0.2.0", packages_root=packages_dir)
+    assert result["ok"] is False
+    assert "already exists" in result["error"]
+
+
+def test_cmd_package_validate_ok(tmp_path):
+    packages_dir = tmp_path / "packages"
+    packages_dir.mkdir()
+    cmd_package_create(name="Valid", kind="agent", version="0.1.0", packages_root=packages_dir)
+    result = cmd_package_validate(name="Valid", packages_root=packages_dir)
+    assert result["ok"] is True
+
+
+def test_cmd_package_validate_missing(tmp_path):
+    packages_dir = tmp_path / "packages"
+    packages_dir.mkdir()
+    result = cmd_package_validate(name="Ghost", packages_root=packages_dir)
+    assert result["ok"] is False
+
+
+def test_cmd_package_list(tmp_path):
+    packages_dir = tmp_path / "packages"
+    packages_dir.mkdir()
+    cmd_package_create(name="A", kind="agent", version="0.1.0", packages_root=packages_dir)
+    cmd_package_create(name="B", kind="toolset", version="0.1.0", packages_root=packages_dir)
+    result = cmd_package_list(packages_root=packages_dir)
+    assert len(result["packages"]) == 2
+
+
+def test_cmd_package_export(tmp_path):
+    packages_dir = tmp_path / "packages"
+    packages_dir.mkdir()
+    cmd_package_create(name="ExportMe", kind="agent", version="0.1.0", packages_root=packages_dir)
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+    result = cmd_package_export(name="ExportMe", output=export_dir, packages_root=packages_dir)
+    assert result["ok"] is True
+    assert (export_dir / "ExportMe").exists()
+    # _runtime should NOT be in export
+    assert not (export_dir / "ExportMe" / "_runtime").exists()
