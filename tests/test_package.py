@@ -64,6 +64,43 @@ def test_runtime_dir_not_in_layers():
     assert "_runtime" not in [layer.value for layer in LayerKind]
 
 
+# ---- AgentContext package/manifest/active_plugins tests (Task 2) ----
+
+from tain_agent.kernel.protocol import AgentContext
+
+
+def test_agent_context_has_package_fields():
+    ctx = AgentContext(
+        agent_name="test",
+        agent_id="test-id",
+        evolution_mode="chaos",
+        workspace_path=Path("/tmp/test"),
+        config={},
+        kernel_version="0.11.0",
+        package=None,
+        manifest=None,
+        active_plugins=[],
+    )
+    assert ctx.package is None
+    assert ctx.manifest is None
+    assert ctx.active_plugins == []
+
+
+def test_agent_context_new_fields_are_optional():
+    """New fields have defaults — existing callers are not broken."""
+    ctx = AgentContext(
+        agent_name="test",
+        agent_id="test-id",
+        evolution_mode="chaos",
+        workspace_path=Path("/tmp/test"),
+        config={},
+        kernel_version="0.11.0",
+    )
+    assert ctx.package is None
+    assert ctx.manifest is None
+    assert ctx.active_plugins == []
+
+
 # ---- Manifest tests (Task 2) ----
 
 from tain_agent.package.manifest import (

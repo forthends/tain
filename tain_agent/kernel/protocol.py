@@ -3,7 +3,11 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tain_agent.package import AgentPackage as AgentPackageType
+    from tain_agent.package.manifest import Manifest as ManifestType
 
 
 @dataclass
@@ -21,6 +25,11 @@ class AgentContext:
     workspace_path: Path
     config: dict
     kernel_version: str
+
+    # Package model linkage (added Round 1)
+    package: AgentPackageType | None = None
+    manifest: ManifestType | None = None
+    active_plugins: list[str] = field(default_factory=list)
 
 
 @runtime_checkable
