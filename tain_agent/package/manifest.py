@@ -12,6 +12,10 @@ class ManifestValidationError(Exception):
     pass
 
 
+class PackageIntegrityError(Exception):
+    """Raised when a package's declared file hashes don't match actual files."""
+
+
 # ---- Sub-models ----
 
 @dataclass
