@@ -4,7 +4,7 @@ import pytest
 import tempfile
 import os
 from pathlib import Path
-from tain_agent.storage_registry import (
+from tain_agent.core.storage_registry import (
     resolve_content_path,
     STORAGE_SCHEMA,
     WORKSPACE_DIRS,

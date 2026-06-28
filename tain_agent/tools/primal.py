@@ -629,7 +629,7 @@ def resolve_storage_path(content_type: str, filename: str) -> str:
       resolve_storage_path("journal", "2026-05.md") → journal/2026-05.md
       resolve_storage_path("report", "v0.5.0.md") → reports/v0.5.0.md
     """
-    from tain_agent.storage_registry import resolve_content_path, get_schema_description
+    from tain_agent.core.storage_registry import resolve_content_path, get_schema_description
     ws = _WORKSPACE_DIR
     if ws is None:
         ws = Path(os.environ.get("WORKSPACE_PATH", "."))

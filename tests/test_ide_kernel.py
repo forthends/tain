@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 from tain_agent.kernel import AgentKernel, AgentContext
-from tain_agent.kernel.lifecycle import PLUGIN_LAYOUT
+from tain_agent.kernel import PLUGIN_LAYOUT
 
 class TestIdeLayout:
     def test_ide_layout_has_five_plugins(self):
