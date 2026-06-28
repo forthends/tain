@@ -106,30 +106,18 @@ def get_registry() -> dict:
 
 
 def _agent_path(name: str) -> Path:
-    """Return the agent's package directory, falling back to legacy workspace."""
-    pkg_path = PACKAGES_ROOT / name
-    if pkg_path.is_dir():
-        return pkg_path
-    legacy = WORKSPACE_ROOT / name
-    if legacy.is_dir():
-        return legacy
-    return pkg_path  # prefer new path
+    """Return the agent's package directory."""
+    return PACKAGES_ROOT / name
 
 
-def _agent_file(name: str, new_rel: str, old_rel: str) -> Path:
-    """Resolve a file path preferring new package layout, falling back to legacy."""
-    new_path = _agent_path(name) / new_rel
-    if new_path.exists():
-        return new_path
-    return WORKSPACE_ROOT / name / old_rel
+def _agent_file(name: str, rel: str, _old_rel: str = "") -> Path:
+    """Resolve a file path within the agent's package directory."""
+    return _agent_path(name) / rel
 
 
-def _agent_dir(name: str, new_rel: str, old_rel: str) -> Path:
-    """Resolve a directory path preferring new layout, falling back to legacy."""
-    new_path = _agent_path(name) / new_rel
-    if new_path.is_dir():
-        return new_path
-    return WORKSPACE_ROOT / name / old_rel
+def _agent_dir(name: str, rel: str, _old_rel: str = "") -> Path:
+    """Resolve a directory path within the agent's package directory."""
+    return _agent_path(name) / rel
 
 
 def list_agents() -> list[dict]:
@@ -139,34 +127,22 @@ def list_agents() -> list[dict]:
         running = is_agent_running(name)
         agent_dir = _agent_path(name)
 
-        # Try manifest first (new format), then version.json (legacy)
         manifest = _read_json(agent_dir / "manifest.json")
-        version = _read_json(agent_dir / "version.json")
+        version = manifest.get("package", {}) if manifest else {}
 
         personality = _read_json(agent_dir / "cognitive" / "identity" / "profile.json")
-        if personality is None:
-            personality = _read_json(agent_dir / "state" / "personality.json")
-
         memory = _read_json(agent_dir / "_runtime" / "state" / "pral_phase.json")
-        if memory is None:
-            memory = _read_json(agent_dir / "logs" / "memory.json")
 
         # Count forged tools
         forged_dir = agent_dir / "capability" / "tools"
-        if not forged_dir.exists():
-            forged_dir = agent_dir / "forged_tools"
         tool_count = len(list(forged_dir.glob("*.meta.json"))) if forged_dir.exists() else 0
 
         # Count decisions
         decisions = _read_jsonl(agent_dir / "cognitive" / "decisions.jsonl")
-        if not decisions:
-            decisions = _read_jsonl(agent_dir / "logs" / "decisions.jsonl")
         decision_count = len(decisions)
 
         # Count lineage events
         lineage = _read_jsonl(agent_dir / "expression" / "lineage.jsonl")
-        if not lineage:
-            lineage = _read_jsonl(agent_dir / "logs" / "lineage.jsonl")
         lineage_count = len(lineage)
 
         # Count knowledge files — reuse the TTL-cached listing to avoid
