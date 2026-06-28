@@ -37,6 +37,15 @@ class AgentRuntime:
         # Parse manifest
         self.manifest: Manifest = parse_manifest(package.manifest_path)
 
+        # Integrity check: verify declared file hashes
+        from tain_agent.package.manifest import PackageIntegrityError
+        hash_errors = self.manifest.verify_hashes(package.path)
+        if hash_errors:
+            raise PackageIntegrityError(
+                f"Package '{package.name}' integrity check failed:\n" +
+                "\n".join(f"  - {e}" for e in hash_errors)
+            )
+
         # Build context
         self.ctx = AgentContext(
             agent_name=self.manifest.package.name,
