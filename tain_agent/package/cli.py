@@ -57,6 +57,7 @@ def cmd_package_list(
     pkg_kind = PackageKind(kind) if kind else None
     pkgs = reg.list_packages(kind=pkg_kind)
     return {
+        "ok": True,
         "packages": [{"name": p.name, "kind": p.kind.value, "version": p.version, "path": str(p.path)} for p in pkgs],
     }
 

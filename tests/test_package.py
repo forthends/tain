@@ -265,6 +265,7 @@ def test_cmd_package_list(tmp_path):
     cmd_package_create(name="A", kind="agent", version="0.1.0", packages_root=packages_dir)
     cmd_package_create(name="B", kind="toolset", version="0.1.0", packages_root=packages_dir)
     result = cmd_package_list(packages_root=packages_dir)
+    assert result["ok"] is True
     assert len(result["packages"]) == 2
 
 
