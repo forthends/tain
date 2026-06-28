@@ -70,8 +70,7 @@ class ToolPlugin:
 
         # Persist lineage events to expression/ for the new package layout.
         self._lineage = LineageTracker(
-            lineage_dir=str(ctx.workspace_path / "expression"),
-            lineage_file="lineage.jsonl",
+            lineage_path=ctx.workspace_path / "expression" / "lineage.jsonl",
         )
 
         self._registry = ToolRegistry()

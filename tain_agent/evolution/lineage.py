@@ -38,9 +38,8 @@ def _hash_file(filepath: Path) -> str:
 class LineageTracker:
     """Tracks the evolutionary lineage of the agent's artifacts."""
 
-    def __init__(self, lineage_dir: str = "tain_agent/logs",
-                 lineage_file: str = "lineage.jsonl"):
-        self.lineage_path = Path(lineage_dir) / lineage_file
+    def __init__(self, lineage_path: Path):
+        self.lineage_path = Path(lineage_path)
         self.lineage_path.parent.mkdir(parents=True, exist_ok=True)
         self._entries: list[dict] = []
         self._load()
@@ -134,6 +133,29 @@ class LineageTracker:
             "parent": "none",
             "child": code_hash,
             "reasoning": reasoning,
+        }
+        self._append(entry)
+        return entry
+
+    def record_mutation(self, version: str, layer: str,
+                        change_type: str, detail: str = "") -> dict:
+        """Record a mutation event in the package lineage."""
+        entry = {
+            "event": "mutation",
+            "version": version,
+            "layer": layer,
+            "change": change_type,
+            "detail": detail,
+        }
+        self._append(entry)
+        return entry
+
+    def record_rollback(self, version: str, reason: str = "") -> dict:
+        """Record a rollback event."""
+        entry = {
+            "event": "rollback",
+            "version": version,
+            "reason": reason,
         }
         self._append(entry)
         return entry
