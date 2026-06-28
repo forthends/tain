@@ -38,7 +38,7 @@ STANDARD_FACTORIES = {
 }
 
 # Re-export prompts for backward compatibility
-from tain_agent.kernel.prompts import (
+from tain_agent.runtime.prompts import (
     BOOTSTRAP_SYSTEM_PROMPT,
     SPECIFIED_BOOTSTRAP_SYSTEM_PROMPT,
     EVOLVE_SYSTEM_PROMPT,
