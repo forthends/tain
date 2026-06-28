@@ -2,6 +2,7 @@
 import pytest
 from tain_agent.runtime.plugin_loader import PluginLoader, PluginVersionError, semver_match
 from tain_agent.kernel.protocol import AgentContext, HealthStatus
+from tain_agent.kernel.dispatch import Dispatch, RouteNotFound
 from pathlib import Path
 
 
@@ -142,3 +143,31 @@ def test_plugin_loader_unknown_plugin(loader, ctx):
     manifest_plugins = {"nonexistent": "^1.0.0"}
     with pytest.raises(KeyError):
         loader.assemble(manifest_plugins, ctx)
+
+
+def test_route_not_found_raises():
+    d = Dispatch()
+    with pytest.raises(RouteNotFound) as exc:
+        d.call("nonexistent.route")
+    assert "nonexistent.route" in str(exc.value)
+    assert exc.value.event == "nonexistent.route"
+
+
+def test_call_or_none_returns_none_for_missing_route():
+    d = Dispatch()
+    result = d.call_or_none("nonexistent.route")
+    assert result is None
+
+
+def test_call_or_none_returns_value_for_registered_route():
+    d = Dispatch()
+    d.register("test.echo", lambda x: x)
+    result = d.call_or_none("test.echo", "hello")
+    assert result == "hello"
+
+
+def test_call_still_works_for_registered_routes():
+    d = Dispatch()
+    d.register("test.add", lambda a, b: a + b)
+    result = d.call("test.add", 1, 2)
+    assert result == 3

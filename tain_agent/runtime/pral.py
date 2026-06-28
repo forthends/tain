@@ -170,7 +170,7 @@ class PRALLoop:
 
         if tool_calls:
             for tc in tool_calls:
-                result = self._dispatch.call("tool.call", tc.name, **tc.input)
+                result = self._dispatch.call_or_none("tool.call", tc.name, **tc.input)
                 if result is None:
                     content = f"Tool '{tc.name}' returned no result (possibly unhandled or failed)"
                 elif isinstance(result, str):
