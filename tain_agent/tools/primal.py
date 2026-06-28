@@ -614,6 +614,43 @@ def run_test(test_target: str, test_type: str = "function",
         }
 
 
+# Storage schema (inlined from storage_registry — package-layer aligned)
+_STORAGE_SCHEMA: dict[str, str] = {
+    "poem": "expression/artifacts/poetry/",
+    "song": "expression/artifacts/poetry/",
+    "story": "expression/artifacts/poetry/",
+    "knowledge": "cognitive/knowledge/",
+    "concept": "cognitive/knowledge/concepts/",
+    "journal": "expression/artifacts/journal/",
+    "reflection": "expression/artifacts/journal/",
+    "report": "expression/artifacts/reports/",
+    "milestone": "expression/artifacts/reports/",
+    "commitment": "expression/artifacts/",
+    "goal": "expression/",
+    "tool": "capability/tools/",
+    "test": "capability/tests/",
+    "note": "cognitive/memory/",
+    "creative": "expression/artifacts/",
+    "letter": "expression/artifacts/",
+    "general": "expression/artifacts/",
+}
+
+
+def _resolve_content_path(workspace: Path, content_type: str,
+                          filename: str) -> Path:
+    subdir = _STORAGE_SCHEMA.get(content_type, "expression/artifacts/")
+    target = workspace / subdir / filename
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _get_schema_description() -> str:
+    lines = ["Content type → directory mapping:"]
+    for ct, d in sorted(_STORAGE_SCHEMA.items()):
+        lines.append(f"  {ct} → {d}")
+    return "\n".join(lines)
+
+
 def resolve_storage_path(content_type: str, filename: str) -> str:
     """Resolve a semantic content type + filename to a workspace path.
 
@@ -629,14 +666,13 @@ def resolve_storage_path(content_type: str, filename: str) -> str:
       resolve_storage_path("journal", "2026-05.md") → journal/2026-05.md
       resolve_storage_path("report", "v0.5.0.md") → reports/v0.5.0.md
     """
-    from tain_agent.core.storage_registry import resolve_content_path, get_schema_description
     ws = _WORKSPACE_DIR
     if ws is None:
         ws = Path(os.environ.get("WORKSPACE_PATH", "."))
-    target = resolve_content_path(ws, content_type, filename)
+    target = _resolve_content_path(ws, content_type, filename)
     return (
         f"Resolved path: {target.relative_to(ws)}\n\n"
-        f"{get_schema_description()}"
+        f"{_get_schema_description()}"
     )
 
 
