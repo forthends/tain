@@ -1195,3 +1195,38 @@ class AutonomousEvolutionLoop:
             )
         except Exception:
             logger.debug("Failed to load evolution loop state.", exc_info=True)
+
+
+# ── Package-level evolution adapter ──────────────────────────────────────────
+
+def create_package_evolver(llm_backend):
+    """Create (gap_detector, mutation_generator, contract_checker, online_verifier)
+    callables for use with AgentPackage.evolve().
+
+    This is the bridge between the existing evolution/ module (LLM-powered
+    gap detection and mutation generation) and the new package-level evolve().
+    """
+    from tain_agent.evolution.behavior_contract import BehaviorContract
+
+    def gap_detector(package):
+        from tain_agent.evolution.capability import assess_capabilities
+        return assess_capabilities(package)
+
+    def mutation_generator(gap, package):
+        # Wire to existing LLM-powered code generation in AutonomousEvolutionLoop
+        raise NotImplementedError(
+            "Wire in existing AutonomousEvolutionLoop._generate_tool_code logic"
+        )
+
+    def contract_checker(mutation, package):
+        contract = BehaviorContract()
+        try:
+            contract.validate(mutation)
+            return True, []
+        except Exception as e:
+            return False, [str(e)]
+
+    def online_verifier(mutation, package):
+        return True, []
+
+    return gap_detector, mutation_generator, contract_checker, online_verifier
