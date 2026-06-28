@@ -44,6 +44,9 @@ class AgentPackage:
     version: str
     packages_root: Path
 
+    # Internal cache (not an init parameter)
+    _lineage: object | None = field(default=None, repr=False, init=False)
+
     @property
     def path(self) -> Path:
         return self.packages_root / self.name
@@ -55,6 +58,15 @@ class AgentPackage:
     @property
     def runtime_dir(self) -> Path:
         return self.path / RUNTIME_DIR
+
+    @property
+    def lineage(self):
+        """Lazy-loaded LineageTracker for this package."""
+        if self._lineage is None:
+            from tain_agent.evolution.lineage import LineageTracker
+            lineage_path = self.path / "expression" / "lineage.jsonl"
+            self._lineage = LineageTracker(lineage_path=lineage_path)
+        return self._lineage
 
     def layer_dir(self, layer: LayerKind) -> Path:
         return self.path / layer.value
@@ -71,6 +83,151 @@ class AgentPackage:
                 (layer_path / sub).mkdir(parents=True, exist_ok=True)
         for sub in RUNTIME_SUBDIRS:
             (self.runtime_dir / sub).mkdir(parents=True, exist_ok=True)
+
+    # ── Evolution methods ──
+
+    def apply_mutation(self, mutation) -> None:
+        """Atomically apply a mutation to this package.
+
+        1. Write all files to a temp dir
+        2. Verify all writes succeeded
+        3. Rename into place
+        4. Update manifest
+        5. Bump version
+        6. Record lineage
+        """
+        import shutil
+        import json
+        from tain_agent.package.evolution import Mutation
+
+        tmp_dir = self.path / "_mutation_tmp"
+        tmp_dir.mkdir(exist_ok=True)
+
+        try:
+            # Stage 1: Write all files to temp dir
+            written = []
+            for rel_path, content_bytes in mutation.files_to_write:
+                dest = tmp_dir / rel_path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(content_bytes)
+                written.append((rel_path, dest))
+
+            # Stage 2: All succeeded — rename into place
+            for rel_path, tmp_file in written:
+                final = self.path / rel_path
+                final.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(tmp_file), str(final))
+
+            # Stage 3: Update manifest
+            if mutation.manifest_patch:
+                current_manifest = json.loads(self.manifest_path.read_text())
+                _deep_merge(current_manifest, mutation.manifest_patch)
+                self.manifest_path.write_text(
+                    json.dumps(current_manifest, indent=2, ensure_ascii=False)
+                )
+
+            # Stage 4: Bump version
+            new_version = bump_version(self.version, mutation.layer)
+            _update_manifest_version(self.manifest_path, new_version)
+            self.version = new_version
+
+            # Stage 5: Record lineage
+            self.lineage.record_mutation(
+                version=new_version,
+                layer=mutation.layer.value,
+                change_type=mutation.change_type,
+                detail=mutation.detail,
+            )
+        except Exception:
+            raise
+        finally:
+            if tmp_dir.exists():
+                shutil.rmtree(tmp_dir)
+
+    def rollback_mutation(self, mutation) -> None:
+        """Roll back a previously applied mutation.
+
+        Removes files written by the mutation and records a rollback event.
+        """
+        # Remove files
+        for rel_path, _content_bytes in mutation.files_to_write:
+            file_path = self.path / rel_path
+            if file_path.exists():
+                file_path.unlink()
+
+        # Record rollback lineage event
+        self.lineage.record_rollback(
+            version=self.version,
+            reason=f"Quality gate failed for {mutation.change_type}: {mutation.detail}",
+        )
+
+    def evolve(
+        self,
+        gap_detector,
+        mutation_generator,
+        contract_checker,
+        online_verifier,
+    ):
+        """Run one complete 5-stage evolution cycle.
+
+        gap_detector(package) -> dict | None
+        mutation_generator(gap, package) -> Mutation
+        contract_checker(mutation, package) -> (bool, list[str])
+        online_verifier(mutation, package) -> (bool, list[str])
+        """
+        from tain_agent.package.evolution import EvolutionResult
+
+        # Stage 1: DETECT_GAP
+        gap = gap_detector(self)
+        if gap is None:
+            return EvolutionResult.no_gap(self.version)
+
+        # Stage 2: GENERATE_MUTATION
+        mutation = mutation_generator(gap, self)
+
+        # Stage 3: CONTRACT_CHECK
+        ok, errors = contract_checker(mutation, self)
+        if not ok:
+            return EvolutionResult.contract_failed(self.version, mutation, errors)
+
+        # Stage 4: WRITE_PACKAGE
+        version_before = self.version
+        try:
+            self.apply_mutation(mutation)
+        except Exception as e:
+            return EvolutionResult.write_failed(version_before, mutation, [str(e)])
+
+        # Stage 5: ONLINE_VERIFY
+        ok, errors = online_verifier(mutation, self)
+        if not ok:
+            self.rollback_mutation(mutation)
+            return EvolutionResult.rolled_back(mutation, errors)
+
+        return EvolutionResult.success_result(version_before, self.version, mutation)
+
+
+def _deep_merge(base: dict, patch: dict) -> None:
+    """Merge patch into base in-place (shallow merge for lists)."""
+    for key, value in patch.items():
+        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+            _deep_merge(base[key], value)
+        elif key in base and isinstance(base[key], list) and isinstance(value, list):
+            base[key].extend(value)
+        else:
+            base[key] = value
+
+
+def _update_manifest_version(manifest_path: Path, new_version: str) -> None:
+    """Update package.version and package.updated_at in manifest."""
+    import json
+    from datetime import datetime, timezone
+
+    manifest = json.loads(manifest_path.read_text())
+    manifest["package"]["version"] = new_version
+    manifest["package"]["updated_at"] = (
+        datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
 
 
 class PackageRegistry:
