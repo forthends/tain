@@ -280,3 +280,30 @@ def test_cmd_package_export(tmp_path):
     assert (export_dir / "ExportMe").exists()
     # _runtime should NOT be in export
     assert not (export_dir / "ExportMe" / "_runtime").exists()
+
+
+from tain_agent.package import bump_version
+from tain_agent.package import LayerKind as LK
+
+
+def test_bump_version_patch():
+    assert bump_version("0.1.0", LK.EXPRESSION) == "0.1.1"
+    assert bump_version("0.7.3", LK.EXPRESSION) == "0.7.4"
+
+
+def test_bump_version_minor():
+    assert bump_version("0.1.0", LK.CAPABILITY) == "0.2.0"
+    assert bump_version("0.1.0", LK.COGNITIVE) == "0.2.0"
+
+
+def test_bump_version_major():
+    assert bump_version("0.1.0", LK.INFRA) == "1.0.0"
+    assert bump_version("0.7.3", LK.INFRA) == "1.0.0"
+
+
+def test_bump_version_minor_resets_patch():
+    assert bump_version("0.7.3", LK.CAPABILITY) == "0.8.0"
+
+
+def test_bump_version_identity_is_minor():
+    assert bump_version("0.7.3", "cognitive/identity") == "0.8.0"

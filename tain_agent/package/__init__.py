@@ -164,3 +164,24 @@ class PackageRegistry:
         hash_errors = manifest.verify_hashes(pkg.path)
         errors.extend(hash_errors)
         return len(errors) == 0, errors
+
+
+def bump_version(current: str, layer: str | LayerKind) -> str:
+    """Bump semver according to evolution layer rules.
+
+    expression → PATCH
+    capability, cognitive, cognitive/identity → MINOR
+    infra → MAJOR
+    """
+    layer_str = layer.value if isinstance(layer, LayerKind) else layer
+    parts = [int(p) for p in current.split(".")]
+    if len(parts) != 3:
+        raise ValueError(f"Invalid semver: {current}")
+    major, minor, patch = parts
+
+    if layer_str in ("infra",):
+        return f"{major + 1}.0.0"
+    elif layer_str in ("capability", "cognitive", "cognitive/identity"):
+        return f"{major}.{minor + 1}.0"
+    else:
+        return f"{major}.{minor}.{patch + 1}"
