@@ -965,7 +965,7 @@ def register_primal_tools(registry, workspace_dir: str = None) -> None:
         "to know what capabilities you have at runtime.",
     )
     registry.register(
-        "describe_tool", lambda tool_name, **kw: describe_tool(registry, tool_name),
+        "describe_tool", lambda **kw: describe_tool(registry, kw["tool_name"]),
         "Get detailed information about a specific tool including its parameters "
         "and whether it is read-only.",
         {"tool_name": {"type": "string", "description": "Name of the tool to describe.", "required": True}},
