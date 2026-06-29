@@ -1227,12 +1227,14 @@ def create_package_evolver(runtime):
     """
     import json as _json  # noqa: F841 — used in Task 3 (mutation_generator)
     from tain_agent.evolution.behavior_contract import BehaviorContract
+    from tain_agent.package.evolution import Mutation
+    from tain_agent.package import LayerKind
 
     # Extract dependencies from runtime
     llm_backend = getattr(runtime, '_llm_backend', None)  # noqa: F841 — used in Task 3 (mutation_generator)
     tool_plugin = runtime.get_plugin("ToolPlugin")
     knowledge_plugin = runtime.get_plugin("KnowledgePlugin")  # noqa: F841 — used in Task 4 (online_verifier)
-    _ = (_json, llm_backend, knowledge_plugin)  # suppress unused warnings until wired in Tasks 3/4
+    _ = knowledge_plugin  # suppress unused warning until wired in Task 4
 
     def gap_detector(package):
         """Detect capability gaps by comparing tool count against threshold.
@@ -1261,10 +1263,83 @@ def create_package_evolver(runtime):
         }
 
     def mutation_generator(gap, package):
-        # Placeholder — implemented in Task 3
-        # NOTE: this raise will be replaced with actual LLM-powered code
-        # generation; callers will add try/except once the real path is wired.
-        raise EvolutionError("mutation_generator not yet implemented")
+        """Generate tool code via LLM from a gap specification.
+
+        Uses the LLM backend to produce Python code implementing the
+        capability described by the gap. Returns a Mutation with the
+        generated code as a file to write.
+        """
+        if llm_backend is None:
+            raise EvolutionError("No LLM backend available for code generation")
+
+        capability_id = gap.get("capability_id", "unknown")
+        description = gap.get("description", "")
+
+        prompt = (
+            f"You are generating Python tool code for a self-evolving agent.\n\n"
+            f"Capability needed: {capability_id}\n"
+            f"Description: {description}\n\n"
+            f"Generate a single complete Python function that implements this "
+            f"capability. The code will run in a sandbox with limited imports "
+            f"(stdlib whitelist plus declared dependencies).\n\n"
+            f"Return a JSON object with these keys:\n"
+            f'  "code": The complete Python function as a string.\n'
+            f'  "tool_name": A snake_case name for the tool.\n'
+            f'  "description": What the tool does (one line).\n'
+            f'  "parameters": JSON Schema for the function parameters.\n'
+            f'  "dependencies": List of pip package specs needed (e.g. ["requests"]).\n'
+            f'  "test_code": A short assertion to verify the tool works.\n'
+        )
+
+        try:
+            response = llm_backend.create_message(
+                system_prompt="You are a Python code generator for agent tools.",
+                messages=[{"role": "user", "content": prompt}],
+                tools=[],
+            )
+            text = (
+                "\n".join(response.text_blocks)
+                if hasattr(response, 'text_blocks')
+                else str(response)
+            )
+            # Extract JSON from code fences if present
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0]
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0]
+            gen_result = _json.loads(text.strip())
+        except Exception as exc:
+            raise EvolutionError(f"Code generation failed: {exc}") from exc
+
+        code = gen_result.get("code", "")
+        tool_name = gen_result.get("tool_name", capability_id)
+        if not code:
+            raise EvolutionError("LLM returned empty code for mutation")
+
+        # Build a clean importable module: wrap the function code
+        # and add standard imports if not already present
+        lines: list[str] = []
+        if "import " not in code:
+            lines.append("import json")
+            lines.append("import subprocess")
+            lines.append("")
+        lines.append(code)
+        lines.append("")
+        lines.append("")
+        lines.append(f"# Tool: {tool_name}")
+        lines.append(f"# Description: {gen_result.get('description', '')}")
+        lines.append(f"# Generated via autonomous evolution")
+        module_code = "\n".join(lines)
+
+        file_path = f"tools/forged/{tool_name}.py"
+        return Mutation(
+            layer=LayerKind.CAPABILITY,
+            change_type="forge_tool",
+            detail=f"Auto-generated tool '{tool_name}': {gen_result.get('description', '')}",
+            files_to_write=[(file_path, module_code.encode("utf-8"))],
+            manifest_patch={},
+            source_gap=capability_id,
+        )
 
     def contract_checker(mutation, package):
         contract = BehaviorContract()
