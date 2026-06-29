@@ -1316,13 +1316,9 @@ def create_package_evolver(runtime):
         if not code:
             raise EvolutionError("LLM returned empty code for mutation")
 
-        # Build a clean importable module: wrap the function code
-        # and add standard imports if not already present
+        # Build a clean importable module from the LLM-generated code.
+        # The LLM is responsible for declaring its own imports.
         lines: list[str] = []
-        if "import " not in code:
-            lines.append("import json")
-            lines.append("import subprocess")
-            lines.append("")
         lines.append(code)
         lines.append("")
         lines.append("")
@@ -1331,13 +1327,18 @@ def create_package_evolver(runtime):
         lines.append(f"# Generated via autonomous evolution")
         module_code = "\n".join(lines)
 
-        file_path = f"tools/forged/{tool_name}.py"
+        file_path = f"capability/tools/forged/{tool_name}.py"
         return Mutation(
             layer=LayerKind.CAPABILITY,
-            change_type="forge_tool",
+            change_type="new_tool",
             detail=f"Auto-generated tool '{tool_name}': {gen_result.get('description', '')}",
             files_to_write=[(file_path, module_code.encode("utf-8"))],
-            manifest_patch={},
+            manifest_patch={
+                "capability": {
+                    "tools": [{"name": tool_name, "version": "1.0.0",
+                               "path": file_path, "hash": ""}],
+                },
+            },
             source_gap=capability_id,
         )
 
