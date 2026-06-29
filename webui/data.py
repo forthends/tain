@@ -121,14 +121,15 @@ def _agent_dir(name: str, rel: str, _old_rel: str = "") -> Path:
 
 
 def list_agents() -> list[dict]:
-    registry = get_registry()
     agents = []
-    for name, info in registry.get("agents", {}).items():
+    # Discover agents via PackageRegistry (not deprecated _registry.json)
+    for pkg in _registry.list_packages(kind=PackageKind.AGENT):
+        name = pkg.name
         running = is_agent_running(name)
         agent_dir = _agent_path(name)
 
         manifest = _read_json(agent_dir / "manifest.json")
-        version = manifest.get("package", {}) if manifest else {}
+        pkg_info = manifest.get("package", {}) if manifest else {}
 
         personality = _read_json(agent_dir / "cognitive" / "identity" / "profile.json")
         memory = _read_json(agent_dir / "_runtime" / "state" / "pral_phase.json")
@@ -145,8 +146,7 @@ def list_agents() -> list[dict]:
         lineage = _read_jsonl(agent_dir / "expression" / "lineage.jsonl")
         lineage_count = len(lineage)
 
-        # Count knowledge files — reuse the TTL-cached listing to avoid
-        # expensive recursive directory walks on every dashboard load.
+        # Count knowledge files
         knowledge_count = len(get_agent_knowledge(name))
 
         # Extract phase and cycle from memory
@@ -166,17 +166,15 @@ def list_agents() -> list[dict]:
 
         # Conversation message count
         conv_jsonl = agent_dir / "_runtime" / "conversations" / "web_user.jsonl"
-        if not conv_jsonl.exists():
-            conv_jsonl = agent_dir / "logs" / "conversations" / "web_user.jsonl"
         conv_messages = 0
         if conv_jsonl.exists():
             conv_messages = len(_read_jsonl(conv_jsonl))
 
         agents.append({
             "name": name,
-            "role": info.get("role"),
-            "evolution_mode": info.get("evolution_mode", "chaos"),
-            "version": version.get("version", info.get("framework_version", __version__)) if version else info.get("framework_version", __version__),
+            "role": pkg_info.get("role"),
+            "evolution_mode": pkg_info.get("evolution_mode", "chaos"),
+            "version": pkg_info.get("version", pkg.version),
             "status": "running" if running else "stopped",
             "phase": phase,
             "cycle_count": cycle_count,
@@ -186,8 +184,8 @@ def list_agents() -> list[dict]:
             "knowledge_count": knowledge_count,
             "goal_count": goal_count,
             "conv_messages": conv_messages,
-            "created_at": info.get("created_at", ""),
-            "last_active_at": info.get("last_active_at", ""),
+            "created_at": pkg_info.get("created_at", ""),
+            "last_active_at": pkg_info.get("updated_at", ""),
         })
     return agents
 

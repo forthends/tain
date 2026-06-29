@@ -733,6 +733,16 @@ class AutonomousEvolutionLoop:
 
             return code, contract
 
+        # In strict mode, if all retries exhausted without passing contract check,
+        # return failure (None, None) — do NOT return unverified code.
+        if self.contract_enforcement == "strict":
+            logger.warning(
+                "Contract check failed for '%s' after %d attempts. "
+                "Returning failure to prevent unverified code execution.",
+                spec.function_name, self.max_generate_retries,
+            )
+            return None, None
+
         return last_code, last_contract
 
     def _generate_code(
@@ -1221,7 +1231,12 @@ def create_package_evolver(llm_backend):
     def contract_checker(mutation, package):
         contract = BehaviorContract()
         try:
-            contract.validate(mutation)
+            # Verify each generated file for code compliance
+            for rel_path, content_bytes in mutation.files_to_write:
+                code = content_bytes.decode("utf-8")
+                result = contract.verify_code_compliance(code)
+                if not result.passed:
+                    return False, [f"{rel_path}: {result.errors}"]
             return True, []
         except Exception as e:
             return False, [str(e)]

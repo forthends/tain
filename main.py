@@ -40,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from tain_agent.core.agent_factory import AgentFactory
 from tain_agent.kernel import AgentKernel, AgentContext, STANDARD_FACTORIES
-from tain_agent.kernel.prompts import EVOLVE_SYSTEM_PROMPT
+from tain_agent.kernel import EVOLVE_SYSTEM_PROMPT
 from tain_agent.core.llm import LLMBackend
 from tain_agent.core.conversation import ConversationManager
 from tain_agent.core.drives import DriveSystem
