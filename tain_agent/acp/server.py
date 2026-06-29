@@ -30,14 +30,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 class _ACPAgentAdapter:
-    """Minimal adapter so ChatEngine can use AgentKernel."""
+    """Minimal adapter so ChatEngine can use AgentRuntime."""
     def __init__(self, kernel, agent_name, config):
         self.kernel = kernel
         self.agent_name = agent_name
         self.config = config
-        tool_plugin = kernel.lifecycle.get("tool")
+        tool_plugin = kernel.get_plugin("ToolPlugin")
         self.tools = tool_plugin
-        identity_plugin = kernel.lifecycle.get("identity")
+        identity_plugin = kernel.get_identity()
         self.personality = identity_plugin.personality if identity_plugin else None
         from tain_agent.core.llm import LLMBackend
         backend_config = config.get("llm", {})

@@ -163,13 +163,13 @@ class TestForgeUpdate:
         )
 
         # Check .py.bak exists and contains old code
-        bak_path = tmp_path / "forged_tools" / "backup_tool.py.bak"
+        bak_path = tmp_path / "capability" / "tools" / "backup_tool.py.bak"
         assert bak_path.exists()
         bak_content = bak_path.read_text(encoding="utf-8")
         assert "version\": 1" in bak_content
 
         # Current file should contain new code
-        source_path = tmp_path / "forged_tools" / "backup_tool.py"
+        source_path = tmp_path / "capability" / "tools" / "backup_tool.py"
         source_content = source_path.read_text(encoding="utf-8")
         assert "version\": 2" in source_content
 

@@ -1,8 +1,9 @@
 """Tests for AgentKernel, Dispatch, and backward-compat wrapper."""
 
+import pytest
 from pathlib import Path
 from tain_agent.kernel import AgentKernel, AgentContext, HealthStatus
-from tain_agent.kernel.dispatch import Dispatch
+from tain_agent.kernel.dispatch import Dispatch, RouteNotFound
 
 
 class TestDispatch:
@@ -13,7 +14,10 @@ class TestDispatch:
 
     def test_missing_event_returns_none(self):
         d = Dispatch()
-        assert d.call("nonexistent") is None
+        # RouteNotFound is raised for unregistered routes; use call_or_none for old semantics
+        assert d.call_or_none("nonexistent") is None
+        with pytest.raises(RouteNotFound):
+            d.call("nonexistent")
 
     def test_handler_exception_returns_error_string(self):
         d = Dispatch()
