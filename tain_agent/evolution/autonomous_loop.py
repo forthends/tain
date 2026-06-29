@@ -557,8 +557,8 @@ class AutonomousEvolutionLoop:
 
             # Higher dedup score = more need for improvement (more duplicates)
             return round(1.0 - dedup_ratio, 4)
-        except Exception:
-            logger.debug("tool_dedup evaluation failed — score: 0.0", exc_info=True)
+        except (AttributeError, TypeError) as e:
+            logger.debug("tool_dedup evaluation failed: %s", e)
             return 0.0
 
     def _eval_task_completion(self) -> float:
@@ -602,8 +602,8 @@ class AutonomousEvolutionLoop:
                     return 0.0
                 # Higher score = more uncompleted goals (need for improvement)
                 return round(1.0 - (completed / len(goals)), 4)
-        except Exception:
-            logger.debug("goal_achievement evaluation failed — score: 0.0", exc_info=True)
+        except (AttributeError, TypeError) as e:
+            logger.debug("goal_achievement evaluation failed: %s", e)
         return 0.0
 
     # ── Stage 2: Spec Generation ─────────────────────────────────────────

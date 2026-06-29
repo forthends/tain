@@ -94,26 +94,26 @@ class PRALLoop:
         if mem:
             try:
                 context["recent_memories"] = mem.recall(limit=5)
-            except Exception:
-                pass
+            except (AttributeError, RuntimeError) as e:
+                logger.debug("Memory recall failed: %s", e)
         kw = self._runtime.get_plugin("KnowledgePlugin")
         if kw:
             try:
                 context["knowledge"] = kw.query("")
-            except Exception:
-                pass
+            except (AttributeError, RuntimeError) as e:
+                logger.debug("Knowledge query failed: %s", e)
         collab = self._runtime.get_plugin("CollaborationPlugin")
         if collab:
             try:
                 context["inbox"] = collab.check_inbox()
-            except Exception:
-                pass
+            except (AttributeError, RuntimeError) as e:
+                logger.debug("Collaboration check_inbox failed: %s", e)
         wf = self._runtime.get_plugin("WorkflowPlugin")
         if wf:
             try:
                 context["active_workflows"] = wf.status_all()
-            except Exception:
-                pass
+            except (AttributeError, RuntimeError) as e:
+                logger.debug("Workflow status_all failed: %s", e)
         return context
 
     def _build_prompt(self, base: str, context: dict | None = None) -> str:
@@ -135,8 +135,8 @@ class PRALLoop:
             if hasattr(plugin, "enrich_prompt"):
                 try:
                     prompt = plugin.enrich_prompt(prompt)
-                except Exception:
-                    pass
+                except (AttributeError, RuntimeError) as e:
+                    logger.debug("Plugin '%s' enrich_prompt failed: %s", plugin.__class__.__name__, e)
         if self._drive_system is not None:
             try:
                 weights = self._drive_system.get_action_weights()
@@ -217,8 +217,8 @@ class PRALLoop:
                     f"Cycle {self.cycle_count}: {tc_count} tool calls. {summary}",
                     importance=0.3,
                 )
-            except Exception:
-                pass
+            except (AttributeError, RuntimeError) as e:
+                logger.debug("Memory encode failed in _learn: %s", e)
 
         # ── Gated evolution hook ──
         if self._should_evolve():
@@ -235,8 +235,8 @@ class PRALLoop:
         try:
             with open(state_dir / "pral_phase.json", "w") as f:
                 json.dump(state, f)
-        except Exception:
-            pass
+        except OSError as e:
+            logger.debug("Failed to save PRAL phase state: %s", e)
 
     def _notify_plugins(self, method: str, *args: Any) -> None:
         for plugin in self._runtime.active_plugins:
@@ -244,8 +244,8 @@ class PRALLoop:
             if fn:
                 try:
                     fn(*args)
-                except Exception:
-                    pass
+                except (AttributeError, RuntimeError) as e:
+                    logger.debug("Plugin '%s' %s hook failed: %s", plugin.__class__.__name__, method, e)
 
     def stop(self) -> None:
         self._running = False
@@ -369,6 +369,6 @@ class PRALLoop:
                 result.summary if hasattr(result, 'summary') else str(result),
             )
             self._notify_plugins("on_evolution_cycle", result)
-        except Exception:
-            logger.exception("Evolution cycle failed")
+        except (ImportError, RuntimeError) as e:
+            logger.exception("Evolution cycle failed: %s", e)
             self._last_evolution_at = _time.time() + 600
