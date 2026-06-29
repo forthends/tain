@@ -6,7 +6,9 @@ This package is the "engine" that powers an evolved agent after it leaves
 the factory (tain_agent framework). It has zero internal dependencies on
 tain_agent and only requires stdlib + pip packages (anthropic, openai, rich).
 
-Design constraint: no ``import tain_agent`` anywhere in this package.
+Design constraint: runtime/ depends only on tain_agent.kernel.* (protocol
+layer) and tain_agent.package.* (packaging layer). No dependency on plugins,
+evolution, core, or any I/O-heavy subsystem.
 """
 
 from __future__ import annotations
