@@ -778,3 +778,74 @@ class TestAutonomousEvolutionLoopUnit:
         assert result.success is True
         assert result.spec is spec
         assert result.code == "def fn(): pass"
+
+
+class TestEvolutionMetrics:
+    """Tests for the refactored evolution dimension evaluators."""
+
+    def test_four_stub_evaluators_removed(self):
+        """The four circular-dependency stubs must be deleted."""
+        from tain_agent.evolution.autonomous_loop import AutonomousEvolutionLoop
+        removed = ["_eval_code_health", "_eval_knowledge_fresh",
+                    "_eval_tool_fitness", "_eval_subgraph_balance"]
+        for method_name in removed:
+            assert not hasattr(AutonomousEvolutionLoop, method_name), (
+                f"{method_name} should have been removed"
+            )
+
+    def test_trigger_config_has_only_four_dimensions(self):
+        """trigger_config should have 4 working dimensions + min_trigger_score."""
+        from tain_agent.evolution.autonomous_loop import AutonomousEvolutionLoop
+        import inspect
+        source = inspect.getsource(AutonomousEvolutionLoop.__init__)
+        assert "capability_gap" in source
+        assert "tool_dedup" in source
+        assert "task_completion" in source
+        assert "goal_achievement" in source
+        assert "code_health" not in source
+        assert "knowledge_fresh" not in source
+        assert "tool_fitness" not in source
+        assert "subgraph_balance" not in source
+
+    def test_min_trigger_score_raised(self):
+        """min_trigger_score should be 0.3, not 0.01."""
+        from tain_agent.evolution.autonomous_loop import AutonomousEvolutionLoop
+        import inspect
+        source = inspect.getsource(AutonomousEvolutionLoop.__init__)
+        assert '"min_trigger_score": 0.3' in source, (
+            "min_trigger_score should be 0.3"
+        )
+
+    def test_capability_gap_uses_goals(self):
+        """_eval_capability_gap should query goals with required_capability."""
+        from tain_agent.evolution.autonomous_loop import AutonomousEvolutionLoop
+        import inspect
+        source = inspect.getsource(AutonomousEvolutionLoop._eval_capability_gap)
+        assert "list_active" in source, "_eval_capability_gap should query active goals"
+        assert "required_capability" in source, "_eval_capability_gap should check required_capability"
+
+    def test_task_completion_not_stub(self):
+        """_eval_task_completion should read tool_result log, not return 0.0 stub."""
+        from tain_agent.evolution.autonomous_loop import AutonomousEvolutionLoop
+        import inspect
+        source = inspect.getsource(AutonomousEvolutionLoop._eval_task_completion)
+        assert "tool_result" in source, "_eval_task_completion should query tool_result entries"
+
+
+class TestSpecGeneration:
+    """Tests for spec generation with goal/failure context."""
+
+    def test_generate_spec_queries_goals(self):
+        """_generate_spec should reference active goals."""
+        from tain_agent.evolution.autonomous_loop import AutonomousEvolutionLoop
+        import inspect
+        source = inspect.getsource(AutonomousEvolutionLoop._generate_spec)
+        assert "list_active" in source, "_generate_spec should query active goals"
+        assert "required_capability" in source, "_generate_spec should check required_capability"
+
+    def test_generate_spec_queries_failures(self):
+        """_generate_spec should reference recent tool failures."""
+        from tain_agent.evolution.autonomous_loop import AutonomousEvolutionLoop
+        import inspect
+        source = inspect.getsource(AutonomousEvolutionLoop._generate_spec)
+        assert "tool_result" in source, "_generate_spec should query tool_result log entries"
