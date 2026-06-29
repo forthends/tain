@@ -1225,13 +1225,14 @@ def create_package_evolver(runtime):
     Returns:
         Tuple of four callables compatible with AgentPackage.evolve().
     """
-    import json as _json
+    import json as _json  # noqa: F841 — used in Task 3 (mutation_generator)
     from tain_agent.evolution.behavior_contract import BehaviorContract
 
     # Extract dependencies from runtime
-    llm_backend = getattr(runtime, '_llm_backend', None)
+    llm_backend = getattr(runtime, '_llm_backend', None)  # noqa: F841 — used in Task 3 (mutation_generator)
     tool_plugin = runtime.get_plugin("ToolPlugin")
-    knowledge_plugin = runtime.get_plugin("KnowledgePlugin")
+    knowledge_plugin = runtime.get_plugin("KnowledgePlugin")  # noqa: F841 — used in Task 4 (online_verifier)
+    _ = (_json, llm_backend, knowledge_plugin)  # suppress unused warnings until wired in Tasks 3/4
 
     def gap_detector(package):
         """Detect capability gaps by comparing tool count against threshold.
@@ -1261,6 +1262,8 @@ def create_package_evolver(runtime):
 
     def mutation_generator(gap, package):
         # Placeholder — implemented in Task 3
+        # NOTE: this raise will be replaced with actual LLM-powered code
+        # generation; callers will add try/except once the real path is wired.
         raise EvolutionError("mutation_generator not yet implemented")
 
     def contract_checker(mutation, package):
@@ -1277,6 +1280,6 @@ def create_package_evolver(runtime):
 
     def online_verifier(mutation, package):
         # Placeholder — implemented in Task 4
-        return True, []
+        raise EvolutionError("online_verifier not yet implemented")
 
     return gap_detector, mutation_generator, contract_checker, online_verifier
