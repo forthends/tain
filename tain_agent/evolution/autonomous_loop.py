@@ -1214,6 +1214,23 @@ class EvolutionError(Exception):
     the mutation from being applied."""
 
 
+def _minimal_sandbox_env() -> dict[str, str]:
+    """Return a minimal safe environment for sandbox subprocess execution."""
+    import os as _os
+    if _os.name == "nt":
+        env = {
+            "PYTHONPATH": "",
+            "PATH": _os.environ.get("PATH", ""),
+            "SystemRoot": _os.environ.get("SystemRoot", "C:\\Windows"),
+        }
+        system_drive = _os.environ.get("SYSTEMDRIVE", "C:")
+        if system_drive:
+            env["SYSTEMDRIVE"] = system_drive
+        return env
+    else:
+        return {"PYTHONPATH": "", "PATH": "/usr/bin:/bin"}
+
+
 def create_package_evolver(runtime):
     """Create (gap_detector, mutation_generator, contract_checker, online_verifier)
     callables for use with AgentPackage.evolve().
@@ -1355,7 +1372,59 @@ def create_package_evolver(runtime):
             return False, [str(e)]
 
     def online_verifier(mutation, package):
-        # Placeholder — implemented in Task 4
-        raise EvolutionError("online_verifier not yet implemented")
+        """Smoke-test generated tools via sandbox execution.
+
+        For each generated file, attempts to exec and call the tool
+        in a subprocess sandbox. Times out after 5 seconds.
+        """
+        import subprocess as _sp
+        import sys as _sys
+
+        errors: list[str] = []
+        for rel_path, content_bytes in mutation.files_to_write:
+            code = content_bytes.decode("utf-8")
+            tool_path = package.path / rel_path
+            tool_name = tool_path.stem  # filename without .py
+
+            # Write the file to disk first so it can be imported
+            tool_path.parent.mkdir(parents=True, exist_ok=True)
+            tool_path.write_text(code)
+
+            # Build a test script that execs the code and calls main()
+            test_script = (
+                f"import sys, json\n"
+                f"code = {code!r}\n"
+                f"exec(code)\n"
+                f"try:\n"
+                f"    result = main()\n"
+                f"    print(json.dumps({{'passed': True, 'result': str(result)}}))\n"
+                f"except Exception as e:\n"
+                f"    print(json.dumps({{'passed': False, 'error': str(e)}}))\n"
+            )
+
+            try:
+                proc = _sp.run(
+                    [_sys.executable, "-c", test_script],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    env=_minimal_sandbox_env(),
+                )
+                output = _json.loads(proc.stdout.strip())
+                if not output.get("passed", False):
+                    errors.append(
+                        f"{rel_path}: smoke test failed — {output.get('error', 'unknown')}"
+                    )
+            except _sp.TimeoutExpired:
+                errors.append(f"{rel_path}: smoke test timed out after 5s")
+            except Exception as exc:
+                errors.append(f"{rel_path}: smoke test error — {exc}")
+            finally:
+                # Clean up — remove the written file so the test sandbox
+                # doesn't accumulate stale forged tools
+                if tool_path.exists():
+                    tool_path.unlink()
+
+        return (len(errors) == 0, errors)
 
     return gap_detector, mutation_generator, contract_checker, online_verifier
