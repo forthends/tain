@@ -24,6 +24,11 @@ class PRALLoop:
         self.cycle_count = 0
         self._drive_system = None
 
+        # Evolution state
+        self._llm_backend = None
+        self._evolution_count = 0
+        self._last_evolution_at: float | None = None
+
     def run(
         self,
         llm_backend: Any,
@@ -36,6 +41,7 @@ class PRALLoop:
         """Run the PRAL loop."""
         self._running = True
         self._drive_system = drive_system
+        self._llm_backend = llm_backend
         cycles_run = 0
 
         # Bootstrap: inject initial user message if conversation is empty.
@@ -198,6 +204,10 @@ class PRALLoop:
             except Exception:
                 pass
 
+        # ── Gated evolution hook ──
+        if self._should_evolve():
+            self._trigger_evolution(response, conversation)
+
     def _save_memory_state(self) -> None:
         runtime_dir = self._runtime.package.runtime_dir
         state_dir = runtime_dir / "state"
@@ -223,3 +233,82 @@ class PRALLoop:
 
     def stop(self) -> None:
         self._running = False
+
+    def _get_evolution_config(self) -> dict:
+        """Get evolution configuration from runtime config with defaults."""
+        raw = self._runtime.config.get("evolution", {}) if self._runtime.config else {}
+        return {
+            "enabled": raw.get("enabled", True),
+            "min_interval_seconds": raw.get("min_interval_seconds", 300),
+            "max_improvements_per_session": raw.get("max_improvements_per_session", 3),
+            "min_trigger_score": raw.get("min_trigger_score", 0.3),
+        }
+
+    def _assess_evolution_need(self) -> float:
+        """Lightweight need assessment using only working dimensions."""
+        tool_plugin = self._runtime.get_plugin("ToolPlugin")
+        try:
+            tools = tool_plugin.list_tools() if hasattr(tool_plugin, 'list_tools') else []
+            tool_count = len(tools)
+        except Exception:
+            tool_count = 0
+        capability_gap = max(0.0, (10 - tool_count) / 10) if tool_count < 10 else 0.0
+
+        kw = self._runtime.get_plugin("KnowledgePlugin")
+        goal_achievement = 0.0
+        if kw and hasattr(kw, "goals"):
+            try:
+                goals = kw.goals
+                if goals:
+                    completed = sum(
+                        1 for g in goals
+                        if (isinstance(g, dict) and g.get("status") == "completed")
+                    )
+                    goal_achievement = (len(goals) - completed) / len(goals)
+            except Exception:
+                pass
+
+        return round(0.4 * capability_gap + 0.6 * goal_achievement, 4)
+
+    def _should_evolve(self) -> bool:
+        """Return True if an evolution cycle should be triggered now."""
+        cfg = self._get_evolution_config()
+        if not cfg.get("enabled", True):
+            return False
+        if self._evolution_count >= cfg.get("max_improvements_per_session", 3):
+            return False
+        if self._last_evolution_at is not None:
+            import time as _time
+            elapsed = _time.time() - self._last_evolution_at
+            if elapsed < cfg.get("min_interval_seconds", 300):
+                return False
+        need_score = self._assess_evolution_need()
+        threshold = cfg.get("min_trigger_score", 0.3)
+        return need_score >= threshold
+
+    def _trigger_evolution(self, response: Any, conversation: Any) -> None:
+        """Run one gated evolution cycle via the package evolution adapter."""
+        import time as _time
+        self._evolution_count += 1
+        self._last_evolution_at = _time.time()
+        self._runtime._llm_backend = self._llm_backend
+
+        try:
+            from tain_agent.evolution.autonomous_loop import create_package_evolver
+
+            gap_detector, mutation_generator, contract_checker, online_verifier = \
+                create_package_evolver(self._runtime)
+
+            result = self._runtime.package.evolve(
+                gap_detector, mutation_generator,
+                contract_checker, online_verifier,
+            )
+            logger.info(
+                "Evolution cycle #%d: %s",
+                self._evolution_count,
+                result.summary if hasattr(result, 'summary') else str(result),
+            )
+            self._notify_plugins("on_evolution_cycle", result)
+        except Exception:
+            logger.exception("Evolution cycle failed")
+            self._last_evolution_at = _time.time() + 600
