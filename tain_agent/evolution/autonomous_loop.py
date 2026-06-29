@@ -1209,29 +1209,63 @@ class AutonomousEvolutionLoop:
 
 # ── Package-level evolution adapter ──────────────────────────────────────────
 
-def create_package_evolver(llm_backend):
+class EvolutionError(Exception):
+    """Raised when an evolution stage fails in a way that should prevent
+    the mutation from being applied."""
+
+
+def create_package_evolver(runtime):
     """Create (gap_detector, mutation_generator, contract_checker, online_verifier)
     callables for use with AgentPackage.evolve().
 
-    This is the bridge between the existing evolution/ module (LLM-powered
-    gap detection and mutation generation) and the new package-level evolve().
+    Args:
+        runtime: AgentRuntime instance providing access to plugins, config,
+                 and the LLM backend (stored at runtime._llm_backend).
+
+    Returns:
+        Tuple of four callables compatible with AgentPackage.evolve().
     """
+    import json as _json
     from tain_agent.evolution.behavior_contract import BehaviorContract
 
+    # Extract dependencies from runtime
+    llm_backend = getattr(runtime, '_llm_backend', None)
+    tool_plugin = runtime.get_plugin("ToolPlugin")
+    knowledge_plugin = runtime.get_plugin("KnowledgePlugin")
+
     def gap_detector(package):
-        from tain_agent.evolution.capability import assess_capabilities
-        return assess_capabilities(package)
+        """Detect capability gaps by comparing tool count against threshold.
+
+        Returns a dict with capability_id, description, and gap_score
+        suitable for mutation_generator, or None if no gap detected.
+        """
+        try:
+            tools = tool_plugin.list_tools() if hasattr(tool_plugin, 'list_tools') else []
+            count = len(tools)
+        except Exception:
+            count = 0
+
+        if count >= 10:
+            return None  # No gap — sufficient tools
+
+        gap_score = round((10 - count) / 10, 4)
+        return {
+            "capability_id": f"capability_gap_{count}_tools",
+            "description": (
+                f"Agent has only {count} tools (threshold: 10). "
+                f"Gap score: {gap_score}. Generate a useful new tool."
+            ),
+            "gap_score": gap_score,
+            "tool_count": count,
+        }
 
     def mutation_generator(gap, package):
-        # Wire to existing LLM-powered code generation in AutonomousEvolutionLoop
-        raise NotImplementedError(
-            "Wire in existing AutonomousEvolutionLoop._generate_tool_code logic"
-        )
+        # Placeholder — implemented in Task 3
+        raise EvolutionError("mutation_generator not yet implemented")
 
     def contract_checker(mutation, package):
         contract = BehaviorContract()
         try:
-            # Verify each generated file for code compliance
             for rel_path, content_bytes in mutation.files_to_write:
                 code = content_bytes.decode("utf-8")
                 result = contract.verify_code_compliance(code)
@@ -1242,6 +1276,7 @@ def create_package_evolver(llm_backend):
             return False, [str(e)]
 
     def online_verifier(mutation, package):
+        # Placeholder — implemented in Task 4
         return True, []
 
     return gap_detector, mutation_generator, contract_checker, online_verifier
