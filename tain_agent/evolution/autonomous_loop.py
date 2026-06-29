@@ -786,19 +786,38 @@ class AutonomousEvolutionLoop:
         return code, contract
 
     def _build_generation_prompt(self, spec: ImprovementSpec, retry: bool = False) -> str:
-        """Build the generation prompt with spec, sandbox allowlist, and existing tools."""
-        # Get sandbox allowlist
+        """Build the generation prompt with spec, sandbox allowlist, existing tools,
+        active goal context, and failure examples."""
         try:
             allowlist = self._tools.get_sandbox_allowlist()
         except Exception:
             allowlist = ["json", "math", "datetime", "collections", "typing", "hashlib", "re"]
 
-        # Get existing tools for context
         try:
             existing_tools = self._tools.list_tools()
-            tool_names = sorted(existing_tools.keys())[:20]  # limit for prompt size
+            tool_names = sorted(existing_tools.keys())[:20]
         except Exception:
             tool_names = []
+
+        # ── Gather active goals for context ──
+        active_goals: list[dict] = []
+        try:
+            if hasattr(self._knowledge, 'goals'):
+                active_goals = self._knowledge.goals.list_active()
+        except Exception:
+            pass
+
+        # ── Gather recent failures ──
+        recent_failures: list[dict] = []
+        try:
+            dynamic = getattr(self._knowledge, '_dynamic', [])
+            recent_failures = [
+                e for e in dynamic[-30:]
+                if isinstance(e, dict) and e.get("type") == "tool_result"
+                and not e.get("success", False)
+            ][-3:]
+        except Exception:
+            pass
 
         lines = [
             f"Task: Generate a Python function for the following improvement specification.",
@@ -808,10 +827,31 @@ class AutonomousEvolutionLoop:
             f"Capability ID: {spec.capability_id}",
             f"Reasoning: {spec.reasoning}",
             "",
+        ]
+
+        if active_goals:
+            lines.append("Active goals this tool should help accomplish:")
+            for g in active_goals[:3]:
+                lines.append(
+                    f"  - [{g.get('status', 'active')}] {g.get('description', '')}"
+                    f"{' (needs: ' + g.get('required_capability', '') + ')' if g.get('required_capability') else ''}"
+                )
+            lines.append("")
+
+        if recent_failures:
+            lines.append("Recent tool failures to address:")
+            for f in recent_failures:
+                lines.append(
+                    f"  - {f.get('tool_name', 'unknown')} failed"
+                    f" at {f.get('timestamp', 'unknown')}"
+                )
+            lines.append("")
+
+        lines.extend([
             "Allowed modules (sandbox allowlist):",
             ", ".join(sorted(allowlist)),
             "",
-        ]
+        ])
 
         if tool_names:
             lines.append("Existing tools (for reference, avoid name collisions):")
