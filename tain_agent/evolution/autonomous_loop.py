@@ -609,16 +609,11 @@ class AutonomousEvolutionLoop:
     # ── Stage 2: Spec Generation ─────────────────────────────────────────
 
     def _generate_spec(self, assessment: dict) -> ImprovementSpec | None:
-        """Generate an ImprovementSpec from the assessment.
-
-        Uses triggered_by dimensions to create a meaningful capability_id
-        and description.
-        """
+        """Generate an ImprovementSpec enriched with goal and failure context."""
         triggered_by = assessment.get("triggered_by", [])
         scores = assessment.get("scores", {})
 
         if not triggered_by:
-            # Fallback: use the dimension with highest score
             if scores:
                 best_dim = max(scores, key=lambda k: scores.get(k, 0.0))
                 triggered_by = [{"dimension": best_dim, "score": scores[best_dim]}]
@@ -628,38 +623,83 @@ class AutonomousEvolutionLoop:
         primary = triggered_by[0]
         dim_name = primary["dimension"]
 
-        # Build unique function name (auto_<dim> or auto_<dim>_N)
-        counter_key = f"auto_{dim_name}"
-        idx = self._spec_counter.get(counter_key, 0) + 1
-        self._spec_counter[counter_key] = idx
+        # ── Query goals for context ──
+        active_goals: list[dict] = []
+        try:
+            if hasattr(self._knowledge, 'goals'):
+                active_goals = self._knowledge.goals.list_active()
+        except Exception:
+            pass
 
-        if idx == 1:
-            function_name = f"auto_{dim_name}"
-        else:
-            function_name = f"auto_{dim_name}_{idx}"
+        # ── Query recent tool failures for context ──
+        recent_failures: list[dict] = []
+        try:
+            dynamic = getattr(self._knowledge, '_dynamic', [])
+            recent_failures = [
+                e for e in dynamic[-30:]
+                if isinstance(e, dict) and e.get("type") == "tool_result"
+                and not e.get("success", False)
+            ][-5:]  # last 5 failures
+        except Exception:
+            pass
 
-        # Build capability_id
+        # ── Build function name from goal context if available ──
+        function_name = ""
+        if active_goals:
+            # Pick the first active goal with a required_capability
+            for g in active_goals:
+                cap = g.get("required_capability", "")
+                if cap:
+                    function_name = cap
+                    break
+        if not function_name:
+            counter_key = f"auto_{dim_name}"
+            idx = self._spec_counter.get(counter_key, 0) + 1
+            self._spec_counter[counter_key] = idx
+            function_name = f"auto_{dim_name}" if idx == 1 else f"auto_{dim_name}_{idx}"
+
+        # ── Build capability_id ──
         ts = now().strftime("%Y%m%d%H%M%S")
         capability_id = f"{function_name}_{ts}"
 
-        # Build description from triggered dimensions
-        dim_descriptions = {
-            "capability_gap": "Fill capability gap",
-            "tool_dedup": "Deduplicate tools",
-            "task_completion": "Improve task completion",
-            "goal_achievement": "Advance goal achievement",
-        }
-        description = dim_descriptions.get(dim_name, f"Auto-improve {dim_name}")
+        # ── Build description from goal context ──
+        if active_goals:
+            goal_descriptions = [
+                g["description"] for g in active_goals[:2]
+                if g.get("description")
+            ]
+            if goal_descriptions:
+                description = (
+                    f"Support active goals: {'; '.join(goal_descriptions)}"
+                )
+                if len(active_goals) > 2:
+                    description += f" (and {len(active_goals) - 2} more)"
+            else:
+                description = f"Address evolution dimension: {dim_name}"
+        else:
+            dim_descriptions = {
+                "capability_gap": "Fill capability gap",
+                "tool_dedup": "Deduplicate tools",
+                "task_completion": "Improve task completion",
+                "goal_achievement": "Advance goal achievement",
+            }
+            description = dim_descriptions.get(dim_name, f"Address evolution dimension: {dim_name}")
+
         if len(triggered_by) > 1:
             others = [t["dimension"] for t in triggered_by[1:3]]
             description += f" (also: {', '.join(others)})"
 
-        # Build reasoning
+        # ── Build reasoning with failure context ──
         reasoning_parts = []
         for t in triggered_by[:3]:
+            reasoning_parts.append(f"{t['dimension']}: {t['score']:.3f}")
+
+        if recent_failures:
+            fail_names = set(f.get("tool_name", "unknown") for f in recent_failures)
             reasoning_parts.append(
-                f"{t['dimension']}: {t['score']:.3f}"
+                f"Recent failures ({len(recent_failures)}): {', '.join(sorted(fail_names))}"
             )
+
         reasoning = "Triggered by: " + "; ".join(reasoning_parts)
 
         from tain_agent.plugins.tool.forge_cycle import ImprovementSpec as _ISpec
