@@ -173,15 +173,19 @@ class AutonomousEvolutionLoop:
         tool_plugin,           # ToolPlugin instance
         knowledge_plugin,      # KnowledgePlugin instance
         lineage,               # LineageTracker instance
+        agent_name,            # agent name for state directory isolation
     ):
         self._llm = llm_backend
         self._tools = tool_plugin
         self._knowledge = knowledge_plugin
         self._lineage = lineage
+        self._agent_name = agent_name
 
         # ── State directory (defaults to temp to avoid CWD pollution) ──
         import tempfile
-        self._STATE_DIR = Path(tempfile.gettempdir()) / "tain-agent" / "state"
+        self._STATE_DIR = (
+            Path(tempfile.gettempdir()) / "tain-agent" / agent_name / "state"
+        )
 
         # ── Config (overridable via configure()) ──
         self.min_interval_seconds = 300

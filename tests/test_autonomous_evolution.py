@@ -332,6 +332,7 @@ class TestAutonomousEvolutionLoopUnit:
         return AutonomousEvolutionLoop(
             mock_backend, mock_tool_plugin,
             mock_knowledge_plugin, mock_lineage,
+            "test",
         )
 
     # ── parse_generated_response ────────────────────────────────────
@@ -386,6 +387,7 @@ class TestAutonomousEvolutionLoopUnit:
         loop = AutonomousEvolutionLoop(
             _MockLLM(), mock_tool_plugin,
             mock_knowledge_plugin, mock_lineage,
+            "test",
         )
         spec = ImprovementSpec(
             capability_id="test_cap",
@@ -408,6 +410,7 @@ class TestAutonomousEvolutionLoopUnit:
         loop = AutonomousEvolutionLoop(
             _MockLLM(), mock_tool_plugin,
             mock_knowledge_plugin, mock_lineage,
+            "test",
         )
         spec = ImprovementSpec(
             capability_id="test_cap2",
