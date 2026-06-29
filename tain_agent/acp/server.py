@@ -229,21 +229,12 @@ class ACPServer:
             from tain_agent.core.chat import ChatEngine
 
             agent_name = f"acp_session_{session_id[:8]}"
-            workspace = (PROJECT_ROOT / "agent_workspace") / agent_name
-            workspace.mkdir(parents=True, exist_ok=True)
 
             with open(self.config_path) as f:
                 config = yaml.safe_load(f) or {}
 
-            ctx = AgentContext(
-                agent_name=agent_name,
-                agent_id=f"{agent_name}-{workspace.name}",
-                evolution_mode=config.get("agent", {}).get("evolution_mode", "specified"),
-                workspace_path=workspace,
-                config=config,
-                kernel_version=__version__,
-            )
-            reg = PackageRegistry(packages_root=PROJECT_ROOT / "agent_workspace" / "packages")
+            packages_root = PROJECT_ROOT / "agent_workspace" / "packages"
+            reg = PackageRegistry(packages_root=packages_root)
             pkg = reg.get_package(agent_name)
             if pkg is None:
                 pkg = reg.create(name=agent_name, kind=PackageKind.AGENT)

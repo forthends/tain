@@ -399,7 +399,7 @@ def main():
             cfg = yaml.safe_load(f) or {}
 
     evolution_mode = cfg.get("agent", {}).get("evolution_mode", "specified")
-    workspace = Path("agent_workspace") / agent_name
+    workspace = Path("agent_workspace/packages") / agent_name
 
     ctx = AgentContext(
         agent_name=agent_name,
