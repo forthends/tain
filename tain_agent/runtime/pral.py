@@ -177,6 +177,7 @@ class PRALLoop:
         if tool_calls:
             for tc in tool_calls:
                 result = self._dispatch.call_or_none("tool.call", tc.name, **tc.input)
+                tool_failed = (result is None)
                 if result is None:
                     content = f"Tool '{tc.name}' returned no result (possibly unhandled or failed)"
                 elif isinstance(result, str):
@@ -185,6 +186,21 @@ class PRALLoop:
                     content = str(result)
                 preview = content[:200].replace("\n", " ")
                 logger.info("  <- %s: %s", tc.name, preview)
+                # Record tool result for evolution task_completion metric
+                kw = self._runtime.get_plugin("KnowledgePlugin")
+                if kw and hasattr(kw, 'add_dynamic'):
+                    try:
+                        kw.add_dynamic({
+                            "type": "tool_result",
+                            "tool_name": tc.name,
+                            "success": not tool_failed,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
+                        # Keep only last 100 entries
+                        if len(kw._dynamic) > 100:
+                            kw._dynamic.pop(0)
+                    except Exception:
+                        pass
                 conversation.append(
                     "user",
                     [{"type": "tool_result", "tool_use_id": tc.id, "content": content}],
@@ -245,30 +261,74 @@ class PRALLoop:
         }
 
     def _assess_evolution_need(self) -> float:
-        """Lightweight need assessment using only working dimensions."""
-        tool_plugin = self._runtime.get_plugin("ToolPlugin")
-        try:
-            tools = tool_plugin.list_tools() if hasattr(tool_plugin, 'list_tools') else []
-            tool_count = len(tools)
-        except Exception:
-            tool_count = 0
-        capability_gap = max(0.0, (10 - tool_count) / 10) if tool_count < 10 else 0.0
+        """Assess evolution need using tool-call failure rate and goal gaps.
 
-        kw = self._runtime.get_plugin("KnowledgePlugin")
+        Mirrors AutonomousEvolutionLoop._assess_need() dimensions so the
+        two paths do not diverge.
+        """
+        tool_plugin = self._runtime.get_plugin("ToolPlugin")
+        knowledge_plugin = self._runtime.get_plugin("KnowledgePlugin")
+
+        # ── capability_gap: goal-driven ──
+        try:
+            tools = tool_plugin.list_tools() if hasattr(tool_plugin, 'list_tools') else {}
+            tool_names = set(tools.keys())
+        except Exception:
+            tool_names = set()
+
+        try:
+            active_goals = (
+                knowledge_plugin.goals.list_active()
+                if knowledge_plugin and hasattr(knowledge_plugin, 'goals')
+                else []
+            )
+        except Exception:
+            active_goals = []
+
+        if active_goals:
+            gap_count = sum(
+                1 for g in active_goals
+                if g.get("required_capability", "") and
+                g["required_capability"] not in tool_names
+            )
+            capability_gap = round(gap_count / len(active_goals), 4) if gap_count else 0.0
+        else:
+            count = len(tool_names)
+            capability_gap = round((3 - count) / 3, 4) if count < 3 else 0.0
+
+        # ── task_completion: tool failure rate ──
+        try:
+            dynamic = getattr(knowledge_plugin, '_dynamic', [])
+            log_entries = [
+                e for e in dynamic
+                if isinstance(e, dict) and e.get("type") == "tool_result"
+            ]
+            if log_entries:
+                recent = log_entries[-20:]
+                failures = sum(1 for e in recent if not e.get("success", False))
+                task_completion = round(failures / len(recent), 4)
+            else:
+                task_completion = 0.0
+        except Exception:
+            task_completion = 0.0
+
+        # ── goal_achievement: uncompleted ratio ──
         goal_achievement = 0.0
-        if kw and hasattr(kw, "goals"):
+        if knowledge_plugin and hasattr(knowledge_plugin, "goals"):
             try:
-                goals = kw.goals
+                goals = knowledge_plugin.goals.list_all()
                 if goals:
                     completed = sum(
                         1 for g in goals
-                        if (isinstance(g, dict) and g.get("status") == "completed")
+                        if g.get("status") == "completed"
                     )
                     goal_achievement = (len(goals) - completed) / len(goals)
             except Exception:
                 pass
 
-        return round(0.4 * capability_gap + 0.6 * goal_achievement, 4)
+        total_weight = 0.30 + 0.35 + 0.25  # = 0.90
+        raw_score = 0.30 * capability_gap + 0.35 * task_completion + 0.25 * goal_achievement
+        return round(raw_score / total_weight, 4)
 
     def _should_evolve(self) -> bool:
         """Return True if an evolution cycle should be triggered now."""
