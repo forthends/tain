@@ -1231,6 +1231,112 @@ def _minimal_sandbox_env() -> dict[str, str]:
         return {"PYTHONPATH": "", "PATH": "/usr/bin:/bin"}
 
 
+def _build_sandbox_test_script(
+    *,
+    code: str,
+    tool_name: str,
+    allowed_modules: frozenset,
+    blacklisted_calls: frozenset,
+    blacklisted_modules: frozenset,
+) -> str:
+    """Build a self-contained test script with embedded AST validation.
+
+    The returned script string performs AST-level sandbox checks (import
+    whitelist, call blacklist) before exec-ing the code and calling the
+    tool's main() function.  All validation logic is embedded so the
+    subprocess needs no imports from the main codebase.
+    """
+    lines = [
+        "# Auto-generated sandbox smoke test — do not edit",
+        "import ast, json, sys",
+        "",
+        f"_ALLOWED = {allowed_modules!r}",
+        f"_CALL_BLACKLIST = {blacklisted_calls!r}",
+        f"_MODULE_BLACKLIST = {blacklisted_modules!r}",
+        "",
+        f"_CODE = {code!r}",
+        f"_TOOL_NAME = {tool_name!r}",
+        "",
+        "errors = []",
+        "",
+        "# Step 0: syntax check",
+        "try:",
+        "    tree = ast.parse(_CODE)",
+        "except SyntaxError as e:",
+        "    print(json.dumps({'passed': False, 'stage': 'syntax',"
+        "                      'error': f'SyntaxError: {e}'}))",
+        "    sys.exit(0)",
+        "",
+        "# Step 1: import validation",
+        "for node in ast.walk(tree):",
+        "    if isinstance(node, ast.Import):",
+        "        for alias in node.names:",
+        "            top = alias.name.split('.')[0]",
+        "            if top in _MODULE_BLACKLIST:",
+        "                errors.append(f'blocked_import: {top}')",
+        "            elif top not in _ALLOWED and '.' not in alias.name:",
+        "                errors.append(f'unlisted_import: {top}')",
+        "    elif isinstance(node, ast.ImportFrom):",
+        "        if node.module:",
+        "            top = node.module.split('.')[0]",
+        "            if top in _MODULE_BLACKLIST:",
+        "                errors.append(f'blocked_import: {top}')",
+        "            elif top not in _ALLOWED and '.' not in node.module:",
+        "                errors.append(f'unlisted_import: {top}')",
+        "",
+        "# Build import alias map for call resolution",
+        "alias_map = {}",
+        "for node in ast.walk(tree):",
+        "    if isinstance(node, ast.Import):",
+        "        for alias in node.names:",
+        "            alias_map[alias.asname or alias.name.split('.')[0]] = alias.name",
+        "    elif isinstance(node, ast.ImportFrom):",
+        "        if node.module:",
+        "            for alias in node.names:",
+        "                full = f'{node.module}.{alias.name}'",
+        "                alias_map[alias.asname or alias.name] = full",
+        "",
+        "# Step 2: call target validation",
+        "for node in ast.walk(tree):",
+        "    if isinstance(node, ast.Call):",
+        "        func = node.func",
+        "        # Direct name call: eval(...)",
+        "        if isinstance(func, ast.Name):",
+        "            if func.id in _CALL_BLACKLIST:",
+        "                errors.append(f'blocked_call: {func.id}()')",
+        "        # Attribute call: os.system(...), import os as foo; foo.system(...)",
+        "        elif isinstance(func, ast.Attribute):",
+        "            # Walk the attribute chain to get the base name",
+        "            base = func",
+        "            while isinstance(base, ast.Attribute):",
+        "                base = base.value",
+        "            if isinstance(base, ast.Name):",
+        "                resolved = alias_map.get(base.id, base.id)",
+        "                top = resolved.split('.')[0]",
+        "                if top in _MODULE_BLACKLIST:",
+        "                    errors.append(f'blocked_call: {resolved} access')",
+        "            # Check the method name against blacklist too",
+        "            if func.attr in _CALL_BLACKLIST:",
+        "                errors.append(f'blocked_call: .{func.attr}()')",
+        "",
+        "# Report AST validation failures early",
+        "if errors:",
+        "    print(json.dumps({'passed': False, 'stage': 'ast_validation',",
+        "                      'error': '; '.join(errors)}))",
+        "    sys.exit(0)",
+        "",
+        "# Step 3: exec and smoke test",
+        "try:",
+        "    exec(_CODE)",
+        "    result = main()",
+        "    print(json.dumps({'passed': True, 'result': str(result)}))",
+        "except Exception as e:",
+        "    print(json.dumps({'passed': False, 'stage': 'runtime',",
+        "                      'error': f'{type(e).__name__}: {e}'}))",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def create_package_evolver(runtime):
     """Create (gap_detector, mutation_generator, contract_checker, online_verifier)
     callables for use with AgentPackage.evolve().
@@ -1374,35 +1480,53 @@ def create_package_evolver(runtime):
     def online_verifier(mutation, package):
         """Smoke-test generated tools via sandbox execution.
 
-        For each generated file, attempts to exec and call the tool
-        in a subprocess sandbox. Times out after 5 seconds.
+        Writes generated files into a temporary directory (never touching
+        the package's real files), then runs each through AST validation
+        and a subprocess smoke test with a 5-second timeout.
         """
         import subprocess as _sp
         import sys as _sys
+        import tempfile as _tempfile
+
+        # Sandbox rules — embedded in the test script for AST validation
+        _SANDBOX_ALLOWED_MODULES = frozenset({
+            "json", "datetime", "pathlib", "typing", "hashlib", "math",
+            "collections", "itertools", "functools", "textwrap", "re", "string",
+            "dataclasses", "enum", "uuid", "statistics", "csv", "base64",
+            "copy", "random", "html", "xml", "argparse", "logging",
+        })
+        _SANDBOX_BLACKLIST_CALLS = frozenset({
+            "eval", "exec", "compile", "__import__", "open",
+        })
+        _SANDBOX_BLACKLIST_MODULES = frozenset({
+            "os", "sys", "subprocess", "shutil", "socket", "ctypes",
+            "multiprocessing", "signal", "builtins", "importlib",
+            "urllib", "http", "ftplib", "smtplib", "telnetlib",
+            "requests", "pdb", "code", "traceback", "inspect",
+            "pip", "setuptools", "pkg_resources",
+        })
 
         errors: list[str] = []
         for rel_path, content_bytes in mutation.files_to_write:
             code = content_bytes.decode("utf-8")
-            tool_path = package.path / rel_path
-            tool_name = tool_path.stem  # filename without .py
+            tool_name = Path(rel_path).stem  # filename without .py
 
-            # Write the file to disk first so it can be imported
-            tool_path.parent.mkdir(parents=True, exist_ok=True)
+            # Write code to a temp directory — never touch package files
+            tmp_dir = _tempfile.mkdtemp(prefix="tain_smoke_")
+            tool_path = Path(tmp_dir) / f"{tool_name}.py"
             tool_path.write_text(code)
 
-            # Build a test script that execs the code and calls main()
-            test_script = (
-                f"import sys, json\n"
-                f"code = {code!r}\n"
-                f"exec(code)\n"
-                f"try:\n"
-                f"    result = main()\n"
-                f"    print(json.dumps({{'passed': True, 'result': str(result)}}))\n"
-                f"except Exception as e:\n"
-                f"    print(json.dumps({{'passed': False, 'error': str(e)}}))\n"
-            )
-
             try:
+                # Build a self-contained test script that validates AST
+                # before exec-ing and runs the result through a smoke test
+                test_script = _build_sandbox_test_script(
+                    code=code,
+                    tool_name=tool_name,
+                    allowed_modules=_SANDBOX_ALLOWED_MODULES,
+                    blacklisted_calls=_SANDBOX_BLACKLIST_CALLS,
+                    blacklisted_modules=_SANDBOX_BLACKLIST_MODULES,
+                )
+
                 proc = _sp.run(
                     [_sys.executable, "-c", test_script],
                     capture_output=True,
@@ -1410,20 +1534,41 @@ def create_package_evolver(runtime):
                     timeout=5,
                     env=_minimal_sandbox_env(),
                 )
-                output = _json.loads(proc.stdout.strip())
+
+                # Check returncode first — subprocess crash means stderr has
+                # the real error, not stdout
+                if proc.returncode != 0:
+                    stderr_tail = proc.stderr.strip().split("\n")[-1] if proc.stderr else "no stderr"
+                    errors.append(
+                        f"{rel_path}: subprocess crashed (exit {proc.returncode}) — {stderr_tail}"
+                    )
+                    continue
+
+                stdout = proc.stdout.strip()
+                if not stdout:
+                    errors.append(f"{rel_path}: smoke test produced no output")
+                    continue
+
+                try:
+                    output = _json.loads(stdout)
+                except Exception:
+                    errors.append(
+                        f"{rel_path}: smoke test returned non-JSON output: {stdout[:200]}"
+                    )
+                    continue
+
                 if not output.get("passed", False):
                     errors.append(
-                        f"{rel_path}: smoke test failed — {output.get('error', 'unknown')}"
+                        f"{rel_path}: smoke test failed — {output.get('error', output.get('reason', 'unknown'))}"
                     )
             except _sp.TimeoutExpired:
                 errors.append(f"{rel_path}: smoke test timed out after 5s")
             except Exception as exc:
                 errors.append(f"{rel_path}: smoke test error — {exc}")
             finally:
-                # Clean up — remove the written file so the test sandbox
-                # doesn't accumulate stale forged tools
-                if tool_path.exists():
-                    tool_path.unlink()
+                # Clean up temp directory
+                import shutil as _shutil
+                _shutil.rmtree(tmp_dir, ignore_errors=True)
 
         return (len(errors) == 0, errors)
 
