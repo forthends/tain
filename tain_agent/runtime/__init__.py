@@ -19,7 +19,7 @@ from tain_agent.package import AgentPackage
 from tain_agent.package.manifest import parse_manifest, Manifest
 from tain_agent.runtime.plugin_loader import PluginLoader, PluginVersionError
 
-__version__ = "3.0.0-dev"
+__version__ = "0.11.0"
 
 
 class AgentRuntime:
@@ -53,7 +53,7 @@ class AgentRuntime:
             evolution_mode=self.manifest.package.evolution_mode,
             workspace_path=package.path,
             config=self.config,
-            kernel_version=self.manifest.infra.runtime.kernel_version or "0.11.0",
+            kernel_version=self.manifest.infra.runtime.kernel_version or __version__,
             package=package,          # new
             manifest=self.manifest,   # new
         )
