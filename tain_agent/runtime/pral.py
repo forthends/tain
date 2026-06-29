@@ -258,6 +258,7 @@ class PRALLoop:
             "min_interval_seconds": raw.get("min_interval_seconds", 300),
             "max_improvements_per_session": raw.get("max_improvements_per_session", 3),
             "min_trigger_score": raw.get("min_trigger_score", 0.3),
+            "mode": raw.get("mode", "experimental"),
         }
 
     def _assess_evolution_need(self) -> float:
@@ -350,6 +351,18 @@ class PRALLoop:
         """Run one gated evolution cycle via the package evolution adapter."""
         import time as _time
         self._evolution_count += 1
+        # ── Experimental mode advisory (once per session) ──
+        cfg = self._get_evolution_config()
+        if cfg.get("mode") == "experimental" and self._evolution_count == 1:
+            advisory = (
+                "Autonomous evolution is enabled in EXPERIMENTAL mode. "
+                "Generated tools may be low-quality or non-functional. "
+                "All generated tools are sandbox-tested and automatically "
+                "rolled back on failure. Evolution metrics and quality "
+                "gates are under active development."
+            )
+            conversation.append("user", advisory)
+            logger.info("Injected experimental evolution advisory.")
         self._last_evolution_at = _time.time()
         self._runtime._llm_backend = self._llm_backend
 
