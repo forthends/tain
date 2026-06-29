@@ -204,17 +204,13 @@ class AutonomousEvolutionLoop:
         self._thread: Optional[threading.Thread] = None
         self._snapshots: dict[str, ToolSnapshot] = {}
 
-        # ── Trigger config (same 8 dimensions as old ImprovementLoop) ──
+        # ── Trigger config (4 real-signal dimensions) ──
         self.trigger_config = {
-            "min_trigger_score": 0.01,
-            "capability_gap":   {"enabled": True, "threshold": 0.0,  "weight": 0.08},
-            "code_health":      {"enabled": True, "threshold": 0.50, "weight": 0.20},
-            "knowledge_fresh":  {"enabled": True, "threshold": 0.30, "weight": 0.20},
-            "tool_fitness":     {"enabled": True, "threshold": 0.10, "weight": 0.12},
-            "tool_dedup":       {"enabled": True, "threshold": 0.40, "weight": 0.08},
-            "subgraph_balance": {"enabled": True, "threshold": 0.30, "weight": 0.12},
-            "task_completion":  {"enabled": True, "threshold": 0.30, "weight": 0.15},
-            "goal_achievement": {"enabled": True, "threshold": 0.30, "weight": 0.10},
+            "min_trigger_score": 0.3,
+            "capability_gap":   {"enabled": True, "threshold": 0.0,  "weight": 0.30},
+            "tool_dedup":       {"enabled": True, "threshold": 0.40, "weight": 0.10},
+            "task_completion":  {"enabled": True, "threshold": 0.20, "weight": 0.35},
+            "goal_achievement": {"enabled": True, "threshold": 0.30, "weight": 0.25},
         }
         self._last_trigger_scores: dict = {}
         self._last_triggered_by: list = []
@@ -447,18 +443,14 @@ class AutonomousEvolutionLoop:
     # ── Stage 1: Gap Detection ───────────────────────────────────────────
 
     def _assess_need(self) -> dict:
-        """Evaluate all 8 trigger dimensions and compute a weighted need score.
+        """Evaluate 4 trigger dimensions and compute a weighted need score.
 
         Returns:
             dict with 'should_trigger', 'scores', 'triggered_by', 'need_score'.
         """
         dims = [
             ("capability_gap",   self._eval_capability_gap),
-            ("code_health",      self._eval_code_health),
-            ("knowledge_fresh",  self._eval_knowledge_fresh),
-            ("tool_fitness",     self._eval_tool_fitness),
             ("tool_dedup",       self._eval_tool_dedup),
-            ("subgraph_balance", self._eval_subgraph_balance),
             ("task_completion",  self._eval_task_completion),
             ("goal_achievement", self._eval_goal_achievement),
         ]
@@ -511,61 +503,34 @@ class AutonomousEvolutionLoop:
     # ── Dimension evaluators ─────────────────────────────────────────────
 
     def _eval_capability_gap(self) -> float:
-        """Score based on tool count. Returns 0 if >=10 tools, scaled gap otherwise."""
+        """Score based on goals requiring capabilities not in current toolset."""
         try:
             tools = self._tools.list_tools()
-            count = len(tools)
+            tool_names = set(tools.keys())
         except Exception:
             return 0.0
-        if count >= 10:
+
+        try:
+            active_goals = self._knowledge.goals.list_active()
+        except Exception:
+            active_goals = []
+
+        if not active_goals:
+            # Fallback: mild tool-count signal
+            count = len(tool_names)
+            if count < 3:
+                return round((3 - count) / 3, 4)
             return 0.0
-        # Scale: 0 tools → 1.0, 10 tools → 0.0
-        return round(max(0.0, (10 - count) / 10), 4)
 
-    def _eval_code_health(self) -> float:
-        """Try importing code_entropy forged tool. Returns 0 on failure."""
-        try:
-            tools = self._tools.list_tools()
-            if "code_entropy" in tools:
-                result = self._tools.call("code_entropy")
-                if isinstance(result, dict) and result.get("success"):
-                    entropy = result.get("entropy", result.get("result", 0.5))
-                    if isinstance(entropy, (int, float)):
-                        return round(float(entropy), 4)
-                return 0.0
-        except Exception:
-            logger.debug("code_entropy tool unavailable — code_health score: 0.0", exc_info=True)
-        return 0.0
+        gap_count = 0
+        for goal_dict in active_goals:
+            required = goal_dict.get("required_capability", "")
+            if required and required not in tool_names:
+                gap_count += 1
 
-    def _eval_knowledge_fresh(self) -> float:
-        """Try importing knowledge_freshness forged tool. Returns 0 on failure."""
-        try:
-            tools = self._tools.list_tools()
-            if "knowledge_freshness" in tools:
-                result = self._tools.call("knowledge_freshness")
-                if isinstance(result, dict) and result.get("success"):
-                    freshness = result.get("freshness", result.get("result", 0.5))
-                    if isinstance(freshness, (int, float)):
-                        return round(float(freshness), 4)
-                return 0.0
-        except Exception:
-            logger.debug("knowledge_freshness tool unavailable — score: 0.0", exc_info=True)
-        return 0.0
-
-    def _eval_tool_fitness(self) -> float:
-        """Try importing tool_fitness forged tool. Returns 0 on failure."""
-        try:
-            tools = self._tools.list_tools()
-            if "tool_fitness" in tools:
-                result = self._tools.call("tool_fitness")
-                if isinstance(result, dict) and result.get("success"):
-                    fitness = result.get("fitness", result.get("result", 0.5))
-                    if isinstance(fitness, (int, float)):
-                        return round(float(fitness), 4)
-                return 0.0
-        except Exception:
-            logger.debug("tool_fitness tool unavailable — score: 0.0", exc_info=True)
-        return 0.0
+        if gap_count == 0:
+            return 0.0
+        return round(gap_count / len(active_goals), 4)
 
     def _eval_tool_dedup(self) -> float:
         """Hash-based dedup check on forged tools. Returns dedup score 0-1."""
@@ -596,24 +561,29 @@ class AutonomousEvolutionLoop:
             logger.debug("tool_dedup evaluation failed — score: 0.0", exc_info=True)
             return 0.0
 
-    def _eval_subgraph_balance(self) -> float:
-        """Try importing knowledge_subgraph forged tool. Returns 0 on failure."""
-        try:
-            tools = self._tools.list_tools()
-            if "knowledge_subgraph" in tools:
-                result = self._tools.call("knowledge_subgraph")
-                if isinstance(result, dict) and result.get("success"):
-                    balance = result.get("balance", result.get("result", 0.5))
-                    if isinstance(balance, (int, float)):
-                        return round(float(balance), 4)
-                return 0.0
-        except Exception:
-            logger.debug("knowledge_subgraph tool unavailable — score: 0.0", exc_info=True)
-        return 0.0
-
     def _eval_task_completion(self) -> float:
-        """Stub — returns 0.0 (needs decision_log integration)."""
-        return 0.0
+        """Score based on recent tool-call failure rate.
+
+        Reads tool_result_log from KnowledgePlugin's dynamic layer.
+        High failure rate → high evolution need.
+        """
+        try:
+            if not hasattr(self._knowledge, '_dynamic'):
+                return 0.0
+            log_entries = [
+                e for e in self._knowledge._dynamic
+                if isinstance(e, dict) and e.get("type") == "tool_result"
+            ]
+            if not log_entries:
+                return 0.0
+            recent = log_entries[-20:]  # last 20 tool results
+            failures = sum(
+                1 for e in recent
+                if not e.get("success", False)
+            )
+            return round(failures / len(recent), 4)
+        except Exception:
+            return 0.0
 
     def _eval_goal_achievement(self) -> float:
         """Query knowledge_plugin for goal achievement rate."""
@@ -675,11 +645,7 @@ class AutonomousEvolutionLoop:
         # Build description from triggered dimensions
         dim_descriptions = {
             "capability_gap": "Fill capability gap",
-            "code_health": "Improve code health",
-            "knowledge_fresh": "Refresh stale knowledge",
-            "tool_fitness": "Optimize tool fitness",
             "tool_dedup": "Deduplicate tools",
-            "subgraph_balance": "Balance knowledge subgraph",
             "task_completion": "Improve task completion",
             "goal_achievement": "Advance goal achievement",
         }

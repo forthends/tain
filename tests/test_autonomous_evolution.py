@@ -557,7 +557,7 @@ class TestAutonomousEvolutionLoopUnit:
     def test_assess_need_includes_all_dimensions(
         self, mock_backend, mock_tool_plugin, mock_knowledge_plugin, mock_lineage,
     ):
-        """_assess_need returns scores for all 8 dimensions."""
+        """_assess_need returns scores for all 4 dimensions."""
         loop = self._make_loop(mock_backend, mock_tool_plugin,
                                mock_knowledge_plugin, mock_lineage)
         result = loop._assess_need()
@@ -565,10 +565,9 @@ class TestAutonomousEvolutionLoopUnit:
         assert "scores" in result
         assert "triggered_by" in result
         assert "need_score" in result
-        # All 8 dimensions should be present
+        # All 4 dimensions should be present
         expected_dims = {
-            "capability_gap", "code_health", "knowledge_fresh",
-            "tool_fitness", "tool_dedup", "subgraph_balance",
+            "capability_gap", "tool_dedup",
             "task_completion", "goal_achievement",
         }
         assert set(result["scores"].keys()) == expected_dims
