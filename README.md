@@ -10,6 +10,21 @@ A practical AI agent framework with multi-provider LLM support, safe tool-use ex
 
 ---
 
+## Capability Status
+
+| Capability | Status | Notes |
+|---|---|---|
+| Autonomous tool generation | 🧪 Experimental | Gated, rate-limited, auto-rollback on failure. Quality under active improvement. |
+| Behavior contract enforcement | ✅ Stable | AST-level import/call validation for sandbox security. |
+| Multi-provider LLM (Anthropic, OpenAI) | ✅ Stable | Via official SDKs. |
+| WebUI (SSE streaming) | ✅ Stable | FastAPI + SSE, real-time conversation view. |
+| CLI (`tain run` / `tain package`) | ✅ Stable | uv-based single-command launch. |
+| MCP/ACP server | 🚧 Beta | Protocol support, limited tool coverage. |
+| Package evolution (evolve/mutate/rollback) | 🧪 Experimental | 5-stage loop with contract enforcement. Active development. |
+| Cross-platform (Linux/macOS/Windows) | 🚧 Beta | Core path tested; Windows sandbox env added in 0.11.0. |
+
+---
+
 ## 安装 uv
 
 `tain` 启动脚本依赖 [uv](https://docs.astral.sh/uv/) 管理 Python 依赖与虚拟环境（首次运行时自动同步）。
@@ -105,7 +120,7 @@ Real-time SSE-streamed chat with agents, tabbed dashboards for decision logs and
 
 ### Autonomous Evolution Loop
 
-Agents can now autonomously complete the full gap→deploy→verify cycle — zero human intervention. An **8-stage pipeline** (GAP_DETECT → SPEC_DESIGN → CODE_GENERATE → CONTRACT_CHECK → SANDBOX_FORGE → REGISTER → ONLINE_VERIFY → EVALUATE) with three-layer safety: sandbox AST validation, **behavior contract** enforcement (LLM-generated code must declare allowed imports and side effects), and automatic rollback on quality degradation.
+The framework now includes an experimental **8-stage pipeline** (GAP_DETECT → SPEC_DESIGN → CODE_GENERATE → CONTRACT_CHECK → SANDBOX_FORGE → REGISTER → ONLINE_VERIFY → EVALUATE) with three-layer safety: sandbox AST validation, **behavior contract** enforcement (LLM-generated code must declare allowed imports and side effects), and automatic rollback on quality degradation. This pipeline is rate-limited, gated, and supervised — it is not a fully autonomous system.
 
 ### Architecture Migration: Mixin → Kernel/Plugin
 
