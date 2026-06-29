@@ -13,6 +13,7 @@ via string construction, getattr, encoding tricks, or indirect calls.
 
 import ast
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -310,6 +311,27 @@ def _check_path_escapes(tree: ast.AST, warnings: list[dict]) -> None:
 
 # ── Subprocess smoke test ──────────────────────────────────────────────
 
+def _minimal_sandbox_env() -> dict[str, str]:
+    """Return a minimal safe environment for sandbox subprocess execution.
+
+    On Windows, preserves SystemRoot and SYSTEMDRIVE which are required
+    for Python subprocess to start correctly. On Unix, uses a minimal
+    PATH for security.
+    """
+    if os.name == "nt":
+        env = {
+            "PYTHONPATH": "",
+            "PATH": os.environ.get("PATH", ""),
+            "SystemRoot": os.environ.get("SystemRoot", "C:\\Windows"),
+        }
+        system_drive = os.environ.get("SYSTEMDRIVE", "C:")
+        if system_drive:
+            env["SYSTEMDRIVE"] = system_drive
+        return env
+    else:
+        return {"PYTHONPATH": "", "PATH": "/usr/bin:/bin"}
+
+
 def _run_smoke_test(code: str, test_function: str,
                     functions_found: list[str]) -> dict:
     """Execute the tool code in a subprocess for OS-level isolation.
@@ -351,7 +373,7 @@ print(json.dumps({{"result": str(_result) if _result is not None else None,
             capture_output=True,
             text=True,
             timeout=_SANDBOX_TIMEOUT,
-            env={"PYTHONPATH": "", "PATH": "/usr/bin:/bin"},
+            env=_minimal_sandbox_env(),
         )
 
         if proc.returncode != 0:
