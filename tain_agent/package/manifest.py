@@ -153,10 +153,45 @@ def _parse_infra(data: dict) -> ManifestInfra:
     )
 
 
+def _coerce_tool_entry(t) -> ToolEntry:
+    """Convert a string path or dict into a ToolEntry.
+
+    Legacy manifests stored tools as plain file-path strings.
+    Normalise those to ToolEntry with path extracted from the string.
+    """
+    if isinstance(t, str):
+        stem = Path(t).stem
+        return ToolEntry(name=stem, version="0.0.0", path=t)
+    return ToolEntry(**t)
+
+
+def _coerce_skill_entry(s) -> SkillEntry:
+    """Convert a string path or dict into a SkillEntry."""
+    if isinstance(s, str):
+        stem = Path(s).stem
+        return SkillEntry(name=stem, maturity="NOVICE", path=s)
+    return SkillEntry(**s)
+
+
+def _coerce_artifact_entry(a) -> ArtifactEntry:
+    """Convert a string path or dict into an ArtifactEntry.
+
+    Legacy manifests stored artifacts as plain file-path strings.
+    Normalise those to ArtifactEntry with type inferred from the path.
+    """
+    if isinstance(a, str):
+        p = Path(a)
+        stem = p.stem
+        # Infer type from the parent directory name
+        parent = p.parent.name
+        return ArtifactEntry(type=parent, title=stem, path=a)
+    return ArtifactEntry(**a)
+
+
 def _parse_capability(data: dict) -> ManifestCapability:
     return ManifestCapability(
-        tools=[ToolEntry(**t) for t in data.get("tools", [])],
-        skills=[SkillEntry(**s) for s in data.get("skills", [])],
+        tools=[_coerce_tool_entry(t) for t in data.get("tools", [])],
+        skills=[_coerce_skill_entry(s) for s in data.get("skills", [])],
     )
 
 
@@ -171,7 +206,7 @@ def _parse_cognitive(data: dict) -> ManifestCognitive:
 
 def _parse_expression(data: dict) -> ManifestExpression:
     return ManifestExpression(
-        artifacts=[ArtifactEntry(**a) for a in data.get("artifacts", [])],
+        artifacts=[_coerce_artifact_entry(a) for a in data.get("artifacts", [])],
         goals=data.get("goals", ""),
         lineage=data.get("lineage", ""),
     )

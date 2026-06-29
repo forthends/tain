@@ -257,7 +257,7 @@ class PackageRegistry:
                 continue
             try:
                 manifest = parse_manifest(manifest_path)
-            except ManifestValidationError:
+            except (ManifestValidationError, TypeError, ValueError):
                 continue
             if kind and manifest.package.kind != kind.value:
                 continue
