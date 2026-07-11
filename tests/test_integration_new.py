@@ -58,8 +58,8 @@ class TestKernelIntegration:
             # memory.recall requires limit=int kwarg, returns list
             result = kernel.dispatch.call("memory.recall", limit=5)
             assert isinstance(result, list), "memory.recall should return a list"
-            # Unregistered routes (skill.execute) return None
-            assert kernel.dispatch.call("skill.execute", "test") is None
+            # Unregistered routes raise RouteNotFound; call_or_none returns None
+            assert kernel.dispatch.call_or_none("skill.execute", "test") is None
             result = kernel.dispatch.call("knowledge.query", "test")
             assert isinstance(result, dict), "knowledge.query should return a dict"
 

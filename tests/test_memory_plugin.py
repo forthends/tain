@@ -441,8 +441,8 @@ class TestMemoryPlugin:
             plugin.on_cycle_end(1)
 
             # Verify persistence
-            db_file = Path(tmpdir) / "memory" / "episodic.db"
-            json_file = Path(tmpdir) / "memory" / "semantic.json"
+            db_file = Path(tmpdir) / "cognitive" / "memory" / "episodic.db"
+            json_file = Path(tmpdir) / "cognitive" / "memory" / "semantic.json"
             assert db_file.exists()
             assert json_file.exists()
 

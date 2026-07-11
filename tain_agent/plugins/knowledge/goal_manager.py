@@ -12,13 +12,14 @@ logger = logging.getLogger(__name__)
 class Goal:
     """A single agent goal."""
     def __init__(self, goal_id: str, description: str, success_criteria: str,
-                 status: str = "active"):
+                 status: str = "active", required_capability: str = ""):
         self.id = goal_id
         self.description = description
         self.success_criteria = success_criteria
         self.status = status  # "active" | "completed" | "abandoned"
         self.completed_at: str | None = None
         self.summary: str = ""
+        self.required_capability: str = required_capability  # e.g. "csv_analyzer"
 
     def to_dict(self) -> dict:
         return {
@@ -28,11 +29,16 @@ class Goal:
             "status": self.status,
             "completed_at": self.completed_at,
             "summary": self.summary,
+            "required_capability": self.required_capability,
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> "Goal":
-        g = cls(d["id"], d["description"], d["success_criteria"], d.get("status", "active"))
+        g = cls(
+            d["id"], d["description"], d["success_criteria"],
+            d.get("status", "active"),
+            d.get("required_capability", ""),
+        )
         g.completed_at = d.get("completed_at")
         g.summary = d.get("summary", "")
         return g

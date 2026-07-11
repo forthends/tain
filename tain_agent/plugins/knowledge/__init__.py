@@ -31,6 +31,8 @@ class KnowledgePlugin:
     on_llm_response.
     """
 
+    version = "1.0.0"
+
     def __init__(self):
         self._ctx: AgentContext | None = None
         self._dynamic: list[dict[str, Any]] = []
@@ -42,10 +44,10 @@ class KnowledgePlugin:
 
     def initialize(self, ctx: AgentContext) -> None:
         self._ctx = ctx
-        self._persist_path = ctx.workspace_path / "knowledge" / "graph.json"
+        self._persist_path = ctx.workspace_path / "cognitive" / "knowledge" / "graph.json"
         self._persist_path.parent.mkdir(parents=True, exist_ok=True)
         self._load()
-        goals_path = ctx.workspace_path / "knowledge" / "goals.json"
+        goals_path = ctx.workspace_path / "cognitive" / "knowledge" / "goals.json"
         self._goals.initialize(goals_path)
 
     def shutdown(self) -> None:

@@ -34,6 +34,8 @@ class CollaborationPlugin:
     on_llm_response.
     """
 
+    version = "1.0.0"
+
     def __init__(self):
         self._ctx: AgentContext | None = None
         self._bus: UpgradedMessageBus | None = None
@@ -45,7 +47,7 @@ class CollaborationPlugin:
 
     def initialize(self, ctx: AgentContext) -> None:
         self._ctx = ctx
-        self._persist_dir = ctx.workspace_path / "collaboration"
+        self._persist_dir = ctx.workspace_path / "_runtime" / "collaboration"
         self._persist_dir.mkdir(parents=True, exist_ok=True)
 
         bus_path = self._persist_dir / "messages.db"

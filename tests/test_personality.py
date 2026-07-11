@@ -413,20 +413,17 @@ class TestPersistenceLoadFromDisk:
 class TestPersistenceBackwardCompatibility:
     """Tests for backward compatibility when workspace_path is not set."""
 
-    def test_save_to_default_path_without_workspace_path(self, tmp_path):
-        """Personality without workspace_path writes to agent_workspace/state/personality.json."""
-        original_cwd = os.getcwd()
-        try:
-            os.chdir(tmp_path)
-            p = Personality()
-            p.discover("values", "integrity", "being truthful")
-            p._save_to_disk()
+    def test_save_to_default_path_without_workspace_path(self):
+        """Personality without workspace_path writes to a temp-based fallback location."""
+        p = Personality()
+        p.discover("values", "integrity", "being truthful")
+        p._save_to_disk()
 
-            disk_path = tmp_path / "agent_workspace" / "state" / "personality.json"
-            assert disk_path.exists()
+        import tempfile
+        from pathlib import Path
+        disk_path = Path(tempfile.gettempdir()) / "tain-agent" / "state" / "personality.json"
+        assert disk_path.exists()
 
-            data = json.loads(disk_path.read_text(encoding="utf-8"))
-            traits = data["traits"]["values"]
-            assert traits[0]["value"] == "integrity"
-        finally:
-            os.chdir(original_cwd)
+        data = json.loads(disk_path.read_text(encoding="utf-8"))
+        traits = data["traits"]["values"]
+        assert traits[0]["value"] == "integrity"

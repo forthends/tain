@@ -9,7 +9,7 @@ Architecture (PRAL cognitive loop + mixin decomposition):
   agent_tools.py      — Tool execution and decision logging
   bootstrap.py        — Tool registration closures
   conversation.py     — History management + checkpoint
-  cognitive_loop.py   — PRAL: Perceive→Reason→Act→Learn
+  # cognitive_loop.py — REMOVED (dead code; evolution now wired via runtime/pral.py)
   llm.py              — LLM backend abstraction
   memory.py           — Long-term memory store
   environment.py      — Environment scanner

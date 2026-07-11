@@ -562,7 +562,11 @@ class Personality:
         if self._workspace_path:
             state_dir = self._workspace_path / "state"
         else:
-            state_dir = _Path("agent_workspace/state")  # backward compatible
+            # Use a temp-based fallback to avoid polluting CWD with
+            # agent_workspace/state/ when no workspace path is configured
+            # (e.g. during tests).
+            import tempfile
+            state_dir = _Path(tempfile.gettempdir()) / "tain-agent" / "state"
         state_dir.mkdir(parents=True, exist_ok=True)
         if data is None:
             data = {
@@ -614,7 +618,10 @@ class Personality:
         import json as _json
         if not self._workspace_path:
             return
-        disk_path = self._workspace_path / "state" / "personality.json"
+        # Try new package-layout path first, fall back to legacy path
+        disk_path = self._workspace_path / "cognitive" / "identity" / "profile.json"
+        if not disk_path.exists():
+            disk_path = self._workspace_path / "state" / "personality.json"
         if not disk_path.exists():
             return
         try:

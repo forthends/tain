@@ -61,6 +61,10 @@ class ConversationManager:
             for msg in self.history
         ]
 
+    def to_messages(self) -> list[dict]:
+        """Alias for to_claude_messages() — compatibility with runtime CM."""
+        return self.to_claude_messages()
+
     def last_safe(self, n: int) -> list[dict]:
         """Return the last N messages, expanding backward to preserve tool_use/tool_result pairs.
 

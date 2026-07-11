@@ -40,6 +40,8 @@ class _PersonalityAdapter:
 class IdentityPlugin:
     """Plugin that owns AgentIdentity — who the agent is, what it values, its boundaries."""
 
+    version = "1.0.0"
+
     def __init__(self):
         self._ctx: AgentContext | None = None
         self.identity: AgentIdentity | None = None
@@ -58,7 +60,7 @@ class IdentityPlugin:
 
     def initialize(self, ctx: AgentContext) -> None:
         self._ctx = ctx
-        self._profile_path = ctx.workspace_path / "identity" / "profile.json"
+        self._profile_path = ctx.workspace_path / "cognitive" / "identity" / "profile.json"
         self._profile_path.parent.mkdir(parents=True, exist_ok=True)
         self.identity = self._load_or_create()
 

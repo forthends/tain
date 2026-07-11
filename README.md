@@ -4,9 +4,24 @@
 
 A practical AI agent framework with multi-provider LLM support, safe tool-use execution, behavioral evolution tracking, and inter-agent communication. Agents operate in isolated workspaces and evolve through **framework-measured behavioral metrics** — not LLM self-evaluation.
 
-**v0.10.0** — Autonomous Evolution · Kernel/Plugin Architecture · Closed Evolution Loop
+**v0.11.0** — Autonomous Evolution · Kernel/Plugin Architecture · Closed Evolution Loop
 
 [Safety Model](docs/SAFETY.md) · [Evolution Design](docs/EVOLUTION.md) · [Architecture](docs/architecture.md) · [Changelog](docs/changelog/v0.10.0.md)
+
+---
+
+## Capability Status
+
+| Capability | Status | Notes |
+|---|---|---|
+| Autonomous tool generation | 🧪 Experimental | Gated, rate-limited, auto-rollback on failure. Quality under active improvement. |
+| Behavior contract enforcement | ✅ Stable | AST-level import/call validation for sandbox security. |
+| Multi-provider LLM (Anthropic, OpenAI) | ✅ Stable | Via official SDKs. |
+| WebUI (SSE streaming) | ✅ Stable | FastAPI + SSE, real-time conversation view. |
+| CLI (`tain run` / `tain package`) | ✅ Stable | uv-based single-command launch. |
+| MCP/ACP server | 🚧 Beta | Protocol support, limited tool coverage. |
+| Package evolution (evolve/mutate/rollback) | 🧪 Experimental | 5-stage loop with contract enforcement. Active development. |
+| Cross-platform (Linux/macOS/Windows) | 🚧 Beta | Core path tested; Windows sandbox env added in 0.11.0. |
 
 ---
 
@@ -67,7 +82,9 @@ See [Quick Start Guide](docs/quickstart.md) for detailed instructions.
 
 ### Behavioral Evolution Tracking
 
-Agents operate through the PRAL cognitive cycle (**P**erceive → **R**eason → **A**ct → **L**earn) orchestrated by `AgentKernel`. The framework measures real behavioral metrics — tool success rates, action diversity, drive intensities — rather than relying on LLM self-evaluation. The **AutonomousEvolutionLoop** runs as a background thread, continuously assessing gaps, generating code via LLM, verifying behavior contracts, and automatically rolling back on quality degradation.
+Agents operate through the PRAL cognitive cycle (**P**erceive → **R**eason → **A**ct → **L**earn) orchestrated by `AgentKernel`. The framework measures real behavioral metrics — tool success rates, action diversity, drive intensities — rather than relying on LLM self-evaluation.
+
+> ⚠️ **Experimental:** The autonomous evolution loop runs as a rate-limited, quota-bounded cycle triggered within the PRAL `_learn()` phase. It is currently scoped to tool generation with behavior contract enforcement and automatic rollback on quality degradation. Continuous background evolution is planned for a future release. See [EVOLUTION.md](docs/EVOLUTION.md) for the roadmap.
 
 ### Dual Creation Modes
 
@@ -103,7 +120,7 @@ Real-time SSE-streamed chat with agents, tabbed dashboards for decision logs and
 
 ### Autonomous Evolution Loop
 
-Agents can now autonomously complete the full gap→deploy→verify cycle — zero human intervention. An **8-stage pipeline** (GAP_DETECT → SPEC_DESIGN → CODE_GENERATE → CONTRACT_CHECK → SANDBOX_FORGE → REGISTER → ONLINE_VERIFY → EVALUATE) with three-layer safety: sandbox AST validation, **behavior contract** enforcement (LLM-generated code must declare allowed imports and side effects), and automatic rollback on quality degradation.
+The framework now includes an experimental **8-stage pipeline** (GAP_DETECT → SPEC_DESIGN → CODE_GENERATE → CONTRACT_CHECK → SANDBOX_FORGE → REGISTER → ONLINE_VERIFY → EVALUATE) with three-layer safety: sandbox AST validation, **behavior contract** enforcement (LLM-generated code must declare allowed imports and side effects), and automatic rollback on quality degradation. This pipeline is rate-limited, gated, and supervised — it is not a fully autonomous system.
 
 ### Architecture Migration: Mixin → Kernel/Plugin
 
@@ -174,18 +191,19 @@ Full architecture: [docs/architecture.md](docs/architecture.md)
 
 ```plaintext
 tain_agent/                  # Framework package
-  kernel/                    # AgentKernel — sole entry point
-    __init__.py              # AgentKernel class
-    pral.py                  # PRAL cognitive loop (Perceive→Reason→Act→Learn)
-    lifecycle.py             # Plugin lifecycle management
+  kernel/                    # Backward-compatible shim layer
+    __init__.py              # AgentKernel — delegates to AgentRuntime
     dispatch.py              # Cross-plugin event routing
-    protocol.py              # PluginProtocol — explicit interface contract
-    factories.py             # STANDARD_FACTORIES — 7 Plugin factory mapping
-    prompts.py               # System prompts (migrated from bootstrap.py)
+    protocol.py              # PluginProtocol, AgentContext, HealthStatus
+  runtime/                   # Actual execution engine
+    __init__.py              # AgentRuntime — package-based kernel
+    pral.py                  # PRAL cognitive loop (Perceive→Reason→Act→Learn)
+    prompts.py               # System prompt templates
+    plugin_loader.py         # Plugin assembly with version checking
   plugins/                   # Plugin implementations
     identity/                # Agent identity + personality adapter
     memory/                  # Episodic + semantic memory
-    tool/                    # ToolRegistry + ToolForge + ClosedForgeCycle
+    tool/                    # ToolRegistry + ToolForge + ForgeCycle
     skill/                   # Skill composition
     knowledge/               # Knowledge graph + GoalManager
     workflow/                # Workflow engine
@@ -194,7 +212,6 @@ tain_agent/                  # Framework package
   core/                      # Core subsystems
     agent_factory.py         # Multi-agent lifecycle management
     chat.py                  # Shared chat engine (Web UI + ACP)
-    cognitive_loop.py        # PRAL cognitive cycle enrichment
     config_schema.py         # Pydantic config validation (v2)
     conversation.py          # Token-aware context management
     dialogue.py              # Human-AI dialogue bridge (REPL)
@@ -212,16 +229,27 @@ tain_agent/                  # Framework package
   evolution/                 # Self-evolution system
     autonomous_loop.py       # AutonomousEvolutionLoop — 8-stage closed cycle
     behavior_contract.py     # BehaviorContract — AST compliance verification
+    forge_cycle.py           # ForgeCycle — 5-stage tool forging orchestrator
     pipeline.py              # SelfImprovementPipeline (manual/export use)
     quality_gate.py          # Export quality gate (7H + 9S)
     emergence_verifier.py    # Behavioral emergence verification
     lineage.py               # Evolution event tracking
-    capability.py            # Capability registry
-    exporter.py / importer.py # Agent export/import
+    capability.py            # Capability registry + desired capabilities
+    exporter.py              # Agent export
+    importer.py              # Agent import
     introspection.py         # get_self_profile lightweight API
     diagnostic_feedback.py   # Agent→framework diagnostic channel
     goal.py                  # Goal system
     reporter.py              # Evolution metrics reporter
+    self_modify.py           # Self code modification
+    vector_store.py          # Knowledge vector storage
+    dependency_manager.py    # Package dependency resolution
+    sub_agent.py             # Sub-agent spawning
+    skill_exporter.py        # Skill export logic
+  package/                   # Package model — agent export/import unit
+    __init__.py              # AgentPackage, PackageRegistry, PackageKind
+    manifest.py              # Manifest parser, hash verification
+    evolution.py             # EvolutionResult, Mutation, evolve() cycle
   tools/                     # Tool system
     primal.py                # Primal tools (file ops, web, code exec, knowledge)
     forge.py                 # Tool forge (7-stage safety pipeline)
@@ -230,14 +258,12 @@ tain_agent/                  # Framework package
     mcp_loader.py            # MCP server integration over stdio
     background_manager.py    # Async background process lifecycle
     inter_agent.py           # Agent-to-agent communication
-    forged/                  # Agent-forged tools
+    forged/                  # Sandbox testing for agent-forged tools
   acp/                       # ACP protocol (JSON-RPC over stdio)
-  runtime/                   # Standalone runtime kernel for exported agents
   mcp/                       # MCP server (IDE embedding)
   utils/                     # Utilities
     token_utils.py           # Token-aware smart truncation
     persist.py               # Atomic write utilities
-  storage_registry.py        # Semantic storage path resolution
 webui/                       # Web UI (FastAPI + Jinja2 + HTMX + Alpine.js)
   app.py                     # FastAPI application
   agent_cache.py             # AgentKernel instance cache
@@ -258,7 +284,8 @@ docs/                        # Documentation
   changelog/                 # Version changelogs
   EVOLUTION.md               # Evolution design philosophy
   SAFETY.md                  # Safety model
-tests/                       # Test suite (766 tests, 30+ files)
+  runtime.md                 # Runtime kernel documentation
+tests/                       # Test suite (829 tests)
 ```
 
 ---
@@ -336,7 +363,6 @@ logging:
 - [Safety Model](docs/SAFETY.md) — Security model and known limitations
 - [Runtime Kernel](docs/runtime.md) — Standalone runtime documentation
 - [Changelog](docs/changelog/) — Version history and release notes
-- [Optimization Backlog](docs/optimization-backlog.md) — Planned improvements
 
 ## Requirements
 

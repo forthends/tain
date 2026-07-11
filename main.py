@@ -40,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from tain_agent.core.agent_factory import AgentFactory
 from tain_agent.kernel import AgentKernel, AgentContext, STANDARD_FACTORIES
-from tain_agent.kernel.prompts import EVOLVE_SYSTEM_PROMPT
+from tain_agent.kernel import EVOLVE_SYSTEM_PROMPT
 from tain_agent.core.llm import LLMBackend
 from tain_agent.core.conversation import ConversationManager
 from tain_agent.core.drives import DriveSystem
@@ -195,6 +195,8 @@ def main():
     # Mode
     parser.add_argument("--pral", action="store_true",
                         help="Run with full PRAL cognitive cycle (default)")
+    parser.add_argument("--no-pral", action="store_true",
+                        help="Run without PRAL cognitive cycle (daemon passthrough)")
     parser.add_argument("--dialogue", "-d", action="store_true",
                         help="Start in interactive human-AI dialogue mode (REPL)")
     parser.add_argument("--cycles", type=int, default=0,
@@ -233,7 +235,58 @@ def main():
     parser.add_argument("--export-bundle", action="store_true", help="Export agent as standalone Skill Bundle")
     parser.add_argument("--list-production-ready", action="store_true", help="List all production-ready agents")
 
+    # ---- Subcommands ----
+    subparsers = parser.add_subparsers(dest="command")
+
+    # ---- Package subcommand ----
+    pkg_parser = subparsers.add_parser("package", help="Manage Agent packages")
+    pkg_sub = pkg_parser.add_subparsers(dest="package_action")
+
+    pkg_create = pkg_sub.add_parser("create", help="Create a new package")
+    pkg_create.add_argument("--name", required=True, help="Package name")
+    pkg_create.add_argument("--kind", default="agent", choices=["agent", "toolset", "skill"])
+    pkg_create.add_argument("--version", default="0.0.0")
+    pkg_create.add_argument("--mode", default="chaos", choices=["chaos", "specified"])
+
+    pkg_sub.add_parser("list", help="List packages")
+
+    pkg_validate = pkg_sub.add_parser("validate", help="Validate a package")
+    pkg_validate.add_argument("--name", required=True)
+
+    pkg_export = pkg_sub.add_parser("export", help="Export a package")
+    pkg_export.add_argument("--name", required=True)
+    pkg_export.add_argument("--output", default="dist")
+    pkg_export.add_argument("--format", choices=["dir", "tar.gz"], default="dir",
+                            help="Export format (default: dir)")
+
+    pkg_import = pkg_sub.add_parser("import", help="Import a package")
+    pkg_import.add_argument("--source", required=True, dest="import_source")
+
     args = parser.parse_args()
+
+    # ── Package subcommand dispatch ──────────────────────────────────
+    if hasattr(args, "package_action") and args.package_action:
+        from pathlib import Path as _Path
+        from tain_agent.package.cli import (
+            cmd_package_create, cmd_package_validate, cmd_package_list,
+            cmd_package_export, cmd_package_import,
+        )
+        import json as _json
+        if args.package_action == "create":
+            result = cmd_package_create(name=args.name, kind=args.kind, version=args.version, evolution_mode=args.mode)
+        elif args.package_action == "list":
+            result = cmd_package_list()
+        elif args.package_action == "validate":
+            result = cmd_package_validate(name=args.name)
+        elif args.package_action == "export":
+            result = cmd_package_export(name=args.name, output=_Path(args.output),
+                                         format=args.format)
+        elif args.package_action == "import":
+            result = cmd_package_import(source=_Path(args.import_source))
+        else:
+            result = {"ok": False, "error": f"Unknown action: {args.package_action}"}
+        print(_json.dumps(result, indent=2, ensure_ascii=False))
+        sys.exit(0 if result.get("ok") else 1)
 
     # ── Web UI ────────────────────────────────────────────────────────
     if args.webui:
@@ -346,7 +399,7 @@ def main():
             cfg = yaml.safe_load(f) or {}
 
     evolution_mode = cfg.get("agent", {}).get("evolution_mode", "specified")
-    workspace = Path("agent_workspace") / agent_name
+    workspace = Path("agent_workspace/packages") / agent_name
 
     ctx = AgentContext(
         agent_name=agent_name,

@@ -165,7 +165,6 @@ class AutonomousEvolutionLoop:
     """
 
     # INI file for state persistence
-    _STATE_DIR = Path("agent_workspace/state")
     _STATE_FILE = "evolution_loop.json"
 
     def __init__(
@@ -174,11 +173,19 @@ class AutonomousEvolutionLoop:
         tool_plugin,           # ToolPlugin instance
         knowledge_plugin,      # KnowledgePlugin instance
         lineage,               # LineageTracker instance
+        agent_name,            # agent name for state directory isolation
     ):
         self._llm = llm_backend
         self._tools = tool_plugin
         self._knowledge = knowledge_plugin
         self._lineage = lineage
+        self._agent_name = agent_name
+
+        # ── State directory (defaults to temp to avoid CWD pollution) ──
+        import tempfile
+        self._STATE_DIR = (
+            Path(tempfile.gettempdir()) / "tain-agent" / agent_name / "state"
+        )
 
         # ── Config (overridable via configure()) ──
         self.min_interval_seconds = 300
@@ -197,17 +204,13 @@ class AutonomousEvolutionLoop:
         self._thread: Optional[threading.Thread] = None
         self._snapshots: dict[str, ToolSnapshot] = {}
 
-        # ── Trigger config (same 8 dimensions as old ImprovementLoop) ──
+        # ── Trigger config (4 real-signal dimensions) ──
         self.trigger_config = {
-            "min_trigger_score": 0.01,
-            "capability_gap":   {"enabled": True, "threshold": 0.0,  "weight": 0.08},
-            "code_health":      {"enabled": True, "threshold": 0.50, "weight": 0.20},
-            "knowledge_fresh":  {"enabled": True, "threshold": 0.30, "weight": 0.20},
-            "tool_fitness":     {"enabled": True, "threshold": 0.10, "weight": 0.12},
-            "tool_dedup":       {"enabled": True, "threshold": 0.40, "weight": 0.08},
-            "subgraph_balance": {"enabled": True, "threshold": 0.30, "weight": 0.12},
-            "task_completion":  {"enabled": True, "threshold": 0.30, "weight": 0.15},
-            "goal_achievement": {"enabled": True, "threshold": 0.30, "weight": 0.10},
+            "min_trigger_score": 0.3,
+            "capability_gap":   {"enabled": True, "threshold": 0.0,  "weight": 0.30},
+            "tool_dedup":       {"enabled": True, "threshold": 0.40, "weight": 0.10},
+            "task_completion":  {"enabled": True, "threshold": 0.20, "weight": 0.35},
+            "goal_achievement": {"enabled": True, "threshold": 0.30, "weight": 0.25},
         }
         self._last_trigger_scores: dict = {}
         self._last_triggered_by: list = []
@@ -440,18 +443,14 @@ class AutonomousEvolutionLoop:
     # ── Stage 1: Gap Detection ───────────────────────────────────────────
 
     def _assess_need(self) -> dict:
-        """Evaluate all 8 trigger dimensions and compute a weighted need score.
+        """Evaluate 4 trigger dimensions and compute a weighted need score.
 
         Returns:
             dict with 'should_trigger', 'scores', 'triggered_by', 'need_score'.
         """
         dims = [
             ("capability_gap",   self._eval_capability_gap),
-            ("code_health",      self._eval_code_health),
-            ("knowledge_fresh",  self._eval_knowledge_fresh),
-            ("tool_fitness",     self._eval_tool_fitness),
             ("tool_dedup",       self._eval_tool_dedup),
-            ("subgraph_balance", self._eval_subgraph_balance),
             ("task_completion",  self._eval_task_completion),
             ("goal_achievement", self._eval_goal_achievement),
         ]
@@ -504,61 +503,34 @@ class AutonomousEvolutionLoop:
     # ── Dimension evaluators ─────────────────────────────────────────────
 
     def _eval_capability_gap(self) -> float:
-        """Score based on tool count. Returns 0 if >=10 tools, scaled gap otherwise."""
+        """Score based on goals requiring capabilities not in current toolset."""
         try:
             tools = self._tools.list_tools()
-            count = len(tools)
+            tool_names = set(tools.keys())
         except Exception:
             return 0.0
-        if count >= 10:
+
+        try:
+            active_goals = self._knowledge.goals.list_active()
+        except Exception:
+            active_goals = []
+
+        if not active_goals:
+            # Fallback: mild tool-count signal
+            count = len(tool_names)
+            if count < 3:
+                return round((3 - count) / 3, 4)
             return 0.0
-        # Scale: 0 tools → 1.0, 10 tools → 0.0
-        return round(max(0.0, (10 - count) / 10), 4)
 
-    def _eval_code_health(self) -> float:
-        """Try importing code_entropy forged tool. Returns 0 on failure."""
-        try:
-            tools = self._tools.list_tools()
-            if "code_entropy" in tools:
-                result = self._tools.call("code_entropy")
-                if isinstance(result, dict) and result.get("success"):
-                    entropy = result.get("entropy", result.get("result", 0.5))
-                    if isinstance(entropy, (int, float)):
-                        return round(float(entropy), 4)
-                return 0.0
-        except Exception:
-            logger.debug("code_entropy tool unavailable — code_health score: 0.0", exc_info=True)
-        return 0.0
+        gap_count = 0
+        for goal_dict in active_goals:
+            required = goal_dict.get("required_capability", "")
+            if required and required not in tool_names:
+                gap_count += 1
 
-    def _eval_knowledge_fresh(self) -> float:
-        """Try importing knowledge_freshness forged tool. Returns 0 on failure."""
-        try:
-            tools = self._tools.list_tools()
-            if "knowledge_freshness" in tools:
-                result = self._tools.call("knowledge_freshness")
-                if isinstance(result, dict) and result.get("success"):
-                    freshness = result.get("freshness", result.get("result", 0.5))
-                    if isinstance(freshness, (int, float)):
-                        return round(float(freshness), 4)
-                return 0.0
-        except Exception:
-            logger.debug("knowledge_freshness tool unavailable — score: 0.0", exc_info=True)
-        return 0.0
-
-    def _eval_tool_fitness(self) -> float:
-        """Try importing tool_fitness forged tool. Returns 0 on failure."""
-        try:
-            tools = self._tools.list_tools()
-            if "tool_fitness" in tools:
-                result = self._tools.call("tool_fitness")
-                if isinstance(result, dict) and result.get("success"):
-                    fitness = result.get("fitness", result.get("result", 0.5))
-                    if isinstance(fitness, (int, float)):
-                        return round(float(fitness), 4)
-                return 0.0
-        except Exception:
-            logger.debug("tool_fitness tool unavailable — score: 0.0", exc_info=True)
-        return 0.0
+        if gap_count == 0:
+            return 0.0
+        return round(gap_count / len(active_goals), 4)
 
     def _eval_tool_dedup(self) -> float:
         """Hash-based dedup check on forged tools. Returns dedup score 0-1."""
@@ -585,28 +557,33 @@ class AutonomousEvolutionLoop:
 
             # Higher dedup score = more need for improvement (more duplicates)
             return round(1.0 - dedup_ratio, 4)
-        except Exception:
-            logger.debug("tool_dedup evaluation failed — score: 0.0", exc_info=True)
+        except (AttributeError, TypeError) as e:
+            logger.debug("tool_dedup evaluation failed: %s", e)
             return 0.0
 
-    def _eval_subgraph_balance(self) -> float:
-        """Try importing knowledge_subgraph forged tool. Returns 0 on failure."""
-        try:
-            tools = self._tools.list_tools()
-            if "knowledge_subgraph" in tools:
-                result = self._tools.call("knowledge_subgraph")
-                if isinstance(result, dict) and result.get("success"):
-                    balance = result.get("balance", result.get("result", 0.5))
-                    if isinstance(balance, (int, float)):
-                        return round(float(balance), 4)
-                return 0.0
-        except Exception:
-            logger.debug("knowledge_subgraph tool unavailable — score: 0.0", exc_info=True)
-        return 0.0
-
     def _eval_task_completion(self) -> float:
-        """Stub — returns 0.0 (needs decision_log integration)."""
-        return 0.0
+        """Score based on recent tool-call failure rate.
+
+        Reads tool_result_log from KnowledgePlugin's dynamic layer.
+        High failure rate → high evolution need.
+        """
+        try:
+            if not hasattr(self._knowledge, '_dynamic'):
+                return 0.0
+            log_entries = [
+                e for e in self._knowledge._dynamic
+                if isinstance(e, dict) and e.get("type") == "tool_result"
+            ]
+            if not log_entries:
+                return 0.0
+            recent = log_entries[-20:]  # last 20 tool results
+            failures = sum(
+                1 for e in recent
+                if not e.get("success", False)
+            )
+            return round(failures / len(recent), 4)
+        except Exception:
+            return 0.0
 
     def _eval_goal_achievement(self) -> float:
         """Query knowledge_plugin for goal achievement rate."""
@@ -625,23 +602,18 @@ class AutonomousEvolutionLoop:
                     return 0.0
                 # Higher score = more uncompleted goals (need for improvement)
                 return round(1.0 - (completed / len(goals)), 4)
-        except Exception:
-            logger.debug("goal_achievement evaluation failed — score: 0.0", exc_info=True)
+        except (AttributeError, TypeError) as e:
+            logger.debug("goal_achievement evaluation failed: %s", e)
         return 0.0
 
     # ── Stage 2: Spec Generation ─────────────────────────────────────────
 
     def _generate_spec(self, assessment: dict) -> ImprovementSpec | None:
-        """Generate an ImprovementSpec from the assessment.
-
-        Uses triggered_by dimensions to create a meaningful capability_id
-        and description.
-        """
+        """Generate an ImprovementSpec enriched with goal and failure context."""
         triggered_by = assessment.get("triggered_by", [])
         scores = assessment.get("scores", {})
 
         if not triggered_by:
-            # Fallback: use the dimension with highest score
             if scores:
                 best_dim = max(scores, key=lambda k: scores.get(k, 0.0))
                 triggered_by = [{"dimension": best_dim, "score": scores[best_dim]}]
@@ -651,42 +623,83 @@ class AutonomousEvolutionLoop:
         primary = triggered_by[0]
         dim_name = primary["dimension"]
 
-        # Build unique function name (auto_<dim> or auto_<dim>_N)
-        counter_key = f"auto_{dim_name}"
-        idx = self._spec_counter.get(counter_key, 0) + 1
-        self._spec_counter[counter_key] = idx
+        # ── Query goals for context ──
+        active_goals: list[dict] = []
+        try:
+            if hasattr(self._knowledge, 'goals'):
+                active_goals = self._knowledge.goals.list_active()
+        except Exception:
+            pass
 
-        if idx == 1:
-            function_name = f"auto_{dim_name}"
-        else:
-            function_name = f"auto_{dim_name}_{idx}"
+        # ── Query recent tool failures for context ──
+        recent_failures: list[dict] = []
+        try:
+            dynamic = getattr(self._knowledge, '_dynamic', [])
+            recent_failures = [
+                e for e in dynamic[-30:]
+                if isinstance(e, dict) and e.get("type") == "tool_result"
+                and not e.get("success", False)
+            ][-5:]  # last 5 failures
+        except Exception:
+            pass
 
-        # Build capability_id
+        # ── Build function name from goal context if available ──
+        function_name = ""
+        if active_goals:
+            # Pick the first active goal with a required_capability
+            for g in active_goals:
+                cap = g.get("required_capability", "")
+                if cap:
+                    function_name = cap
+                    break
+        if not function_name:
+            counter_key = f"auto_{dim_name}"
+            idx = self._spec_counter.get(counter_key, 0) + 1
+            self._spec_counter[counter_key] = idx
+            function_name = f"auto_{dim_name}" if idx == 1 else f"auto_{dim_name}_{idx}"
+
+        # ── Build capability_id ──
         ts = now().strftime("%Y%m%d%H%M%S")
         capability_id = f"{function_name}_{ts}"
 
-        # Build description from triggered dimensions
-        dim_descriptions = {
-            "capability_gap": "Fill capability gap",
-            "code_health": "Improve code health",
-            "knowledge_fresh": "Refresh stale knowledge",
-            "tool_fitness": "Optimize tool fitness",
-            "tool_dedup": "Deduplicate tools",
-            "subgraph_balance": "Balance knowledge subgraph",
-            "task_completion": "Improve task completion",
-            "goal_achievement": "Advance goal achievement",
-        }
-        description = dim_descriptions.get(dim_name, f"Auto-improve {dim_name}")
+        # ── Build description from goal context ──
+        if active_goals:
+            goal_descriptions = [
+                g["description"] for g in active_goals[:2]
+                if g.get("description")
+            ]
+            if goal_descriptions:
+                description = (
+                    f"Support active goals: {'; '.join(goal_descriptions)}"
+                )
+                if len(active_goals) > 2:
+                    description += f" (and {len(active_goals) - 2} more)"
+            else:
+                description = f"Address evolution dimension: {dim_name}"
+        else:
+            dim_descriptions = {
+                "capability_gap": "Fill capability gap",
+                "tool_dedup": "Deduplicate tools",
+                "task_completion": "Improve task completion",
+                "goal_achievement": "Advance goal achievement",
+            }
+            description = dim_descriptions.get(dim_name, f"Address evolution dimension: {dim_name}")
+
         if len(triggered_by) > 1:
             others = [t["dimension"] for t in triggered_by[1:3]]
             description += f" (also: {', '.join(others)})"
 
-        # Build reasoning
+        # ── Build reasoning with failure context ──
         reasoning_parts = []
         for t in triggered_by[:3]:
+            reasoning_parts.append(f"{t['dimension']}: {t['score']:.3f}")
+
+        if recent_failures:
+            fail_names = set(f.get("tool_name", "unknown") for f in recent_failures)
             reasoning_parts.append(
-                f"{t['dimension']}: {t['score']:.3f}"
+                f"Recent failures ({len(recent_failures)}): {', '.join(sorted(fail_names))}"
             )
+
         reasoning = "Triggered by: " + "; ".join(reasoning_parts)
 
         from tain_agent.plugins.tool.forge_cycle import ImprovementSpec as _ISpec
@@ -730,6 +743,16 @@ class AutonomousEvolutionLoop:
 
             return code, contract
 
+        # In strict mode, if all retries exhausted without passing contract check,
+        # return failure (None, None) — do NOT return unverified code.
+        if self.contract_enforcement == "strict":
+            logger.warning(
+                "Contract check failed for '%s' after %d attempts. "
+                "Returning failure to prevent unverified code execution.",
+                spec.function_name, self.max_generate_retries,
+            )
+            return None, None
+
         return last_code, last_contract
 
     def _generate_code(
@@ -763,19 +786,38 @@ class AutonomousEvolutionLoop:
         return code, contract
 
     def _build_generation_prompt(self, spec: ImprovementSpec, retry: bool = False) -> str:
-        """Build the generation prompt with spec, sandbox allowlist, and existing tools."""
-        # Get sandbox allowlist
+        """Build the generation prompt with spec, sandbox allowlist, existing tools,
+        active goal context, and failure examples."""
         try:
             allowlist = self._tools.get_sandbox_allowlist()
         except Exception:
             allowlist = ["json", "math", "datetime", "collections", "typing", "hashlib", "re"]
 
-        # Get existing tools for context
         try:
             existing_tools = self._tools.list_tools()
-            tool_names = sorted(existing_tools.keys())[:20]  # limit for prompt size
+            tool_names = sorted(existing_tools.keys())[:20]
         except Exception:
             tool_names = []
+
+        # ── Gather active goals for context ──
+        active_goals: list[dict] = []
+        try:
+            if hasattr(self._knowledge, 'goals'):
+                active_goals = self._knowledge.goals.list_active()
+        except Exception:
+            pass
+
+        # ── Gather recent failures ──
+        recent_failures: list[dict] = []
+        try:
+            dynamic = getattr(self._knowledge, '_dynamic', [])
+            recent_failures = [
+                e for e in dynamic[-30:]
+                if isinstance(e, dict) and e.get("type") == "tool_result"
+                and not e.get("success", False)
+            ][-3:]
+        except Exception:
+            pass
 
         lines = [
             f"Task: Generate a Python function for the following improvement specification.",
@@ -785,10 +827,31 @@ class AutonomousEvolutionLoop:
             f"Capability ID: {spec.capability_id}",
             f"Reasoning: {spec.reasoning}",
             "",
+        ]
+
+        if active_goals:
+            lines.append("Active goals this tool should help accomplish:")
+            for g in active_goals[:3]:
+                lines.append(
+                    f"  - [{g.get('status', 'active')}] {g.get('description', '')}"
+                    f"{' (needs: ' + g.get('required_capability', '') + ')' if g.get('required_capability') else ''}"
+                )
+            lines.append("")
+
+        if recent_failures:
+            lines.append("Recent tool failures to address:")
+            for f in recent_failures:
+                lines.append(
+                    f"  - {f.get('tool_name', 'unknown')} failed"
+                    f" at {f.get('timestamp', 'unknown')}"
+                )
+            lines.append("")
+
+        lines.extend([
             "Allowed modules (sandbox allowlist):",
             ", ".join(sorted(allowlist)),
             "",
-        ]
+        ])
 
         if tool_names:
             lines.append("Existing tools (for reference, avoid name collisions):")
@@ -1192,3 +1255,371 @@ class AutonomousEvolutionLoop:
             )
         except Exception:
             logger.debug("Failed to load evolution loop state.", exc_info=True)
+
+
+# ── Package-level evolution adapter ──────────────────────────────────────────
+
+class EvolutionError(Exception):
+    """Raised when an evolution stage fails in a way that should prevent
+    the mutation from being applied."""
+
+
+def _minimal_sandbox_env() -> dict[str, str]:
+    """Return a minimal safe environment for sandbox subprocess execution."""
+    import os as _os
+    if _os.name == "nt":
+        env = {
+            "PYTHONPATH": "",
+            "PATH": _os.environ.get("PATH", ""),
+            "SystemRoot": _os.environ.get("SystemRoot", "C:\\Windows"),
+        }
+        system_drive = _os.environ.get("SYSTEMDRIVE", "C:")
+        if system_drive:
+            env["SYSTEMDRIVE"] = system_drive
+        return env
+    else:
+        return {"PYTHONPATH": "", "PATH": "/usr/bin:/bin"}
+
+
+def _build_sandbox_test_script(
+    *,
+    code: str,
+    tool_name: str,
+    allowed_modules: frozenset,
+    blacklisted_calls: frozenset,
+    blacklisted_modules: frozenset,
+) -> str:
+    """Build a self-contained test script with embedded AST validation.
+
+    The returned script string performs AST-level sandbox checks (import
+    whitelist, call blacklist) before exec-ing the code and calling the
+    tool's main() function.  All validation logic is embedded so the
+    subprocess needs no imports from the main codebase.
+    """
+    lines = [
+        "# Auto-generated sandbox smoke test — do not edit",
+        "import ast, json, sys",
+        "",
+        f"_ALLOWED = {allowed_modules!r}",
+        f"_CALL_BLACKLIST = {blacklisted_calls!r}",
+        f"_MODULE_BLACKLIST = {blacklisted_modules!r}",
+        "",
+        f"_CODE = {code!r}",
+        f"_TOOL_NAME = {tool_name!r}",
+        "",
+        "errors = []",
+        "",
+        "# Step 0: syntax check",
+        "try:",
+        "    tree = ast.parse(_CODE)",
+        "except SyntaxError as e:",
+        "    print(json.dumps({'passed': False, 'stage': 'syntax',"
+        "                      'error': f'SyntaxError: {e}'}))",
+        "    sys.exit(0)",
+        "",
+        "# Step 1: import validation",
+        "for node in ast.walk(tree):",
+        "    if isinstance(node, ast.Import):",
+        "        for alias in node.names:",
+        "            top = alias.name.split('.')[0]",
+        "            if top in _MODULE_BLACKLIST:",
+        "                errors.append(f'blocked_import: {top} ({alias.name})')",
+        "            elif top not in _ALLOWED:",
+        "                errors.append(f'unlisted_import: {top} ({alias.name})')",
+        "    elif isinstance(node, ast.ImportFrom):",
+        "        if node.module:",
+        "            top = node.module.split('.')[0]",
+        "            if top in _MODULE_BLACKLIST:",
+        "                errors.append(f'blocked_import: {top} ({node.module})')",
+        "            elif top not in _ALLOWED:",
+        "                errors.append(f'unlisted_import: {top} ({node.module})')",
+        "",
+        "# Build import alias map for call resolution",
+        "alias_map = {}",
+        "for node in ast.walk(tree):",
+        "    if isinstance(node, ast.Import):",
+        "        for alias in node.names:",
+        "            alias_map[alias.asname or alias.name.split('.')[0]] = alias.name",
+        "    elif isinstance(node, ast.ImportFrom):",
+        "        if node.module:",
+        "            for alias in node.names:",
+        "                full = f'{node.module}.{alias.name}'",
+        "                alias_map[alias.asname or alias.name] = full",
+        "",
+        "# Step 2: call target validation",
+        "for node in ast.walk(tree):",
+        "    if isinstance(node, ast.Call):",
+        "        func = node.func",
+        "        # Direct name call: eval(...)",
+        "        if isinstance(func, ast.Name):",
+        "            if func.id in _CALL_BLACKLIST:",
+        "                errors.append(f'blocked_call: {func.id}()')",
+        "        # Attribute call: os.system(...), import os as foo; foo.system(...)",
+        "        elif isinstance(func, ast.Attribute):",
+        "            # Walk the attribute chain to get the base name",
+        "            base = func",
+        "            while isinstance(base, ast.Attribute):",
+        "                base = base.value",
+        "            if isinstance(base, ast.Name):",
+        "                resolved = alias_map.get(base.id, base.id)",
+        "                top = resolved.split('.')[0]",
+        "                if top in _MODULE_BLACKLIST:",
+        "                    errors.append(f'blocked_call: {resolved} access')",
+        "            # Check the method name against blacklist too",
+        "            if func.attr in _CALL_BLACKLIST:",
+        "                errors.append(f'blocked_call: .{func.attr}()')",
+        "",
+        "# Report AST validation failures early",
+        "if errors:",
+        "    print(json.dumps({'passed': False, 'stage': 'ast_validation',",
+        "                      'error': '; '.join(errors)}))",
+        "    sys.exit(0)",
+        "",
+        "# Step 3: exec and smoke test",
+        "try:",
+        "    exec(_CODE)",
+        "    result = main()",
+        "    print(json.dumps({'passed': True, 'result': str(result)}))",
+        "except Exception as e:",
+        "    print(json.dumps({'passed': False, 'stage': 'runtime',",
+        "                      'error': f'{type(e).__name__}: {e}'}))",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def create_package_evolver(runtime):
+    """Create (gap_detector, mutation_generator, contract_checker, online_verifier)
+    callables for use with AgentPackage.evolve().
+
+    Args:
+        runtime: AgentRuntime instance providing access to plugins, config,
+                 and the LLM backend (stored at runtime._llm_backend).
+
+    Returns:
+        Tuple of four callables compatible with AgentPackage.evolve().
+    """
+    import json as _json  # noqa: F841 — used in Task 3 (mutation_generator)
+    from tain_agent.evolution.behavior_contract import BehaviorContract
+    from tain_agent.package.evolution import Mutation
+    from tain_agent.package import LayerKind
+
+    # Extract dependencies from runtime
+    llm_backend = getattr(runtime, '_llm_backend', None)  # noqa: F841 — used in Task 3 (mutation_generator)
+    tool_plugin = runtime.get_plugin("ToolPlugin")
+    knowledge_plugin = runtime.get_plugin("KnowledgePlugin")  # noqa: F841 — used in Task 4 (online_verifier)
+    _ = knowledge_plugin  # suppress unused warning until wired in Task 4
+
+    def gap_detector(package):
+        """Detect capability gaps by comparing tool count against threshold.
+
+        Returns a dict with capability_id, description, and gap_score
+        suitable for mutation_generator, or None if no gap detected.
+        """
+        try:
+            tools = tool_plugin.list_tools() if hasattr(tool_plugin, 'list_tools') else []
+            count = len(tools)
+        except Exception:
+            count = 0
+
+        if count >= 10:
+            return None  # No gap — sufficient tools
+
+        gap_score = round((10 - count) / 10, 4)
+        return {
+            "capability_id": f"capability_gap_{count}_tools",
+            "description": (
+                f"Agent has only {count} tools (threshold: 10). "
+                f"Gap score: {gap_score}. Generate a useful new tool."
+            ),
+            "gap_score": gap_score,
+            "tool_count": count,
+        }
+
+    def mutation_generator(gap, package):
+        """Generate tool code via LLM from a gap specification.
+
+        Uses the LLM backend to produce Python code implementing the
+        capability described by the gap. Returns a Mutation with the
+        generated code as a file to write.
+        """
+        if llm_backend is None:
+            raise EvolutionError("No LLM backend available for code generation")
+
+        capability_id = gap.get("capability_id", "unknown")
+        description = gap.get("description", "")
+
+        prompt = (
+            f"You are generating Python tool code for a self-evolving agent.\n\n"
+            f"Capability needed: {capability_id}\n"
+            f"Description: {description}\n\n"
+            f"Generate a single complete Python function that implements this "
+            f"capability. The code will run in a sandbox with limited imports "
+            f"(stdlib whitelist plus declared dependencies).\n\n"
+            f"Return a JSON object with these keys:\n"
+            f'  "code": The complete Python function as a string.\n'
+            f'  "tool_name": A snake_case name for the tool.\n'
+            f'  "description": What the tool does (one line).\n'
+            f'  "parameters": JSON Schema for the function parameters.\n'
+            f'  "dependencies": List of pip package specs needed (e.g. ["requests"]).\n'
+            f'  "test_code": A short assertion to verify the tool works.\n'
+        )
+
+        try:
+            response = llm_backend.create_message(
+                system_prompt="You are a Python code generator for agent tools.",
+                messages=[{"role": "user", "content": prompt}],
+                tools=[],
+            )
+            text = (
+                "\n".join(response.text_blocks)
+                if hasattr(response, 'text_blocks')
+                else str(response)
+            )
+            # Extract JSON from code fences if present
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0]
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0]
+            gen_result = _json.loads(text.strip())
+        except Exception as exc:
+            raise EvolutionError(f"Code generation failed: {exc}") from exc
+
+        code = gen_result.get("code", "")
+        tool_name = gen_result.get("tool_name", capability_id)
+        if not code:
+            raise EvolutionError("LLM returned empty code for mutation")
+
+        # Build a clean importable module from the LLM-generated code.
+        # The LLM is responsible for declaring its own imports.
+        lines: list[str] = []
+        lines.append(code)
+        lines.append("")
+        lines.append("")
+        lines.append(f"# Tool: {tool_name}")
+        lines.append(f"# Description: {gen_result.get('description', '')}")
+        lines.append(f"# Generated via autonomous evolution")
+        module_code = "\n".join(lines)
+
+        file_path = f"capability/tools/forged/{tool_name}.py"
+        return Mutation(
+            layer=LayerKind.CAPABILITY,
+            change_type="new_tool",
+            detail=f"Auto-generated tool '{tool_name}': {gen_result.get('description', '')}",
+            files_to_write=[(file_path, module_code.encode("utf-8"))],
+            manifest_patch={
+                "capability": {
+                    "tools": [{"name": tool_name, "version": "1.0.0",
+                               "path": file_path, "hash": ""}],
+                },
+            },
+            source_gap=capability_id,
+        )
+
+    def contract_checker(mutation, package):
+        contract = BehaviorContract()
+        try:
+            for rel_path, content_bytes in mutation.files_to_write:
+                code = content_bytes.decode("utf-8")
+                result = contract.verify_code_compliance(code)
+                if not result.passed:
+                    return False, [f"{rel_path}: {result.errors}"]
+            return True, []
+        except Exception as e:
+            return False, [str(e)]
+
+    def online_verifier(mutation, package):
+        """Smoke-test generated tools via sandbox execution.
+
+        Writes generated files into a temporary directory (never touching
+        the package's real files), then runs each through AST validation
+        and a subprocess smoke test with a 5-second timeout.
+        """
+        import subprocess as _sp
+        import sys as _sys
+        import tempfile as _tempfile
+
+        # Sandbox rules — embedded in the test script for AST validation
+        _SANDBOX_ALLOWED_MODULES = frozenset({
+            "json", "datetime", "pathlib", "typing", "hashlib", "math",
+            "collections", "itertools", "functools", "textwrap", "re", "string",
+            "dataclasses", "enum", "uuid", "statistics", "csv", "base64",
+            "copy", "random", "html", "xml", "argparse", "logging",
+        })
+        _SANDBOX_BLACKLIST_CALLS = frozenset({
+            "eval", "exec", "compile", "__import__", "open",
+        })
+        _SANDBOX_BLACKLIST_MODULES = frozenset({
+            "os", "sys", "subprocess", "shutil", "socket", "ctypes",
+            "multiprocessing", "signal", "builtins", "importlib",
+            "urllib", "http", "ftplib", "smtplib", "telnetlib",
+            "requests", "pdb", "code", "traceback", "inspect",
+            "pip", "setuptools", "pkg_resources",
+        })
+
+        errors: list[str] = []
+        for rel_path, content_bytes in mutation.files_to_write:
+            code = content_bytes.decode("utf-8")
+            tool_name = Path(rel_path).stem  # filename without .py
+
+            # Write code to a temp directory — never touch package files
+            tmp_dir = _tempfile.mkdtemp(prefix="tain_smoke_")
+            tool_path = Path(tmp_dir) / f"{tool_name}.py"
+            tool_path.write_text(code)
+
+            try:
+                # Build a self-contained test script that validates AST
+                # before exec-ing and runs the result through a smoke test
+                test_script = _build_sandbox_test_script(
+                    code=code,
+                    tool_name=tool_name,
+                    allowed_modules=_SANDBOX_ALLOWED_MODULES,
+                    blacklisted_calls=_SANDBOX_BLACKLIST_CALLS,
+                    blacklisted_modules=_SANDBOX_BLACKLIST_MODULES,
+                )
+
+                proc = _sp.run(
+                    [_sys.executable, "-c", test_script],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    env=_minimal_sandbox_env(),
+                )
+
+                # Check returncode first — subprocess crash means stderr has
+                # the real error, not stdout
+                if proc.returncode != 0:
+                    stderr_tail = proc.stderr.strip().split("\n")[-1] if proc.stderr else "no stderr"
+                    errors.append(
+                        f"{rel_path}: subprocess crashed (exit {proc.returncode}) — {stderr_tail}"
+                    )
+                    continue
+
+                stdout = proc.stdout.strip()
+                if not stdout:
+                    errors.append(f"{rel_path}: smoke test produced no output")
+                    continue
+
+                try:
+                    output = _json.loads(stdout)
+                except Exception:
+                    errors.append(
+                        f"{rel_path}: smoke test returned non-JSON output: {stdout[:200]}"
+                    )
+                    continue
+
+                if not output.get("passed", False):
+                    errors.append(
+                        f"{rel_path}: smoke test failed — {output.get('error', output.get('reason', 'unknown'))}"
+                    )
+            except _sp.TimeoutExpired:
+                errors.append(f"{rel_path}: smoke test timed out after 5s")
+            except Exception as exc:
+                errors.append(f"{rel_path}: smoke test error — {exc}")
+            finally:
+                # Clean up temp directory
+                import shutil as _shutil
+                _shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        return (len(errors) == 0, errors)
+
+    return gap_detector, mutation_generator, contract_checker, online_verifier

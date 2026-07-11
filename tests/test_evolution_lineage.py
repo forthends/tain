@@ -22,7 +22,7 @@ class TestLineageTracker:
     def tracker(self):
         """Create a LineageTracker pointing at a temporary directory."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            lt = LineageTracker(lineage_dir=tmpdir, lineage_file="test_lineage.jsonl")
+            lt = LineageTracker(lineage_path=Path(tmpdir) / "test_lineage.jsonl")
             yield lt
 
     def test_record_forge_has_required_fields(self, tracker):
@@ -197,3 +197,43 @@ class TestHashFile:
         finally:
             path_a.unlink()
             path_b.unlink()
+
+
+class TestMutationRollbackEvents:
+    """Tests for record_mutation() and record_rollback() added in Task 11."""
+
+    def test_record_mutation_has_correct_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lt = LineageTracker(lineage_path=Path(tmp) / "lineage.jsonl")
+            entry = lt.record_mutation(
+                version="0.2.0",
+                layer="capability",
+                change_type="new_tool",
+                detail="Added system_design tool",
+            )
+            assert entry["event"] == "mutation"
+            assert entry["version"] == "0.2.0"
+            assert entry["layer"] == "capability"
+            assert entry["change"] == "new_tool"
+            assert entry["detail"] == "Added system_design tool"
+
+    def test_record_rollback_has_correct_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lt = LineageTracker(lineage_path=Path(tmp) / "lineage.jsonl")
+            entry = lt.record_rollback(
+                version="0.2.0",
+                reason="Quality gate H3 failed",
+            )
+            assert entry["event"] == "rollback"
+            assert entry["version"] == "0.2.0"
+            assert entry["reason"] == "Quality gate H3 failed"
+
+    def test_mutation_and_rollback_appear_in_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lt = LineageTracker(lineage_path=Path(tmp) / "lineage.jsonl")
+            lt.record_mutation("0.2.0", "capability", "new_tool", "Add")
+            lt.record_rollback("0.2.0", "Failed verify")
+            events = lt._entries
+            assert len(events) == 2
+            assert events[0]["event"] == "mutation"
+            assert events[1]["event"] == "rollback"

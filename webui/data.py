@@ -10,11 +10,59 @@ from tain_agent import __version__
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE_ROOT = PROJECT_ROOT / "agent_workspace"
+# New-package-format agents live under packages/ subdirectory.
+PACKAGES_ROOT = WORKSPACE_ROOT / "packages"
 PID_DIR = WORKSPACE_ROOT  # .agent_daemon_{name}.pid files live here
 
 # Simple TTL cache for knowledge file listings
 _knowledge_cache: dict[str, tuple[float, list[dict]]] = {}
 _KNOWLEDGE_CACHE_TTL = 10  # seconds
+
+# webui/data.py — Package-based data layer
+from tain_agent.package import PackageRegistry, PackageKind
+from tain_agent.package.manifest import parse_manifest
+
+_registry = PackageRegistry(packages_root=PACKAGES_ROOT)
+
+
+def list_agents_v2() -> list[dict]:
+    """List agents from the new package-based system."""
+    agents = []
+    for pkg in _registry.list_packages(kind=PackageKind.AGENT):
+        manifest = _registry.get_manifest(pkg.name)
+        if manifest is None:
+            continue
+        agents.append({
+            "name": pkg.name,
+            "version": pkg.version,
+            "kind": manifest.package.kind,
+            "evolution_mode": manifest.package.evolution_mode,
+            "tool_count": len(manifest.capability.tools),
+            "artifact_count": len(manifest.expression.artifacts),
+            "created_at": manifest.package.created_at,
+            "updated_at": manifest.package.updated_at,
+        })
+    return agents
+
+
+def get_agent_v2(name: str) -> dict | None:
+    """Get a single agent from the package system."""
+    manifest = _registry.get_manifest(name)
+    if manifest is None:
+        return None
+    pkg = _registry.get_package(name)
+    if pkg is None:
+        return None
+    return {
+        "name": name,
+        "version": pkg.version,
+        "kind": manifest.package.kind,
+        "evolution_mode": manifest.package.evolution_mode,
+        "tool_count": len(manifest.capability.tools),
+        "artifact_count": len(manifest.expression.artifacts),
+        "created_at": manifest.package.created_at,
+        "updated_at": manifest.package.updated_at,
+    }
 
 
 def _read_json(path: Path) -> dict | None:
@@ -57,29 +105,48 @@ def get_registry() -> dict:
     return _read_json(path) or {"agents": {}}
 
 
+def _agent_path(name: str) -> Path:
+    """Return the agent's package directory."""
+    return PACKAGES_ROOT / name
+
+
+def _agent_file(name: str, rel: str, _old_rel: str = "") -> Path:
+    """Resolve a file path within the agent's package directory."""
+    return _agent_path(name) / rel
+
+
+def _agent_dir(name: str, rel: str, _old_rel: str = "") -> Path:
+    """Resolve a directory path within the agent's package directory."""
+    return _agent_path(name) / rel
+
+
 def list_agents() -> list[dict]:
-    registry = get_registry()
     agents = []
-    for name, info in registry.get("agents", {}).items():
+    # Discover agents via PackageRegistry (not deprecated _registry.json)
+    for pkg in _registry.list_packages(kind=PackageKind.AGENT):
+        name = pkg.name
         running = is_agent_running(name)
-        version = _read_json(WORKSPACE_ROOT / name / "version.json")
-        personality = _read_json(WORKSPACE_ROOT / name / "state" / "personality.json")
-        memory = _read_json(WORKSPACE_ROOT / name / "logs" / "memory.json")
+        agent_dir = _agent_path(name)
+
+        manifest = _read_json(agent_dir / "manifest.json")
+        pkg_info = manifest.get("package", {}) if manifest else {}
+
+        personality = _read_json(agent_dir / "cognitive" / "identity" / "profile.json")
+        memory = _read_json(agent_dir / "_runtime" / "state" / "pral_phase.json")
 
         # Count forged tools
-        forged_dir = WORKSPACE_ROOT / name / "forged_tools"
+        forged_dir = agent_dir / "capability" / "tools"
         tool_count = len(list(forged_dir.glob("*.meta.json"))) if forged_dir.exists() else 0
 
         # Count decisions
-        decisions = _read_jsonl(WORKSPACE_ROOT / name / "logs" / "decisions.jsonl")
+        decisions = _read_jsonl(agent_dir / "cognitive" / "decisions.jsonl")
         decision_count = len(decisions)
 
         # Count lineage events
-        lineage = _read_jsonl(WORKSPACE_ROOT / name / "logs" / "lineage.jsonl")
+        lineage = _read_jsonl(agent_dir / "expression" / "lineage.jsonl")
         lineage_count = len(lineage)
 
-        # Count knowledge files — reuse the TTL-cached listing to avoid
-        # expensive recursive directory walks on every dashboard load.
+        # Count knowledge files
         knowledge_count = len(get_agent_knowledge(name))
 
         # Extract phase and cycle from memory
@@ -98,16 +165,16 @@ def list_agents() -> list[dict]:
                 cycle_count = cycle_data.get("value", 0)
 
         # Conversation message count
+        conv_jsonl = agent_dir / "_runtime" / "conversations" / "web_user.jsonl"
         conv_messages = 0
-        conv_jsonl = WORKSPACE_ROOT / name / "logs" / "conversations" / "web_user.jsonl"
         if conv_jsonl.exists():
             conv_messages = len(_read_jsonl(conv_jsonl))
 
         agents.append({
             "name": name,
-            "role": info.get("role"),
-            "evolution_mode": info.get("evolution_mode", "chaos"),
-            "version": version.get("version", info.get("framework_version", __version__)) if version else info.get("framework_version", __version__),
+            "role": pkg_info.get("role"),
+            "evolution_mode": pkg_info.get("evolution_mode", "chaos"),
+            "version": pkg_info.get("version", pkg.version),
             "status": "running" if running else "stopped",
             "phase": phase,
             "cycle_count": cycle_count,
@@ -117,8 +184,8 @@ def list_agents() -> list[dict]:
             "knowledge_count": knowledge_count,
             "goal_count": goal_count,
             "conv_messages": conv_messages,
-            "created_at": info.get("created_at", ""),
-            "last_active_at": info.get("last_active_at", ""),
+            "created_at": pkg_info.get("created_at", ""),
+            "last_active_at": pkg_info.get("updated_at", ""),
         })
     return agents
 
@@ -137,7 +204,7 @@ def get_agent_decisions(name: str, phase: str = "", decision_type: str = "",
 
     Avoids loading the entire file for agents with large decision logs.
     """
-    path = WORKSPACE_ROOT / name / "logs" / "decisions.jsonl"
+    path = _agent_file(name, "cognitive/decisions.jsonl", "logs/decisions.jsonl")
     if not path.exists():
         return [], 0
 
@@ -206,7 +273,7 @@ def _meta_stem(path: Path) -> str:
 
 
 def get_agent_tools(name: str) -> list[dict]:
-    forged_dir = WORKSPACE_ROOT / name / "forged_tools"
+    forged_dir = _agent_dir(name, "capability/tools", "forged_tools")
     if not forged_dir.exists():
         return []
     tools = []
@@ -227,10 +294,11 @@ def get_agent_tools(name: str) -> list[dict]:
 
 
 def get_agent_tool_detail(name: str, tool_name: str) -> dict | None:
-    meta = _read_json(WORKSPACE_ROOT / name / "forged_tools" / f"{tool_name}.meta.json")
+    forged_dir = _agent_dir(name, "capability/tools", "forged_tools")
+    meta = _read_json(forged_dir / f"{tool_name}.meta.json")
     if not meta:
         return None
-    source_file = WORKSPACE_ROOT / name / "forged_tools" / f"{tool_name}.py"
+    source_file = forged_dir / f"{tool_name}.py"
     source = source_file.read_text(encoding="utf-8") if source_file.exists() else ""
     return {
         "name": tool_name,
@@ -241,11 +309,12 @@ def get_agent_tool_detail(name: str, tool_name: str) -> dict | None:
 
 
 def get_agent_evolution(name: str) -> list[dict]:
-    return _read_jsonl(WORKSPACE_ROOT / name / "logs" / "lineage.jsonl")
+    lineage_path = _agent_file(name, "expression/lineage.jsonl", "logs/lineage.jsonl")
+    return _read_jsonl(lineage_path)
 
 
 def get_agent_metrics(name: str) -> list[dict]:
-    metrics_dir = WORKSPACE_ROOT / name / "state" / "metrics_snapshots"
+    metrics_dir = _agent_dir(name, "state/metrics_snapshots", "state/metrics_snapshots")
     if not metrics_dir.exists():
         return []
     metrics = []
@@ -257,7 +326,7 @@ def get_agent_metrics(name: str) -> list[dict]:
 
 
 def get_agent_personality(name: str) -> dict | None:
-    return _read_json(WORKSPACE_ROOT / name / "state" / "personality.json")
+    return _read_json(_agent_file(name, "cognitive/identity/profile.json", "state/personality.json"))
 
 
 def get_agent_knowledge(name: str) -> list[dict]:
@@ -266,9 +335,18 @@ def get_agent_knowledge(name: str) -> list[dict]:
     if cached and (now - cached[0]) < _KNOWLEDGE_CACHE_TTL:
         return cached[1]
 
+    agent_root = _agent_path(name)
     entries = []
     for subdir in ("knowledge", "files", "poetry", "journal", "commitments"):
-        d = WORKSPACE_ROOT / name / subdir
+        d = agent_root / subdir
+        if not d.exists():
+            # Try new package layout paths
+            if subdir == "knowledge":
+                d = agent_root / "cognitive" / "knowledge"
+            elif subdir in ("poetry", "journal", "commitments"):
+                d = agent_root / "expression" / "artifacts" / subdir
+            elif subdir == "files":
+                d = agent_root / "expression" / "artifacts"
         if not d.exists():
             continue
         for f in sorted(d.rglob("*")):
@@ -278,7 +356,7 @@ def get_agent_knowledge(name: str) -> list[dict]:
                 except OSError:
                     size = 0
                 entries.append({
-                    "path": str(f.relative_to(WORKSPACE_ROOT / name)),
+                    "path": str(f.relative_to(agent_root)),
                     "name": f.name,
                     "directory": subdir,
                     "size": size,
@@ -288,8 +366,9 @@ def get_agent_knowledge(name: str) -> list[dict]:
 
 
 def get_agent_knowledge_content(name: str, rel_path: str) -> tuple[str, str]:
-    full_path = (WORKSPACE_ROOT / name / rel_path).resolve()
-    allowed_root = (WORKSPACE_ROOT / name).resolve()
+    agent_root = _agent_path(name)
+    full_path = (agent_root / rel_path).resolve()
+    allowed_root = agent_root.resolve()
     # Use Path.relative_to() for robust containment check — raises ValueError
     # if full_path escapes allowed_root (covers symlink-based traversal too).
     try:
@@ -315,7 +394,7 @@ def get_agent_knowledge_content(name: str, rel_path: str) -> tuple[str, str]:
 
 
 def get_agent_goals(name: str) -> list[dict]:
-    memory = _read_json(WORKSPACE_ROOT / name / "logs" / "memory.json")
+    memory = _read_json(_agent_file(name, "_runtime/state/pral_phase.json", "logs/memory.json"))
     if not memory:
         return []
     goals_data = memory.get("goals", {})
@@ -331,7 +410,7 @@ def get_agent_memory_notes(name: str, category: str = "") -> list[dict]:
 
     Returns entries in reverse chronological order (most recent first).
     """
-    path = WORKSPACE_ROOT / name / "memory" / "agent_notes.jsonl"
+    path = _agent_file(name, "cognitive/memory/agent_notes.jsonl", "memory/agent_notes.jsonl")
     if not path.exists():
         return []
     entries = []
@@ -360,7 +439,7 @@ def get_agent_memory_notes(name: str, category: str = "") -> list[dict]:
 def get_agent_memory_stats(name: str) -> dict:
     """Return memory statistics: agent_notes count, episodic memory count, and categories."""
     notes_count = 0
-    notes_path = WORKSPACE_ROOT / name / "memory" / "agent_notes.jsonl"
+    notes_path = _agent_file(name, "cognitive/memory/agent_notes.jsonl", "memory/agent_notes.jsonl")
     categories: set[str] = set()
     if notes_path.exists():
         try:
@@ -380,7 +459,7 @@ def get_agent_memory_stats(name: str) -> dict:
             pass
 
     episodic_count = 0
-    episodic_path = WORKSPACE_ROOT / name / "memory" / "episodic.db"
+    episodic_path = _agent_file(name, "cognitive/memory/episodic.db", "memory/episodic.db")
     if episodic_path.exists():
         try:
             import sqlite3

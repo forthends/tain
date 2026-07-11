@@ -23,20 +23,21 @@ from pathlib import Path
 from typing import Optional
 
 from tain_agent import __version__
-from tain_agent.kernel import AgentKernel, AgentContext, STANDARD_FACTORIES
+from tain_agent.runtime import AgentRuntime
+from tain_agent.package import PackageRegistry, PackageKind
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 class _ACPAgentAdapter:
-    """Minimal adapter so ChatEngine can use AgentKernel."""
+    """Minimal adapter so ChatEngine can use AgentRuntime."""
     def __init__(self, kernel, agent_name, config):
         self.kernel = kernel
         self.agent_name = agent_name
         self.config = config
-        tool_plugin = kernel.lifecycle.get("tool")
+        tool_plugin = kernel.get_plugin("ToolPlugin")
         self.tools = tool_plugin
-        identity_plugin = kernel.lifecycle.get("identity")
+        identity_plugin = kernel.get_identity()
         self.personality = identity_plugin.personality if identity_plugin else None
         from tain_agent.core.llm import LLMBackend
         backend_config = config.get("llm", {})
@@ -228,22 +229,16 @@ class ACPServer:
             from tain_agent.core.chat import ChatEngine
 
             agent_name = f"acp_session_{session_id[:8]}"
-            workspace = Path("agent_workspace") / agent_name
-            workspace.mkdir(parents=True, exist_ok=True)
 
             with open(self.config_path) as f:
                 config = yaml.safe_load(f) or {}
 
-            ctx = AgentContext(
-                agent_name=agent_name,
-                agent_id=f"{agent_name}-{workspace.name}",
-                evolution_mode=config.get("agent", {}).get("evolution_mode", "specified"),
-                workspace_path=workspace,
-                config=config,
-                kernel_version=__version__,
-            )
-            kernel = AgentKernel(ctx)
-            kernel.load_plugins(STANDARD_FACTORIES)
+            packages_root = PROJECT_ROOT / "agent_workspace" / "packages"
+            reg = PackageRegistry(packages_root=packages_root)
+            pkg = reg.get_package(agent_name)
+            if pkg is None:
+                pkg = reg.create(name=agent_name, kind=PackageKind.AGENT)
+            kernel = AgentRuntime(package=pkg, config=config)
 
             # Wrap kernel as chat-compatible adapter
             agent = _ACPAgentAdapter(kernel, agent_name, config)

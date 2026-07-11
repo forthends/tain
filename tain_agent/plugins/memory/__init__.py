@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 class MemoryPlugin:
     """Plugin that manages the agent's memory across three tiers."""
 
+    version = "1.0.0"
     MAX_WORKING_MEMORY = 20
 
     def __init__(self):
@@ -46,13 +47,13 @@ class MemoryPlugin:
     def initialize(self, ctx: AgentContext) -> None:
         self._ctx = ctx
 
-        # Episodic store — SQLite file in workspace
-        episodic_path = ctx.workspace_path / "memory" / "episodic.db"
+        # Episodic store — SQLite file under cognitive/memory/
+        episodic_path = ctx.workspace_path / "cognitive" / "memory" / "episodic.db"
         self._episodic = EpisodicStore(episodic_path)
         self._episodic.initialize()
 
-        # Semantic store — JSON file in workspace
-        semantic_path = ctx.workspace_path / "memory" / "semantic.json"
+        # Semantic store — JSON file under cognitive/memory/
+        semantic_path = ctx.workspace_path / "cognitive" / "memory" / "semantic.json"
         self._semantic = SemanticStore(semantic_path)
         self._semantic.initialize()
 

@@ -35,9 +35,18 @@ logging: {{directory: "/tmp", decision_log_file: test.jsonl, memory_file: test.j
         yield ws
 
 
-def _build_kernel(name: str, config_path: str):
-    """Helper: build AgentKernel + lightweight adapter for tests."""
-    workspace = Path("agent_workspace") / name
+def _build_kernel(name: str, config_path: str, workspace_root: Path | None = None):
+    """Helper: build AgentKernel + lightweight adapter for tests.
+
+    Args:
+        name: Agent name.
+        config_path: Path to config YAML file.
+        workspace_root: Root directory for agent workspaces. If None, uses a
+            temporary directory so tests never write into the real
+            agent_workspace/ on disk.
+    """
+    root = workspace_root or Path(tempfile.mkdtemp(prefix="agent_ws_"))
+    workspace = root / name
     workspace.mkdir(parents=True, exist_ok=True)
     with open(config_path) as f:
         config = yaml.safe_load(f) or {}
@@ -91,14 +100,14 @@ def _build_kernel(name: str, config_path: str):
 class TestAgentLifecycle:
     def test_agent_create_and_stop(self, temp_workspace):
         """Agent initializes with phase='explore' and stop() runs cleanly."""
-        agent = _build_kernel("test_lifecycle", str(temp_workspace / "config.yaml"))
+        agent = _build_kernel("test_lifecycle", str(temp_workspace / "config.yaml"), temp_workspace)
         assert agent.agent_name == "test_lifecycle"
         assert agent.phase == "explore"
         agent.stop()
 
     def test_agent_phase_starts_as_explore(self, temp_workspace):
         """A newly created agent always begins in the explore phase."""
-        agent = _build_kernel("test_phase", str(temp_workspace / "config.yaml"))
+        agent = _build_kernel("test_phase", str(temp_workspace / "config.yaml"), temp_workspace)
         assert agent.phase == "explore"
 
     @pytest.mark.skip(reason="Phase persistence via _save_phase_to_memory removed — AgentKernel manages phase differently")
@@ -107,13 +116,13 @@ class TestAgentLifecycle:
 
     def test_agent_tool_registry_populated(self, temp_workspace):
         """Primal + evolution tools are registered during init."""
-        agent = _build_kernel("test_tools", str(temp_workspace / "config.yaml"))
+        agent = _build_kernel("test_tools", str(temp_workspace / "config.yaml"), temp_workspace)
         tools = agent.tools.list_tools()
         assert len(tools) > 0, "Agent should have primal tools registered"
 
     def test_agent_no_backend_run_returns_0(self, temp_workspace):
         """When no API key is set, backend is None and run() returns 0."""
-        agent = _build_kernel("test_no_backend", str(temp_workspace / "config.yaml"))
+        agent = _build_kernel("test_no_backend", str(temp_workspace / "config.yaml"), temp_workspace)
         assert agent.backend is None
         result = agent.run()
         assert result == 0
@@ -123,13 +132,13 @@ class TestAgentLifecycle:
 
 class TestConversationPersistence:
     def test_conversation_clear_and_append(self, temp_workspace):
-        agent = _build_kernel("test_conv", str(temp_workspace / "config.yaml"))
+        agent = _build_kernel("test_conv", str(temp_workspace / "config.yaml"), temp_workspace)
         agent.conversation.clear()
         agent.conversation.append("user", "Hello")
         assert agent.conversation.len() == 1
 
     def test_conversation_checkpoint_does_not_crash(self, temp_workspace):
-        agent = _build_kernel("test_checkpoint", str(temp_workspace / "config.yaml"))
+        agent = _build_kernel("test_checkpoint", str(temp_workspace / "config.yaml"), temp_workspace)
         agent.conversation.append("user", "Hello")
         result = agent.conversation.checkpoint()
         assert result is not None
@@ -174,7 +183,7 @@ class TestAgentState:
         pass
 
     def test_health_check_returns_dict(self, temp_workspace):
-        agent = _build_kernel("test_health", str(temp_workspace / "config.yaml"))
+        agent = _build_kernel("test_health", str(temp_workspace / "config.yaml"), temp_workspace)
         health = agent.kernel.lifecycle.all_health_checks()
         assert isinstance(health, dict)
         assert len(health) > 0

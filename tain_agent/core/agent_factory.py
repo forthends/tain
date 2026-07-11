@@ -28,7 +28,10 @@ AGENT_NAME_PATTERN = r"^[a-zA-Z][a-zA-Z0-9_-]{0,31}$"
 RESERVED_NAMES = frozenset({"_registry", "_messages", "_system"})
 
 # Subdirectories created inside each agent workspace
-from tain_agent.storage_registry import WORKSPACE_DIRS as AGENT_WORKSPACE_SUBDIRS
+from tain_agent.package import LAYER_SUBDIRS
+AGENT_WORKSPACE_SUBDIRS = {
+    layer: subs for layer, subs in LAYER_SUBDIRS.items()
+}
 
 
 class AgentFactory:
@@ -57,16 +60,21 @@ class AgentFactory:
         self._root = Path(workspace_root).resolve()
         self._registry_path = self._root / "_registry.json"
         self._messages_dir = self._root / "_messages"
+        # New-package-format agents live under packages/ subdirectory.
+        self._packages_root = self._root / "packages"
         self._ensure_infrastructure()
 
     # ── Infrastructure ────────────────────────────────────────────────
 
     def _ensure_infrastructure(self) -> None:
-        """Ensure workspace root, registry, and message bus exist."""
+        """Ensure workspace root and packages directory exist.
+
+        Note: _registry.json and _messages/ are no longer created — the
+        new Package model uses packages/ scanning via PackageRegistry,
+        and inter-agent messaging uses the per-package collaboration plugin.
+        """
         self._root.mkdir(parents=True, exist_ok=True)
-        self._messages_dir.mkdir(parents=True, exist_ok=True)
-        if not self._registry_path.exists():
-            self._write_registry({"registry_version": "1.0", "agents": {}})
+        self._packages_root.mkdir(parents=True, exist_ok=True)
 
     # ── Registry I/O ──────────────────────────────────────────────────
 
@@ -88,12 +96,16 @@ class AgentFactory:
 
     def exists(self, name: str) -> bool:
         """Check if an agent with the given name exists."""
-        return (self._root / name).is_dir()
+        return (self._packages_root / name).is_dir()
 
     def create(self, name: str, mode: str = EVOLUTION_MODE_CHAOS,
                role: str = "", role_description: str = "",
                framework_version: str = __version__) -> dict:
-        """Create a new agent workspace and register it.
+        """Create a new agent package and register it.
+
+        The agent is created in the new Agent Package Model format under
+        packages/<name>/ with manifest.json, four-layer directory layout,
+        and _runtime/ isolation.
 
         Args:
             name: Globally unique agent name (a-z, 0-9, -, _).
@@ -104,11 +116,9 @@ class AgentFactory:
 
         Returns:
             dict with agent info, or {"error": ...} on failure.
-
-        Raises:
-            ValueError if name is invalid or mode is unknown.
         """
         import re
+        from tain_agent.package import PackageRegistry, PackageKind
 
         # ── Validation ──────────────────────────────────────────────
         if name in RESERVED_NAMES:
@@ -125,34 +135,32 @@ class AgentFactory:
         if self.exists(name):
             return {"error": f"Agent '{name}' already exists."}
 
-        # ── Create workspace ────────────────────────────────────────
-        agent_dir = self._root / name
-        agent_dir.mkdir(parents=True, exist_ok=True)
-        for sub in AGENT_WORKSPACE_SUBDIRS:
-            (agent_dir / sub).mkdir(parents=True, exist_ok=True)
-
         now_ts = now().isoformat()
 
-        # ── Write version.json ──────────────────────────────────────
-        version_data = {
-            "agent_version": "0.0.1",
-            "framework_version": framework_version,
-            "evolution_mode": mode,
-            "role": role if mode == EVOLUTION_MODE_SPECIFIED else None,
-            "role_description": role_description if mode == EVOLUTION_MODE_SPECIFIED else None,
-            "initialized_at": now_ts,
-            "last_run_at": None,
-        }
-        (agent_dir / "version.json").write_text(
-            json.dumps(version_data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        # ── Create package via PackageRegistry ───────────────────────
+        reg = PackageRegistry(packages_root=self._packages_root)
+        try:
+            pkg = reg.create(
+                name=name,
+                kind=PackageKind.AGENT,
+                version="0.0.1",
+                evolution_mode=mode,
+            )
+        except FileExistsError:
+            return {"error": f"Agent '{name}' already exists."}
+
+        # ── Update manifest with role metadata ───────────────────────
+        manifest = reg.get_manifest(name)
+        if manifest is not None:
+            manifest.to_json(pkg.manifest_path)
+
+        agent_dir = pkg.path
 
         # ── Seed personality for specified mode ─────────────────────
         if mode == EVOLUTION_MODE_SPECIFIED:
             self._seed_personality(agent_dir, name, role, role_description)
 
-        # ── Register ────────────────────────────────────────────────
+        # ── Register (keep _registry.json for backward compatibility) ─
         registry = self._read_registry()
         registry["agents"][name] = {
             "name": name,
@@ -222,9 +230,9 @@ class AgentFactory:
             "saved_at": now().isoformat(),
         }
 
-        state_dir = agent_dir / "state"
-        state_dir.mkdir(parents=True, exist_ok=True)
-        (state_dir / "personality.json").write_text(
+        identity_dir = agent_dir / "cognitive" / "identity"
+        identity_dir.mkdir(parents=True, exist_ok=True)
+        (identity_dir / "profile.json").write_text(
             json.dumps(personality_data, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
@@ -240,8 +248,8 @@ class AgentFactory:
         return self.list_agents().get(name)
 
     def agent_dir(self, name: str) -> Path:
-        """Get the workspace directory path for an agent."""
-        return self._root / name
+        """Get the package directory path for an agent."""
+        return self._packages_root / name
 
     # ── Status Management ────────────────────────────────────────────
 

@@ -40,6 +40,8 @@ class ToolPlugin:
       - forge_cycle(spec, code, llm_backend) → run ClosedForgeCycle
     """
 
+    version = "1.2.0"
+
     def __init__(self):
         self._ctx: AgentContext | None = None
         self._registry = None
@@ -60,16 +62,15 @@ class ToolPlugin:
 
         workspace_str = str(ctx.workspace_path)
 
-        # Persist decisions to the agent's workspace so the Web UI can display them.
+        # Persist decisions to cognitive/ for the new package layout.
         decision_log = DecisionLog(
-            log_dir=str(ctx.workspace_path / "logs"),
+            log_dir=str(ctx.workspace_path / "cognitive"),
             log_file="decisions.jsonl",
         )
 
-        # Persist lineage events alongside decisions for WebUI Evolution tab.
+        # Persist lineage events to expression/ for the new package layout.
         self._lineage = LineageTracker(
-            lineage_dir=str(ctx.workspace_path / "logs"),
-            lineage_file="lineage.jsonl",
+            lineage_path=ctx.workspace_path / "expression" / "lineage.jsonl",
         )
 
         self._registry = ToolRegistry()
@@ -177,9 +178,18 @@ class ToolPlugin:
         return self._registry.get_claude_tool_definitions()
 
     def call(self, name: str, **kwargs) -> dict:
-        """Execute a registered tool by name."""
+        """Execute a registered tool by name.
+
+        Strips 'tool_name' from kwargs to avoid collision with
+        ToolRegistry.call()'s first positional parameter of the same name.
+        The tool name is already passed positionally via ``name``.
+        """
         if self._registry is None:
             return {"success": False, "error": "registry not initialized"}
+        # Prevent ``tool_name`` from being passed twice — once positionally
+        # (mapping to ToolRegistry.call.tool_name) and again as a keyword
+        # from the LLM's tool_use input block.
+        kwargs.pop("tool_name", None)
         return self._registry.call(name, **kwargs)
 
     def forge(

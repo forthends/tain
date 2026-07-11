@@ -42,10 +42,17 @@ class TestACPNewSession:
         assert session_id in server.sessions
 
     @pytest.mark.asyncio
-    async def test_new_session_with_workspace(self):
-        from tain_agent.acp.server import PROJECT_ROOT
+    async def test_new_session_with_workspace(self, tmp_path, monkeypatch):
+        # Redirect PROJECT_ROOT to tmp_path so the test doesn't
+        # write into the real agent_workspace/ on disk.
+        monkeypatch.setattr(
+            "tain_agent.acp.server.PROJECT_ROOT",
+            tmp_path,
+        )
+        workspace_dir = tmp_path / "agent_workspace" / "test_acp_ws"
+        workspace_dir.mkdir(parents=True)
         server = ACPServer()
-        valid_ws = str(PROJECT_ROOT / "agent_workspace" / "test_acp_ws")
+        valid_ws = str(workspace_dir)
         result = await server._handle_new_session(
             {"workspace_path": valid_ws}, 1
         )
@@ -101,10 +108,19 @@ class TestACPCloseSession:
 
 class TestACPPrompt:
     @pytest.mark.asyncio
-    async def test_prompt_uses_chat_engine(self, monkeypatch):
+    async def test_prompt_uses_chat_engine(self, monkeypatch, tmp_path):
         """Verify _handle_prompt uses ChatEngine (not webui.dialogue)."""
         from tain_agent.core.chat import ChatTurn
         from tain_agent.core.llm import ToolCall
+
+        # Redirect PROJECT_ROOT so the ACP server creates workspaces under
+        # tmp_path instead of the real agent_workspace/ directory.
+        monkeypatch.setattr("tain_agent.acp.server.PROJECT_ROOT", tmp_path)
+
+        # Write a minimal config so the ACP server can load it.
+        (tmp_path / "config.yaml").write_text(
+            "agent:\n  evolution_mode: specified\n"
+        )
 
         fake_turn = ChatTurn(
             text="Hello from ChatEngine",

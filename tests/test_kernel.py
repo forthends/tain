@@ -1,9 +1,9 @@
-"""Tests for AgentKernel, LifecycleManager, PRALLoop, Dispatch."""
+"""Tests for AgentKernel, Dispatch, and backward-compat wrapper."""
 
+import pytest
 from pathlib import Path
 from tain_agent.kernel import AgentKernel, AgentContext, HealthStatus
-from tain_agent.kernel.lifecycle import LifecycleManager
-from tain_agent.kernel.dispatch import Dispatch
+from tain_agent.kernel.dispatch import Dispatch, RouteNotFound
 
 
 class TestDispatch:
@@ -14,7 +14,10 @@ class TestDispatch:
 
     def test_missing_event_returns_none(self):
         d = Dispatch()
-        assert d.call("nonexistent") is None
+        # RouteNotFound is raised for unregistered routes; use call_or_none for old semantics
+        assert d.call_or_none("nonexistent") is None
+        with pytest.raises(RouteNotFound):
+            d.call("nonexistent")
 
     def test_handler_exception_returns_error_string(self):
         d = Dispatch()
@@ -24,7 +27,9 @@ class TestDispatch:
         assert "[Dispatch Error]" in result
 
 
-class TestLifecycleManager:
+class TestAgentKernelBackwardCompat:
+    """Tests for the backward-compatible AgentKernel wrapper."""
+
     def _make_ctx(self):
         return AgentContext(
             agent_name="test", agent_id="a1", evolution_mode="chaos",
@@ -33,6 +38,7 @@ class TestLifecycleManager:
 
     def _make_factory(self):
         class FakePlugin:
+            version = "1.0.0"
             def initialize(self, ctx): self.ctx = ctx
             def shutdown(self): pass
             def health_check(self): return HealthStatus(status="ok")
@@ -45,17 +51,20 @@ class TestLifecycleManager:
         return {"identity": FakePlugin, "memory": FakePlugin, "tool": FakePlugin}
 
     def test_chaos_mode_loads_three_plugins(self):
-        lm = LifecycleManager()
-        lm.load(self._make_ctx(), self._make_factory())
-        assert list(lm.plugins.keys()) == ["identity", "memory", "tool"]
+        kernel = AgentKernel(self._make_ctx())
+        kernel.load_plugins(self._make_factory())
+        # Check that all three chaos-mode plugins are accessible
+        assert kernel.lifecycle.get("identity") is not None
+        assert kernel.lifecycle.get("memory") is not None
+        assert kernel.lifecycle.get("tool") is not None
 
     def test_get_returns_none_for_unloaded(self):
-        lm = LifecycleManager()
-        lm.load(self._make_ctx(), self._make_factory())
-        assert lm.get("collaboration") is None
+        kernel = AgentKernel(self._make_ctx())
+        kernel.load_plugins(self._make_factory())
+        assert kernel.lifecycle.get("collaboration") is None
 
     def test_shutdown_clears_all(self):
-        lm = LifecycleManager()
-        lm.load(self._make_ctx(), self._make_factory())
-        lm.shutdown_all()
-        assert len(lm.plugins) == 0
+        kernel = AgentKernel(self._make_ctx())
+        kernel.load_plugins(self._make_factory())
+        kernel.shutdown()
+        assert len(kernel._runtime.active_plugins) == 0
